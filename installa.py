@@ -10,7 +10,7 @@ Cosa fa:
   - skill            in ~/.claude/skills/ (--skill utente, predefinito) o in <vault>/.claude/skills/ (--skill vault);
                      una skill già presente e diversa si lascia, salvo --aggiorna.
 Alla fine controlla PyYAML e FTS5, lancia build_graph.py --check e, su un vault già in uso, dice cosa adattare
-(vedi ADATTA.md).
+(.graph/ADATTA.md, copiato insieme agli script).
 
 Uso:
   python installa.py <cartella del vault> [--skill utente|vault|no] [--aggiorna] [--esempio]
@@ -172,15 +172,15 @@ def controlla_vault(vault, rapporto):
     sotto = [p for p in (vault / "wiki").rglob("*.md") if p.parent != vault / "wiki"]
     if fuori:
         rapporto.avviso(f"{len(fuori)} pagine fuori da wiki/ e raw/ (es. {fuori[0].relative_to(vault).as_posix()}): "
-                        "il grafo non le vede. Vedi ADATTA.md, passo 2")
+                        "il grafo non le vede. Vedi .graph/ADATTA.md, passo 2")
     if sotto:
         rapporto.avviso(f"{len(sotto)} pagine in sottocartelle di wiki/ (es. {sotto[0].relative_to(vault).as_posix()}): "
-                        "il grafo legge solo wiki/*.md. Vedi ADATTA.md, passo 2")
+                        "il grafo legge solo wiki/*.md. Vedi .graph/ADATTA.md, passo 2")
     ref = vault / "Wiki reference.md"
     testo = ref.read_text(encoding="utf-8") if ref.exists() else ""
     if "## Relazioni tipizzate" not in testo:
         rapporto.avviso("Wiki reference.md senza «## Relazioni tipizzate»: nessun controllo sulle relazioni. "
-                        "Vedi ADATTA.md, passo 3")
+                        "Vedi .graph/ADATTA.md, passo 3")
     indice = vault / "index.md"
     if indice.exists() and "## Punti aperti nel vault" not in indice.read_text(encoding="utf-8"):
         rapporto.avviso("index.md senza «## Punti aperti nel vault»: le domande aperte di tipo «punto» non si calcolano")
@@ -202,7 +202,7 @@ def installa(vault, skill="utente", aggiorna=False, esempio=False):
 
     backup = vault / ".graph_backup" / adesso()
     diversi = []
-    for f in sorted((KIT / "graph").glob("*.py")) + [KIT / "vault" / "requirements.txt"]:
+    for f in sorted((KIT / "graph").glob("*.py")) + [KIT / "vault" / "requirements.txt", KIT.parent / "ADATTA.md"]:
         nome = f".graph/{f.name}" + (" (facoltativo)" if f.name in FACOLTATIVI else "")
         if copia_file(f, vault / ".graph" / f.name, aggiorna, backup, rapporto, nome) == "diverso":
             diversi.append(f.name)
@@ -238,7 +238,9 @@ def installa(vault, skill="utente", aggiorna=False, esempio=False):
         print(f"\nScript diversi dal kit, lasciati come sono: {', '.join(diversi)}. "
               "Per aggiornarli: python installa.py <vault> --aggiorna")
     print("\nPoi: riaprire Claude Code nella cartella del vault (gli hook valgono dalla sessione successiva)."
-          + ("\nVault già in uso: seguire ADATTA.md per far vedere le pagine al grafo." if gia_in_uso else ""))
+          + ("\nVault già in uso: seguire .graph/ADATTA.md per far vedere le pagine al grafo. Si può chiedere a Claude:"
+             "\n  «Adatta questo vault al kit Teseo seguendo .graph/ADATTA.md, un passo alla volta, chiedendomi"
+             " conferma prima di spostare o rinominare file.»" if gia_in_uso else ""))
     return codice
 
 

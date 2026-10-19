@@ -47,7 +47,9 @@ python installa.py "C:/percorso/VaultEsistente"
 Non tocca le pagine né le fonti. Aggiunge gli script, unisce i suoi hook a quelli già presenti (con una copia di
 sicurezza di `settings.json`) e crea i file di regole solo se mancano. Alla fine dice cosa manca perché il grafo veda
 le pagine: di solito spostarle in `wiki/` senza sottocartelle e sistemare le proprietà del frontmatter.
-I passi sono in [ADATTA.md](ADATTA.md), scritto anche per farlo eseguire a Claude.
+I passi sono in [ADATTA.md](ADATTA.md), che l'installatore copia anche nel vault come `.graph/ADATTA.md`: aperto
+Claude Code nella cartella del vault, basta chiedere «Adatta questo vault al kit Teseo seguendo .graph/ADATTA.md, un
+passo alla volta, chiedendomi conferma prima di spostare o rinominare file».
 
 ## Aggiornare
 
@@ -76,7 +78,7 @@ riportati da lì. I database (`graph.sqlite`, `memoria.sqlite`, `domande.sqlite`
 
 ```text
 installa.py          l'installatore
-ADATTA.md            come adattare un vault già in uso
+ADATTA.md            come adattare un vault già in uso (copiato nel vault in .graph/ADATTA.md)
 kit/graph/           gli script di .graph/: grafo, recupero, hook, memoria, domande aperte, sintesi, misura
                      (banco.py e candidati.py sono facoltativi: servono a migliorare il grafo)
 kit/skills/          le 4 skill: obsidian-wiki-ingest, -query, -lint, -fill-gaps

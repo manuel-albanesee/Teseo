@@ -4,7 +4,7 @@
 adattamenti, che dipendono da come è fatto il vault. Questa guida è scritta sia per te sia per Claude Code: puoi
 aprire Claude nella cartella del vault e scrivere
 
-> Adatta questo vault al kit Teseo seguendo ADATTA.md (nel repository Teseo), un passo alla volta, chiedendomi conferma prima di spostare o rinominare file.
+> Adatta questo vault al kit Teseo seguendo .graph/ADATTA.md, un passo alla volta, chiedendomi conferma prima di spostare o rinominare file.
 
 Ogni passo si chiude con `python .graph/build_graph.py --check`: l'obiettivo è arrivare a «nessun problema».
 
