@@ -1,0 +1,5 @@
+[
+  {"domanda": "a chi chiedo il ticket della settimana per poter rilasciare?", "attese": ["Incident settimanale", "Anna Rossi"], "origine": "manuale", "note": "esempio: catena senza i nomi delle pagine"},
+  {"domanda": "dove si aprono le segnalazioni?", "attese": ["ServiceDesk"], "origine": "manuale", "note": "esempio: «segnalazioni» non è nel vault, probabilmente non trovata"},
+  {"domanda": "quale sigla va nelle richieste?", "attese": ["Acronimo del progetto"], "origine": "manuale", "note": "esempio: sinonimo di acronimo"}
+]

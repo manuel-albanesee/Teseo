@@ -1,0 +1,29 @@
+---
+name: obsidian-wiki-query
+description: Interroga un vault Obsidian gestito come "LLM Wiki" (pattern Karpathy) sintetizzando una risposta con citazioni alle pagine del vault, e offre di archiviare la risposta come nuova pagina. Usa quando l'utente fa una domanda che va cercata/risposta usando le note di un vault Obsidian esistente.
+---
+
+# Obsidian Wiki — Query
+
+Implementa l'operazione **Query** del pattern "LLM Wiki" di Andrej Karpathy
+(fonte: https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f).
+
+## Procedura
+
+1. **Interroga il grafo**, se il vault ne ha uno (es. `.graph/build_graph.py` e `.graph/recall.py`). Ricostruiscilo e passa la domanda così come l'ha scritta l'utente:
+   `python .graph/build_graph.py > /dev/null && python .graph/recall.py "<domanda>"`
+   La ricostruzione dura meno di un secondo e garantisce che il grafo rispecchi le pagine. L'output elenca le pagine riconosciute nella domanda (per nome o alias) e i fatti collegati: relazioni tipizzate (`referente`, `usa`, `parte_di`, …) e pagine menzionate. Se non stampa nulla, la domanda non contiene nomi di pagina né alias: prosegui dall'index.
+   Se il vault ha un hook che inietta il grafo a ogni prompt (es. `.graph/recall_hook.py`) e il contesto contiene già i fatti per questa domanda («Dal grafo della wiki…»), non rilanciare il recall: usa quei fatti. Se l'hook ha segnalato «nessuna pagina riconosciuta», prosegui dall'index.
+2. **Parti dall'index** del vault (es. `index.md` o la nota indice/MOC) per individuare le pagine rilevanti che il grafo non ha dato, invece di rifare una ricerca esplorativa da zero sul filesystem.
+3. **Leggi le pagine rilevanti** (quelle suggerite dal grafo e dall'index) e, se serve, segui i `[[wikilink]]` per raccogliere il contesto collegato. Il grafo indica dove guardare, ma non è la fonte della risposta: ogni fatto preso dal grafo va verificato sulla pagina, che può contenere un `⚠️ da verificare`, una data o una precisazione («nella call», «al 2021») che la relazione da sola non mostra.
+4. **Sintetizza una risposta con citazioni** — cita le pagine/note del vault da cui deriva ogni affermazione (non solo la fonte raw originale). Se la domanda tocca dati contraddittori tra note diverse, segnalalo esplicitamente invece di appiattire la contraddizione.
+5. **Scegli il formato adatto alla domanda**: nota markdown, tabella di confronto, deck di slide (Marp), grafico, ecc. — non forzare sempre un formato unico.
+6. **Offri di archiviare la risposta nel vault** come nuova pagina se ha valore duraturo (una risposta buona non deve sparire nella chat history). Se l'utente conferma, crea la pagina seguendo le convenzioni del vault, collegala con `[[wikilink]]` alle pagine correlate, e aggiorna l'index. Se il vault ha il grafo, dichiara nel frontmatter relazioni e alias come per un ingest e chiudi con `python .graph/build_graph.py --check` senza problemi.
+7. Se l'archiviazione avviene, **appendi un'entry al log** (es. `log.md`):
+   `## [AAAA-MM-GG] query | <oggetto>`
+
+## Note operative
+
+- Non modificare le pagine esistenti per rispondere a una query — solo eventualmente aggiungerne una nuova, su conferma dell'utente. Ricostruire `graph.sqlite` non conta come modifica: è un file derivato dalle pagine.
+- Se il grafo non trova la pagina giusta, o riporta fatti fuori tema, dillo nel riepilogo (es. «il recall non ha riconosciuto X»): sono i casi che servono a migliorare alias e `recall.py`.
+- Se l'index non copre a sufficienza il vault (vault molto grande) e nel vault esiste uno strumento di ricerca dedicato (es. `qmd` o script locale), preferiscilo a una scansione manuale di tutti i file.
