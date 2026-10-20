@@ -2,7 +2,7 @@
 
 # Teseo
 
-**Il filo tra i tuoi documenti e le risposte che cerchi.**
+**Trova la strada nel labirinto dei tuoi documenti.**
 
 Una wiki Obsidian costruita dai tuoi documenti, con fonti verificabili, grafo delle relazioni e memoria delle domande.
 
@@ -15,6 +15,9 @@ Una wiki Obsidian costruita dai tuoi documenti, con fonti verificabili, grafo de
 </div>
 
 ---
+
+Nel progetto, **Teseo è l'assistente** che esplora il labirinto dei documenti. Il **grafo è il filo di Arianna**
+che lo orienta tra le pagine e le loro relazioni.
 
 Teseo trasforma trascrizioni, specifiche e appunti in pagine collegate. Quando fai una domanda, il grafo aiuta
 l'assistente a trovare le pagine utili, anche quando la risposta attraversa più documenti. L'assistente legge
@@ -410,7 +413,7 @@ memoria e conservazione dei dati. Per esplorare il codice:
 ## Origine del progetto
 
 Teseo parte dal pattern [LLM Wiki di Andrej Karpathy](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f):
-fonti immutabili, pagine distillate e convenzioni esplicite. Aggiunge il filo del grafo, il recall automatico,
+fonti immutabili, pagine distillate e convenzioni esplicite. Aggiunge il grafo come filo di Arianna, il recall automatico,
 la memoria delle domande e un ciclo di manutenzione verificabile.
 
 [Torna all'inizio](#teseo)
