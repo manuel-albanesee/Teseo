@@ -1,230 +1,416 @@
+<div align="center">
+
 # Teseo
 
-Un vault Obsidian scritto e tenuto in ordine da Claude Code, Codex o Copilot CLI a partire dai tuoi documenti, con una mappa dei
-collegamenti tra le pagine. La mappa è il filo: a ogni domanda indica all'assistente quali pagine servono e come sono
-collegate, anche quando la risposta passa da quattro pagine e la domanda ne nomina una sola.
+**Il filo tra i tuoi documenti e le risposte che cerchi.**
 
-Il metodo parte dall'idea «LLM Wiki» di Andrej Karpathy: fonti originali in `raw/`, pagine distillate in `wiki/`,
-regole in `Wiki reference.md`. Teseo aggiunge il grafo (`.graph/`), gli hook che lo mettono nel contesto a ogni
-domanda, la memoria delle domande, le domande aperte per l'autore, le pagine di sintesi scritte dal lint e una
-misura che dice se ogni modifica migliora o peggiora il recupero.
+Una wiki Obsidian costruita dai tuoi documenti, con fonti verificabili, grafo delle relazioni e memoria delle domande.
 
-## Requisiti
+[![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-3776AB?logo=python&logoColor=white)](#requisiti)
+[![Markdown + SQLite](https://img.shields.io/badge/Markdown%20%2B%20SQLite-file%20locali-0F766E)](#dentro-il-vault)
+[![Claude · Codex · Copilot](https://img.shields.io/badge/AI-Claude%20%C2%B7%20Codex%20%C2%B7%20Copilot-7C3AED)](#client-supportati)
 
-- Claude Code, Codex (app o CLI con hook nativi) oppure GitHub Copilot CLI con `userPromptTransformed`
-- Python 3.9 o successivo, con `pip install pyyaml` (SQLite e FTS5 sono già nella libreria standard)
-- Obsidian, facoltativo: le pagine sono file Markdown
+[Installazione](#installazione-rapida) · [Primo utilizzo](#primo-utilizzo) · [Come funziona](#come-funziona) · [Domande frequenti](#domande-frequenti) · [Contribuire](#contribuire)
 
-## Provare senza toccare nulla
+</div>
 
-```bash
+---
+
+Teseo trasforma trascrizioni, specifiche e appunti in pagine collegate. Quando fai una domanda, il grafo aiuta
+l'assistente a trovare le pagine utili, anche quando la risposta attraversa più documenti. L'assistente legge
+le pagine e risponde citando le fonti; contraddizioni e informazioni mancanti restano visibili.
+
+Funziona con **Claude Code, Codex e GitHub Copilot CLI**. Puoi usarne uno solo oppure alternarli sullo stesso vault.
+Obsidian è facoltativo: i contenuti sono normali file Markdown.
+
+## Perché Teseo
+
+| Capacità | Cosa ottieni |
+| --- | --- |
+| **Wiki dalle fonti** | Note per concetto, persona e processo, aggiornate quando aggiungi un documento. |
+| **Relazioni esplicite** | Collegamenti come `usa`, `richiede` e `referente`, per ricostruire una risposta attraverso più pagine. |
+| **Recall a ogni domanda** | Gli hook portano nel contesto del modello i fatti collegati e le pagine da verificare. |
+| **Memoria delle letture** | Le pagine effettivamente lette aiutano a recuperare risposte a domande simili. |
+| **Lacune da risolvere** | Referenti mancanti, contraddizioni e punti aperti diventano domande per l'autore. |
+| **Controlli ripetibili** | Verifiche di link, relazioni, fonti, sintesi e recupero delle pagine attese. |
+
+```mermaid
+flowchart LR
+    F["Fonti originali<br/>raw/"] -->|Ingest| W["Wiki con fonti<br/>wiki/"]
+    W -->|Frontmatter e link| G["Grafo locale<br/>SQLite"]
+    G -->|Recall| A["Claude · Codex · Copilot"]
+    A -->|Legge e verifica| W
+    A --> R["Risposta con citazioni"]
+```
+
+## Installazione rapida
+
+### Requisiti
+
+- **Git** e **Python 3.9+**, con SQLite FTS5 disponibile nella distribuzione Python.
+- **Un client AI installato e autenticato**: Claude Code, Codex oppure GitHub Copilot CLI.
+- **Obsidian**, se vuoi navigare la wiki dalla sua interfaccia.
+
+L'unica dipendenza Python aggiuntiva è **PyYAML**. Il grafo usa SQLite: non devi avviare un server di database.
+Le chiamate al modello usano il client e l'account che hai configurato.
+
+### 1. Scarica il kit
+
+Apri un terminale ed esegui:
+
+```sh
 git clone https://github.com/manuel-albanesee/Teseo.git
 cd Teseo
+```
+
+### 2. Prepara Python e prova il kit
+
+Scegli i comandi per il tuo sistema e continua nello stesso terminale. L'ambiente virtuale tiene le dipendenze
+del kit separate dagli altri progetti Python.
+
+<details open>
+<summary><strong>Windows · PowerShell</strong></summary>
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r kit/vault/requirements.txt
 python installa.py --prova
 ```
 
-Installa il kit in una cartella temporanea con un piccolo vault d'esempio, lancia i controlli e cancella tutto.
-Deve finire con `tutto OK`.
+Se sul tuo PC Python si avvia con `py`, usa `py -3 -m venv .venv` nella prima riga.
 
-## Installare in un vault nuovo
+</details>
 
-```bash
-python installa.py "C:/percorso/MioVault"
+<details>
+<summary><strong>macOS / Linux · Bash o Zsh</strong></summary>
+
+```sh
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r kit/vault/requirements.txt
+python installa.py --prova
 ```
 
-Crea la struttura (`raw/`, `wiki/`, `index.md`, `log.md`, `Wiki reference.md`), copia gli script in `.graph/`
-e configura **tutti e tre i client dentro il vault**, senza opzioni aggiuntive:
+</details>
 
-- Claude Code: `CLAUDE.md`, `.claude/settings.json` e le quattro skill in `.claude/skills/`.
-- Codex: `AGENTS.md`, `.codex/hooks.json`, `.graph/codex.json` e le quattro skill in `.agents/skills/`.
-- Copilot CLI: `.github/copilot-instructions.md`, `.github/hooks/teseo.json` e le quattro skill in `.github/skills/`.
+La prova installa un vault d'esempio in una cartella temporanea, esegue i controlli e la cancella.
+**Il risultato atteso è `tutto OK`.** Non chiama modelli e non richiede di configurare un vault personale.
 
-Poi apri il client nella cartella del vault, metti un documento in `raw/` e scrivi
-«ingerisci raw/nome-file». Puoi preparare i file anche dei client non installati.
+### 3. Installa nel tuo vault
 
-Con `--esempio` aggiunge anche il vault d'esempio, da togliere dopo averlo guardato.
+Sostituisci il percorso con quello della tua cartella Obsidian. Puoi indicare una cartella nuova: verrà creata.
 
-Per configurare soltanto un client:
+**Windows:**
 
 ```powershell
-python installa.py "C:/percorso/MioVault" --client codex
-python installa.py "C:/percorso/MioVault" --client claude
-python installa.py "C:/percorso/MioVault" --client copilot
+python installa.py "C:/Obsidian/MioVault"
 ```
 
-Codex riceve `AGENTS.md`, le quattro skill in `.agents/skills/`, gli hook nativi in `.codex/hooks.json`
-e la configurazione dei modelli in `.graph/codex.json`. Claude conserva `.claude/settings.json` e le proprie skill.
-L'opzione esplicita `--skill utente` installa invece le skill in `~/.claude/skills/`, `~/.agents/skills/` o `~/.copilot/skills/`,
-secondo i client selezionati. Il comando senza opzioni installa tutto nel vault.
+**macOS / Linux:**
 
-## Installare in un vault già in uso
-
-```bash
-python installa.py "C:/percorso/VaultEsistente"
+```sh
+python installa.py "$HOME/Documents/MioVault"
 ```
 
-Non tocca le pagine né le fonti. Aggiunge gli script, unisce i suoi hook a quelli già presenti (con una copia di
-sicurezza di `settings.json`) e crea i file di regole solo se mancano. Alla fine dice cosa manca perché il grafo veda
-le pagine: di solito spostarle in `wiki/` senza sottocartelle e sistemare le proprietà del frontmatter.
-I passi sono in [ADATTA.md](ADATTA.md), che l'installatore copia anche nel vault come `.graph/ADATTA.md`: aperto
-Claude Code nella cartella del vault, basta chiedere «Adatta questo vault al kit Teseo seguendo .graph/ADATTA.md, un
-passo alla volta, chiedendomi conferma prima di spostare o rinominare file».
+Il comando senza opzioni prepara **tutti e tre i client dentro il vault**, incluse le quattro skill per ciascuno.
+Puoi preparare i file anche dei client che non hai installato. Per sceglierne uno solo:
 
-## Aggiornare
-
-```bash
-cd Teseo
-git pull
-python installa.py "C:/percorso/MioVault" --aggiorna
+```sh
+python installa.py "PERCORSO_DEL_VAULT" --client claude
+python installa.py "PERCORSO_DEL_VAULT" --client codex
+python installa.py "PERCORSO_DEL_VAULT" --client copilot
 ```
 
-Senza `--aggiorna` uno script già presente e diverso dal kit non si tocca. Con `--aggiorna` il vecchio va in
-`.graph_backup/<data-ora>/` e i dati di dominio (le domande di prova di `misura.py`, `PAROLE_COMUNI`…) vanno
-riportati da lì. I database (`graph.sqlite`, `memoria.sqlite`, `domande.sqlite`) non si toccano mai.
+**Hai già delle note?** L'installatore conserva le pagine e le fonti esistenti. Per farle riconoscere al grafo,
+segui [Adattare un vault già in uso](ADATTA.md): le pagine della wiki devono essere in `wiki/*.md`, senza sottocartelle.
 
-## Opzioni
+### 4. Apri il vault nel client
 
-| Opzione | Effetto |
+Apri come progetto **la cartella del vault**. Per usare una CLI, spostati in quella cartella dal terminale
+con l'ambiente Python attivo e avvia `claude`, `codex` oppure `copilot`.
+
+| Client | Passaggio iniziale |
 | --- | --- |
-| `--client claude` | configura soltanto Claude Code |
-| `--client codex` | configura Codex senza richiedere Claude Code |
-| `--client copilot` | configura soltanto GitHub Copilot CLI |
-| `--client tutti` | configura Claude, Codex e Copilot CLI nello stesso vault (predefinito) |
-| `--client entrambi` | selezione compatibile con le versioni precedenti: Claude e Codex |
-| `--skill utente` | installazione globale esplicita, nella cartella del client selezionato |
-| `--skill vault` | skill locali in `.claude/skills/`, `.agents/skills/`, `.github/skills/` secondo i client (predefinito) |
-| `--skill no` | skill non installate |
-| `--solo-integrazione` | aggiunge il supporto client a Teseo già installato, senza aggiornare script di dominio, pagine o database |
-| `--aggiorna` | sostituisce script e skill diversi dal kit, con copia di sicurezza |
-| `--esempio` | aggiunge il vault d'esempio (solo con `wiki/` vuota) |
-| `--prova` | prova completa in una cartella temporanea |
+| **Claude Code** | Accetta il normale consenso del progetto e verifica il caricamento degli hook locali. |
+| **Codex** | Riapri il progetto, usa `/hooks` nella CLI e revisiona i quattro comandi verso `.graph/codex_hook.py`. |
+| **Copilot CLI** | Accetta il normale consenso del workspace. `/env` mostra gli hook; `/instructions` le istruzioni; `copilot skill list` elenca le skill. |
 
-## Aggiungere Codex a un vault Teseo esistente
+I file di configurazione preparano l'integrazione; l'esecuzione degli hook dipende anche dalla versione del client
+e dal suo consenso al progetto. L'installatore non modifica account, permessi o trust globali.
 
-```powershell
-python installa.py "C:/Obsidian_Wiki/ISP" --client codex --skill vault --solo-integrazione
+## Primo utilizzo
+
+Apri il vault anche in Obsidian, se lo usi, e copia una fonte in `raw/`, per esempio `raw/riunione-progetto.md`.
+Nella chat del client puoi scrivere direttamente:
+
+| Obiettivo | Scrivi all'assistente |
+| --- | --- |
+| Aggiungere una fonte | `Ingerisci raw/riunione-progetto.md` |
+| Cercare una risposta | `Quali sono i prerequisiti del rilascio e chi è il referente? Cita le pagine.` |
+| Controllare la wiki | `Lancia il lint del vault` |
+| Completare ciò che manca | `Colmiamo le lacune, una domanda alla volta` |
+
+L'assistente usa le skill `obsidian-wiki-ingest`, `obsidian-wiki-query`, `obsidian-wiki-lint` e
+`obsidian-wiki-fill-gaps`. Dopo l'ingest, il ciclo consigliato è **lint → lacune**.
+
+Per esplorare prima un esempio completo, installa in una **cartella nuova dedicata**:
+
+```sh
+python installa.py "PERCORSO_DI_UN_VAULT_DEMO" --esempio
 ```
 
-Questa modalità aggiunge soltanto gli adattatori Codex, gli hook, la configurazione, le skill e `AGENTS.md` se
-manca. Gli script personalizzati del grafo e i database non vengono aggiornati. Senza `--aggiorna` anche le
-skill e gli adattatori già presenti ma diversi vengono lasciati; con `--aggiorna` sono salvati prima nel backup.
-I modelli personalizzati in `.graph/codex.json` sono sempre conservati. `AGENTS.md` esistente non è sovrascritto:
-in quel caso integra manualmente le indicazioni di `kit/vault/AGENTS.md`.
+Poi chiedi: **«Devo fare un rilascio in produzione: cosa mi serve e chi me lo dà?»**
+Il vault d'esempio collega Rilascio in produzione, Console di rilascio, Incident settimanale e Anna Rossi.
+Contiene anche una contraddizione sul giorno del rilascio, che deve restare esplicita nella risposta.
 
-### Hook Codex e attivazione
+## Come funziona
 
-Teseo usa gli eventi nativi `SessionStart`, `UserPromptSubmit`, `PostToolUse` e `Stop`:
-avvio con le regole del vault, recall prima della risposta, registrazione delle letture, consolidamento della
-memoria a fine turno. Il recall richiama lo stesso motore Python di Claude, senza avviare Claude o un altro modello.
-Gli errori producono un avviso e indicazioni per cercare nelle pagine; non bloccano la conversazione.
+### Dalla domanda alla risposta
 
-Codex richiede che il progetto e le definizioni degli hook siano revisionati e autorizzati. Riapri il progetto,
-usa `/hooks` nella CLI (o il controllo hook del client, se presente) e controlla i quattro comandi verso
-`.graph/codex_hook.py`. L'installatore non modifica il trust e non usa opzioni che lo saltano. Dopo una modifica
-agli hook Codex può chiedere una nuova revisione. Se una versione del client non supporta gli hook, le skill
-restano utilizzabili con recall esplicito.
-Riferimento: [hook Codex, eventi e trust](https://learn.chatgpt.com/docs/hooks).
+Gli hook richiamano il motore Python prima della risposta. Il **recall** recupera le relazioni del grafo e,
+quando utile, le pagine ricordate da domande simili. Se non trova agganci, può cercare nel testo delle pagine.
+Questi risultati indicano dove leggere: l'assistente verifica sempre i fatti nei documenti della wiki.
 
-Per le letture con percorso strutturato (`Read` o un tool `read_file`/`read_text_file`), `PostToolUse` registra
-solo gli esiti riusciti. Non deduce letture da `rg`, `glob` o comandi di shell generici. In Codex usa invece:
+```mermaid
+sequenceDiagram
+    actor U as Tu
+    participant A as Client AI
+    participant T as Teseo
+    participant V as Wiki e grafo
+    U->>A: Domanda sul vault
+    A->>T: Hook prima della risposta
+    T->>V: Recupera relazioni e pagine pertinenti
+    V-->>T: Fatti collegati e percorsi
+    T->>T: Consulta la memoria delle domande
+    T-->>A: Contesto e pagine da verificare
+    A->>V: Legge le pagine
+    V-->>A: Contenuto, fonti e avvertenze
+    A-->>U: Risposta con citazioni
+    A->>T: Letture confermate e fine turno
+    T->>T: Consolida la memoria quando applicabile
+```
 
-```powershell
+La memoria apprende associazioni tra domande sul contenuto e pagine lette quando il grafo non ha riconosciuto
+la domanda. Un risultato di `rg`, `grep` o `glob` non prova che una pagina sia stata letta.
+Se il recall fallisce, l'assistente riceve indicazioni per cercare e verificare nelle pagine.
+
+### Dalle fonti a una wiki che migliora
+
+```mermaid
+flowchart TD
+    F["Nuova fonte in raw/"] --> I["Ingest<br/>Distilla e collega le pagine"]
+    I --> W["Wiki aggiornata"]
+    W --> L["Lint<br/>Controlla coerenza, relazioni e sintesi"]
+    L --> D{"Mancano informazioni?"}
+    D -->|Sì| Q["Lacune<br/>Una domanda alla volta all'autore"]
+    Q -->|Risposte documentate| W
+    D -->|No| C["Controlli del grafo"]
+    C --> R["Query<br/>Risposte dalle pagine verificate"]
+    W -.->|Interroga quando vuoi| R
+```
+
+Il lint può scrivere pagine di sintesi quando la risposta è già distribuita in più note. Quando manca un fatto,
+il sistema lo chiede all'autore. Le fonti originali in `raw/` restano immutabili.
+
+## Client supportati
+
+Tutti i percorsi della tabella sono relativi alla cartella del vault.
+
+| Client | Istruzioni | Hook | Skill |
+| --- | --- | --- | --- |
+| Claude Code | `CLAUDE.md` | `.claude/settings.json` | `.claude/skills/` |
+| Codex | `AGENTS.md` | `.codex/hooks.json` | `.agents/skills/` |
+| Copilot CLI | `.github/copilot-instructions.md` | `.github/hooks/teseo.json` | `.github/skills/` |
+
+<details>
+<summary><strong>Claude Code: recall e routing Opus / Haiku</strong></summary>
+
+Gli eventi `SessionStart`, `UserPromptSubmit`, `PostToolUse` e `Stop` passano attraverso `claude_hook.py`.
+Il motore storico può affidare a Haiku le domande puntuali con contesto affidabile in una sessione Opus;
+le domande ampie, le modifiche e i casi incerti restano a Opus. Il prefisso `@opus` evita il passaggio a Haiku.
+Il wrapper lascia gli eventi importati da Copilot al suo adattatore dedicato.
+
+</details>
+
+<details>
+<summary><strong>Codex: attivazione, memoria e ruoli Sol / Astra / Luna</strong></summary>
+
+Gli eventi nativi sono `SessionStart`, `UserPromptSubmit`, `PostToolUse` e `Stop`.
+Codex richiede la revisione degli hook: dopo averli modificati può chiedere una nuova autorizzazione.
+Gli hook aggiungono il contesto e suggeriscono un ruolo; **non cambiano il modello della chat e non avviano altri modelli**.
+
+| Ruolo in `.graph/codex.json` | Modello predefinito |
+| --- | --- |
+| Ricerca e lavoro sul vault | `gpt-6.1-sol` |
+| Analisi profonda | `gpt-6-astra` |
+| Domande puntuali con contesto affidabile | `gpt-6-luna` |
+
+Gli identificativi sono configurabili in base ai modelli disponibili al tuo account.
+Per le letture da shell che devono insegnare alla memoria, usa il token fornito dall'hook:
+
+```sh
 python .graph/leggi.py --turno TOKEN_FORNITO_DALL_HOOK "wiki/Nome pagina.md"
 ```
 
-Il lettore stampa la pagina e registra la lettura. Il token separa sessione e turno; gli eventi che dichiarano
-un `agent_id` vengono ignorati. Senza `--turno` il comando legge soltanto. Gli handle durano sette giorni e
-non contengono il testo delle domande; la memoria conserva il proprio ciclo di archiviazione.
+Senza token il comando legge soltanto. I token separano sessioni e turni, durano sette giorni e non contengono
+il testo delle domande. Gli eventi che dichiarano un `agent_id` sono ignorati.
 
-### Modelli Codex
+Per una query autonoma che sceglie effettivamente il modello, serve Codex CLI autenticata:
 
-| Ruolo | Codex predefinito | Ruolo corrispondente in Claude |
-| --- | --- | --- |
-| Ricerca e lavoro sul vault | `gpt-6.1-sol` | Opus |
-| Analisi profonda, scelta esplicita | `gpt-6-astra` | Opus |
-| Domande puntuali con contesto affidabile | `gpt-6-luna` | Haiku |
-
-Sono ruoli operativi, non una promessa di prestazioni equivalenti. Gli identificativi si possono cambiare in
-`.graph/codex.json` secondo i modelli disponibili all'account. Gli hook suggeriscono un ruolo, ma la chat continua
-con il modello scelto dall'utente: il protocollo hook non offre un cambio del modello attivo.
-
-Per una query autonoma il comando seguente sceglie davvero il modello prima di avviare `codex exec`:
-
-```powershell
-python .graph/chiedi_codex.py "chi è il referente di RTC?"
+```sh
+python .graph/chiedi_codex.py "chi è il referente del rilascio?"
 python .graph/chiedi_codex.py "@astra confronta i processi di rilascio"
 python .graph/chiedi_codex.py --ricerca astra "spiega il processo di rilascio"
-python .graph/chiedi_codex.py --piano "chi è il referente di RTC?"
+python .graph/chiedi_codex.py --piano "chi è il referente del rilascio?"
 ```
 
-Serve Codex CLI nel PATH, autenticata e con accesso ai modelli configurati. Le domande puntuali vanno a Luna;
-quelle ampie, senza agganci affidabili o sul sistema vanno a Sol (oppure Astra con `--ricerca astra`).
-`@sol` e `@astra` forzano il ruolo di ricerca. Se Luna fallisce o richiede più ricerca, si prova una volta il
-modello di ricerca. Un errore di quest'ultimo termina il comando: nessun ciclo di tentativi illimitato.
-Il figlio usa il sandbox `read-only`, nessuna richiesta di approvazione, sessione effimera e hook disabilitati
-per evitare ricorsione. Non raccoglie letture dal transcript né inventa associazioni dalle citazioni della risposta.
-`--piano` mostra la scelta senza chiamare modelli, consumare domande aperte o scrivere memoria; può ricostruire
-il grafo derivato se necessario. Ingest, lint e lacune restano flussi della chat con le quattro skill.
+`@sol` e `@astra` forzano il ruolo di ricerca. Se Luna fallisce o richiede ricerca, il comando prova una volta
+il modello di ricerca. Il processo usa un sandbox di sola lettura, una sessione effimera e hook disabilitati
+per evitare ricorsione. Ingest, lint e lacune si eseguono nella chat.
+`--piano` mostra la scelta senza chiamare modelli o scrivere memoria; può ricostruire il grafo derivato.
 
-## Aggiungere Copilot CLI a un vault Teseo esistente
+</details>
 
-```powershell
-python installa.py "C:/percorso/MioVault" --client copilot --solo-integrazione
+<details>
+<summary><strong>Copilot CLI: prompt, letture e compatibilità con Claude</strong></summary>
+
+`userPromptSubmitted` prepara il recall; `userPromptTransformed` lo aggiunge al testo destinato al modello,
+conservando il contenuto già trasformato dal runtime. `postToolUse` registra le letture `view` riuscite;
+`agentStop` e `sessionEnd` chiudono il turno e la sessione. `sessionStart` fornisce le regole iniziali.
+Risponde il modello attivo di Copilot, senza avviare Claude o applicare i ruoli Codex.
+
+Copilot carica anche `.claude/settings.json` e `.claude/settings.local.json`. L'installatore migra gli handler
+Teseo verso un wrapper che ignora i payload Copilot ed elimina i doppioni Teseo dal file locale,
+conservando gli altri handler e i permessi. Le configurazioni cambiate hanno una copia di sicurezza.
+
+Il formato è stato verificato con **Copilot CLI 1.0.83**. Le versioni senza `userPromptTransformed` richiedono
+recall esplicito tramite la skill query. Riferimento: [hook Copilot CLI](https://docs.github.com/en/copilot/reference/hooks-reference).
+
+</details>
+
+## Dentro il vault
+
+```text
+MioVault/
+├── raw/                    Fonti originali, immutabili
+├── wiki/                   Pagine Markdown con frontmatter e wikilink
+├── Wiki reference.md       Convenzioni, fonti e vocabolario delle relazioni
+├── index.md                Indice delle pagine e punti aperti
+├── log.md                  Cronologia delle operazioni
+├── .graph/                 Script Python, grafo e memoria SQLite
+├── .claude/                Configurazione e skill Claude Code
+├── .codex/                 Hook Codex; skill in .agents/skills/
+├── .github/                Configurazione e skill Copilot CLI
+├── CLAUDE.md               Istruzioni Claude Code
+└── AGENTS.md               Istruzioni Codex
 ```
 
-Installa gli adattatori e i file `.github/` senza aggiornare il motore personalizzato del grafo.
-`--aggiorna --solo-integrazione` aggiorna soltanto gli adattatori selezionati e le skill, con backup.
-Le istruzioni esistenti sono conservate: integra quelle del modello se erano già personalizzate.
+Il grafo si ricostruisce dai file della wiki. Convenzioni e relazioni sono definite in `Wiki reference.md`,
+così puoi adattare il kit al tuo dominio. Le pagine e le fonti sono dati da verificare, non istruzioni da eseguire.
 
-Gli hook nativi preparano il recall a `userPromptSubmitted`, lo aggiungono al testo destinato al modello
-a `userPromptTransformed`, registrano le letture `view` riuscite e consolidano la memoria a fine turno.
-Il testo trasformato dal runtime è conservato; il modello rimane quello scelto nella sessione Copilot.
-Se il recall fallisce, l'adattatore aggiunge indicazioni per cercare e verificare nelle pagine.
+## Aggiornamenti e opzioni
 
-Copilot importa anche gli hook `.claude/settings*.json`: l'installatore migra gli handler Teseo verso
-`claude_hook.py`, che riconosce il payload Copilot e non avvia il router Claude. Elimina i doppioni Teseo
-dal file locale dopo averli registrati nel file condiviso, conservando gli altri handler e i permessi.
-Le configurazioni cambiate hanno una copia di sicurezza accanto al file originale.
+Dal repository Teseo, con l'ambiente Python attivo:
 
-Riapri Copilot nella cartella del vault e verifica le configurazioni con `/env`; vale il normale consenso
-del workspace. File, account e permessi globali non vengono modificati. Il formato è stato confrontato
-con Copilot CLI 1.0.83 e la [documentazione degli hook](https://docs.github.com/en/copilot/reference/hooks-reference).
-I test locali esercitano i callback senza chiamare modelli o servizi di rete; le versioni prive di
-`userPromptTransformed` richiedono recall esplicito tramite la skill query.
+```sh
+git pull
+python installa.py "PERCORSO_DEL_VAULT"
+```
 
-## Verifiche locali
+Senza `--aggiorna`, gli script e le skill già presenti ma diversi dal kit sono conservati.
+Per sostituirli, usa `--aggiorna`: i precedenti vengono salvati in `.graph_backup/<data-ora>/`.
+Le personalizzazioni di dominio negli script vanno riportate dal backup: vedi [ADATTA.md](ADATTA.md#dopo-un-aggiornamento).
+I file di istruzioni già presenti e i modelli personalizzati di `.graph/codex.json` sono conservati.
 
-```powershell
+**Teseo è già installato e vuoi aggiungere un client?**
+
+```sh
+python installa.py "PERCORSO_DEL_VAULT" --client codex --solo-integrazione
+python installa.py "PERCORSO_DEL_VAULT" --client copilot --solo-integrazione
+```
+
+`--solo-integrazione` aggiunge gli adattatori del client senza aggiornare script di dominio, pagine o database.
+Con `--aggiorna --solo-integrazione` sostituisce soltanto gli adattatori selezionati e le skill, con backup.
+Se un file di istruzioni era già personalizzato, integra le indicazioni del relativo modello in [kit/vault/](kit/vault/).
+
+| Opzione | Effetto |
+| --- | --- |
+| `--client tutti` | Claude, Codex e Copilot nel vault; **predefinito**. |
+| `--client claude`, `--client codex` o `--client copilot` | Configura il singolo client. |
+| `--client entrambi` | Claude + Codex, per compatibilità con le versioni precedenti. |
+| `--skill vault` | Skill locali al vault; **predefinito**. |
+| `--skill utente` | Skill globali esplicite in `~/.claude/skills/`, `~/.agents/skills/` o `~/.copilot/skills/`. |
+| `--skill no` | Non installa le skill. |
+| `--solo-integrazione` | Aggiunge un client a un vault con Teseo già installato. |
+| `--aggiorna` | Sostituisce script e skill diversi, con backup. |
+| `--esempio` | Aggiunge il vault d'esempio, se `wiki/` non contiene pagine Markdown al primo livello. |
+| `--prova` | Esegue la prova completa in una cartella temporanea, poi la elimina. |
+
+## Domande frequenti
+
+**Devo installare tutti e tre i client?** No. Ne basta uno, autenticato. Il default prepara le configurazioni
+locali di tutti e tre per poter passare da un client all'altro.
+
+**Serve Obsidian aperto?** No. Il kit lavora sui file Markdown e sui database SQLite del vault.
+
+**I documenti restano sul mio computer?** File e database del kit sono locali. I contenuti letti dall'assistente
+possono essere inviati al provider del modello secondo il funzionamento e la configurazione del client AI.
+
+**Il grafo non trova una risposta: è un errore?** Può mancare un alias, una relazione o il fatto stesso.
+L'assistente cerca nelle pagine, segnala ciò che manca e, quando applicabile, la memoria associa la domanda alle letture.
+
+**Non arriva il recall automatico.** Verifica il progetto aperto, il consenso agli hook e la versione del client.
+La skill query descrive anche il recall esplicito: resta utilizzabile se il client non supporta gli hook.
+
+**PowerShell blocca l'attivazione dell'ambiente virtuale.** Puoi usare il Prompt dei comandi nella cartella Teseo
+ed eseguire `.venv\Scripts\activate.bat`, poi continuare con gli stessi comandi `python`.
+
+**`misura.py` fallisce nel mio vault.** Il banco predefinito si riferisce alle pagine d'esempio.
+Adatta le domande e le pagine attese al tuo dominio seguendo [ADATTA.md](ADATTA.md#6-le-domande-di-prova).
+
+## Contribuire
+
+Per segnalare un problema o proporre una funzione, apri una [issue](https://github.com/manuel-albanesee/Teseo/issues).
+Per una correzione, proponi una pull request con il comportamento atteso e i controlli eseguiti.
+
+Dal repository, con le dipendenze installate:
+
+```sh
 python installa.py --prova
 python -m unittest discover -s tests -v
 ```
 
-Le verifiche non chiamano modelli: controllano l’installazione dei tre client, la convivenza degli hook,
-il recall, il routing, la memoria separata per turno e la conservazione dei dati del vault.
+Questi controlli non chiamano modelli: verificano installazione, convivenza degli hook, recall, routing,
+memoria e conservazione dei dati. Per esplorare il codice:
 
-## Cosa contiene
+| Percorso | Contenuto |
+| --- | --- |
+| [installa.py](installa.py) | Installazione, aggiornamenti e configurazione dei client. |
+| [kit/graph/](kit/graph/) | Grafo, recall, hook, memoria, domande aperte e misure. |
+| [kit/skills/](kit/skills/) | Le quattro operazioni della wiki. |
+| [kit/vault/](kit/vault/) | Modelli delle convenzioni e delle configurazioni. |
+| [kit/esempio/](kit/esempio/) | Vault dimostrativo e banco di prova. |
+| [tests/](tests/) | Test di regressione delle integrazioni. |
 
-```text
-installa.py          l'installatore
-ADATTA.md            come adattare un vault già in uso (copiato nel vault in .graph/ADATTA.md)
-kit/graph/           gli script di .graph/: grafo, recupero, hook, memoria, domande aperte, sintesi, misura
-                     (banco.py e candidati.py sono facoltativi: servono a migliorare il grafo)
-kit/skills/          le 4 skill: obsidian-wiki-ingest, -query, -lint, -fill-gaps
-kit/vault/           i modelli di Wiki reference.md, index.md, log.md, CLAUDE.md e gli hook
-kit/esempio/         il vault d'esempio usato da --prova e da --esempio
-```
+<details>
+<summary><strong>Comandi utili dalla cartella del vault</strong></summary>
 
-## Comandi di tutti i giorni
+| Comando | Uso |
+| --- | --- |
+| `python .graph/build_graph.py --check` | Ricostruisce il grafo e segnala i problemi. |
+| `python .graph/recall.py "domanda"` | Mostra i fatti collegati dal grafo. |
+| `python .graph/misura.py` | Misura il recupero sulle domande configurate per il vault. |
+| `python .graph/domande.py` | Elenca le domande aperte per l'autore. |
+| `python .graph/sintesi.py` | Trova risposte distribuite tra più pagine, candidate alla sintesi. |
+| `python .graph/memoria.py --turni` | Confronta pagine suggerite e pagine lette, turno per turno. |
 
-Dalla cartella del vault. L’assistente li usa attraverso le skill; servono anche per guardare dentro.
+</details>
 
-```text
-python .graph/build_graph.py --check     ricostruisce la mappa e segnala i problemi
-python .graph/recall.py "domanda"        i fatti che il vault metterebbe nel contesto
-python .graph/misura.py                  le domande di prova: non deve mai peggiorare
-python .graph/domande.py                 le domande aperte per l'autore
-python .graph/sintesi.py                 le domande a cui il vault sa rispondere senza una pagina
-python .graph/memoria.py --turni         pagine date dal grafo e pagine lette da Claude, turno per turno
-```
+## Origine del progetto
 
-Il ciclo di lavoro è **ingest → lint → lacune**: «ingerisci …», «lancia il lint», «colmiamo le lacune».
+Teseo parte dal pattern [LLM Wiki di Andrej Karpathy](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f):
+fonti immutabili, pagine distillate e convenzioni esplicite. Aggiunge il filo del grafo, il recall automatico,
+la memoria delle domande e un ciclo di manutenzione verificabile.
+
+[Torna all'inizio](#teseo)
