@@ -26,6 +26,8 @@ Se il vault ha un grafo tipizzato (es. `.graph/` con `build_graph.py` e `graph.s
 
 ## Procedura
 
+**Client:** in Copilot CLI leggi `.github/copilot-instructions.md`: gli hook `.github/hooks/teseo.json` aggiungono il recall al prompt del modello e registrano le letture `view` riuscite. Usa il modello attivo della sessione; i ruoli Sol/Astra/Luna riguardano solo Codex. In Codex leggi anche `AGENTS.md`. Gli hook nativi sono in `.codex/hooks.json`; se hanno già fornito il recall, usa quel contesto. Per le letture da shell usa `.graph/leggi.py` con il token di turno fornito dall'hook, così la memoria registra le pagine effettivamente aperte. In PowerShell adatta gli esempi POSIX (`/dev/null`, `&&`) alla shell disponibile, mantenendo il controllo dei codici di uscita.
+
 1. Parti dall'**index** per avere la mappa completa delle pagine; se il vault ha un tool di grafo/ricerca (es. Obsidian graph view, `qmd`), usalo per individuare orfane e cluster deboli. Se c'è `.graph/build_graph.py`, lancia per primo `python .graph/build_graph.py --check`. Poi interroga `graph.sqlite` (tabelle `entities`, `relations`, `aliases`): orfane = pagine senza archi `menziona` in entrata; pagine senza relazioni tipizzate = pagine che non compaiono come `source_id` con un `type` diverso da `menziona` e `documentato_in`.
    Se il vault archivia le risposte dell'autore (`python .graph/domande.py --risposte`), parti da quelle da consolidare: per ognuna verifica che le pagine indicate la riportino come `[nota-utente]` e cerca nelle altre pagine i punti che la ripetono superata o la contraddicono. Correggi le ripetizioni ovvie, riporta le contraddizioni sostanziali come al punto 3. Alla fine del lint, `python .graph/domande.py --consolida`.
 2. Scansiona sistematicamente le pagine (o l'area indicata dall'utente, se il lint è parziale) confrontando i claim tra loro.
@@ -45,5 +47,5 @@ Se il vault ha un grafo tipizzato (es. `.graph/` con `build_graph.py` e `graph.s
 
 ## Note operative
 
-- Un lint su un vault di dimensioni non banali è lavoro corposo: valuta di lanciarlo come **agente in background** con **Opus 5** (`model: opus`), salvo diversa indicazione dell'utente — è la convenzione già in uso su vault esistenti (vedi memoria di progetto se presente).
+- Per un lint corposo usa il modello di ricerca del client: Opus in Claude Code; Sol o Astra in Codex, secondo la configurazione del vault. Eventuali agenti in background seguono l'autorizzazione dell'utente e le capacità del client: questa skill non autorizza automaticamente una delega o un cambio di modello.
 - Il lint è per costruzione un'operazione di lettura/segnalazione, non di riscrittura massiva: se emergono correzioni ampie, proponile e chiedi conferma prima di applicarle su larga scala. Le pagine generate per entropia del passo 5 sono l'unica scrittura ammessa senza conferma: aggiungono e non modificano, portano l'avviso, e `--verifica` le controlla.

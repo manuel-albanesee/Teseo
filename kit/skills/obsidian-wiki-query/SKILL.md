@@ -10,6 +10,8 @@ Implementa l'operazione **Query** del pattern "LLM Wiki" di Andrej Karpathy
 
 ## Procedura
 
+**Client:** in Copilot CLI leggi `.github/copilot-instructions.md`: gli hook `.github/hooks/teseo.json` aggiungono il recall al prompt del modello e registrano le letture `view` riuscite. Usa il modello attivo della sessione; i ruoli Sol/Astra/Luna riguardano solo Codex. In Codex leggi anche `AGENTS.md`. Gli hook nativi sono in `.codex/hooks.json`; se hanno già fornito il recall, usa quel contesto. Per le letture da shell usa `.graph/leggi.py` con il token di turno fornito dall'hook, così la memoria registra le pagine effettivamente aperte. In PowerShell adatta gli esempi POSIX (`/dev/null`, `&&`) alla shell disponibile, mantenendo il controllo dei codici di uscita. Il routing effettivo Luna/Sol/Astra è disponibile nel comando autonomo `.graph/chiedi_codex.py`; nella chat risponde il modello attivo.
+
 1. **Interroga il grafo**, se il vault ne ha uno (es. `.graph/build_graph.py` e `.graph/recall.py`). Ricostruiscilo e passa la domanda così come l'ha scritta l'utente:
    `python .graph/build_graph.py > /dev/null && python .graph/recall.py "<domanda>"`
    La ricostruzione dura meno di un secondo e garantisce che il grafo rispecchi le pagine. L'output elenca le pagine riconosciute nella domanda (per nome o alias) e i fatti collegati: relazioni tipizzate (`referente`, `usa`, `parte_di`, …) e pagine menzionate. Se non stampa nulla, la domanda non contiene nomi di pagina né alias: prosegui dall'index.

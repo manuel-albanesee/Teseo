@@ -1,0 +1,7 @@
+{
+  "models": {
+    "research": "gpt-6.1-sol",
+    "deep": "gpt-6-astra",
+    "quick": "gpt-6-luna"
+  }
+}

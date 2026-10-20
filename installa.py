@@ -4,16 +4,21 @@ Cosa fa:
   - .graph/          copia gli script; uno script già presente e diverso dal kit si lascia com'è,
                      salvo --aggiorna (copia di sicurezza in .graph_backup/<data-ora>/, poi sostituito).
                      I database .sqlite e modello.json non si toccano mai.
+  - --client claude|codex|copilot|entrambi|tutti (predefinito tutti).
   - .claude/settings.json   aggiunge i 4 hook a quelli che ci sono già (copia di sicurezza settings.json.bak-<data-ora>);
                      un hook già registrato (stesso script) non si duplica.
-  - Wiki reference.md, index.md, log.md, CLAUDE.md, raw/, wiki/   solo se mancano.
-  - skill            in ~/.claude/skills/ (--skill utente, predefinito) o in <vault>/.claude/skills/ (--skill vault);
+  - .codex/hooks.json       hook nativi Codex (non autorizzati automaticamente), AGENTS.md e ruoli Sol/Astra/Luna.
+  - .github/               istruzioni, skill e hook nativi Copilot CLI, locali al vault.
+  - Wiki reference.md, index.md, log.md, CLAUDE.md/AGENTS.md, raw/, wiki/   solo se mancano.
+  - skill            .claude/skills per Claude, .agents/skills per Codex, .github/skills per Copilot; nel vault per default,
+                     utente solo con --skill utente;
                      una skill già presente e diversa si lascia, salvo --aggiorna.
 Alla fine controlla PyYAML e FTS5, lancia build_graph.py --check e, su un vault già in uso, dice cosa adattare
 (.graph/ADATTA.md, copiato insieme agli script).
 
 Uso:
-  python installa.py <cartella del vault> [--skill utente|vault|no] [--aggiorna] [--esempio]
+  python installa.py <vault> [--client claude|codex|copilot|entrambi|tutti] [--skill utente|vault|no] [--aggiorna] [--esempio]
+  python installa.py <vault> --client codex --skill vault --solo-integrazione
   python installa.py --prova        installa in una cartella temporanea con il vault d'esempio, verifica e cancella
 """
 import argparse
@@ -21,6 +26,7 @@ import filecmp
 import json
 import os
 import shutil
+import shlex
 import sqlite3
 import subprocess
 import sys
@@ -30,6 +36,10 @@ from pathlib import Path
 
 KIT = Path(__file__).resolve().parent / "kit"
 SCHEMA = ["Wiki reference.md", "index.md", "log.md", "CLAUDE.md"]
+CODEX_SCRIPT = {"codex_hook.py", "chiedi_codex.py", "leggi.py"}
+COPILOT_SCRIPT = {"copilot_hook.py"}
+CLAUDE_SCRIPT = {"claude_hook.py"}
+CLAUDE_HANDLER = ("modello_hook.py", "learn_hook.py", "claude_hook.py")
 FACOLTATIVI = {"banco.py", "candidati.py"}
 DOMINIO = ("misura.py (DOMANDE, ATTESE, ROUTING, NEGATIVI, TESTO, ATTESI_FALLITI, MEMORIA), recall.py e build_graph.py "
            "(PAROLE_COMUNI, PAROLE_COMUNI_NOMI, NON_RELAZIONI), domande.py (NON_TERMINI, CON_REFERENTE)")
@@ -77,56 +87,192 @@ def copia_file(sorgente, dest, aggiorna, backup_dir, rapporto, nome):
     return "aggiornato"
 
 
-def comando_python():
-    return "python" if shutil.which("python") else ("py" if shutil.which("py") else "python")
-
-
 def unisci_hook(vault, rapporto):
-    """Aggiunge gli hook del kit a .claude/settings.json senza toccare gli altri."""
+    """Migra solo gli handler Teseo: Copilot importa anche le impostazioni Claude."""
     kit = json.loads((KIT / "vault" / "settings.json").read_text(encoding="utf-8"))
-    python = comando_python()
+    argv = [Path(sys.executable).as_posix(), (vault / ".graph" / "claude_hook.py").as_posix()]
+    command = subprocess.list2cmdline(argv) if os.name == "nt" else shlex.join(argv)
     for gruppi in kit["hooks"].values():
         for g in gruppi:
             for h in g["hooks"]:
-                h["command"] = h["command"].replace("python ", f"{python} ", 1)
+                h["command"] = command
     path = vault / ".claude" / "settings.json"
-    if not path.exists():
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(kit, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        rapporto(".claude/settings.json", "creato con i 4 hook")
-        return
     try:
-        attuale = json.loads(path.read_text(encoding="utf-8"))
+        attuale = json.loads(path.read_text(encoding="utf-8-sig")) if path.exists() else {}
+        if not isinstance(attuale, dict) or not isinstance(attuale.get("hooks", {}), dict):
+            raise ValueError("hooks deve essere un oggetto JSON")
+        for evento in kit["hooks"]:
+            gruppi = attuale.get("hooks", {}).get(evento, [])
+            if not isinstance(gruppi, list):
+                raise ValueError(f"hooks.{evento} deve essere una lista")
+            for gruppo in gruppi:
+                if not isinstance(gruppo, dict) or not isinstance(gruppo.get("hooks"), list):
+                    raise ValueError(f"gruppo hooks.{evento} non valido")
+                if any(not isinstance(h, dict) or not isinstance(h.get("command", ""), str)
+                       for h in gruppo["hooks"]):
+                    raise ValueError(f"handler hooks.{evento} non valido")
     except ValueError as e:
-        rapporto.avviso(f".claude/settings.json non è JSON valido ({e}): hook NON registrati, correggerlo e rilanciare")
-        return
+        rapporto.avviso(f".claude/settings.json non valido ({e}): lasciato invariato")
+        return False
+    prima = json.dumps(attuale, ensure_ascii=False, sort_keys=True)
     hooks = attuale.setdefault("hooks", {})
-    aggiunti = []
     for evento, gruppi in kit["hooks"].items():
-        script = gruppi[0]["hooks"][0]["command"].split("/.graph/")[1].split('"')[0]
-        presenti = [h.get("command", "") for g in hooks.get(evento, []) for h in g.get("hooks", [])]
-        if any(script in c for c in presenti):
-            continue
-        hooks.setdefault(evento, []).extend(gruppi)
-        aggiunti.append(f"{evento} → {script}")
-    if not aggiunti:
+        nuovi = []
+        for gruppo in hooks.get(evento, []):
+            altri = [h for h in gruppo["hooks"] if not any(
+                script in h.get("command", "") for script in CLAUDE_HANDLER)]
+            if altri:
+                nuovi.append({**gruppo, "hooks": altri})
+        hooks[evento] = nuovi + gruppi
+    if prima == json.dumps(attuale, ensure_ascii=False, sort_keys=True):
         rapporto(".claude/settings.json", "hook già registrati")
-        return
-    backup = path.with_name(f"settings.json.bak-{adesso()}")
-    shutil.copyfile(path, backup)
+        return True
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        shutil.copyfile(path, path.with_name(f"settings.json.bak-{adesso()}"))
     path.write_text(json.dumps(attuale, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    rapporto(".claude/settings.json", f"aggiunti {', '.join(aggiunti)} (copia in {backup.name})")
+    rapporto(".claude/settings.json", "registrati 4 hook con adattatore Claude/Copilot")
+    return True
 
 
-def installa_skill(modo, vault, aggiorna, rapporto):
+def clienti(client):
+    if client == "tutti":
+        return ("claude", "codex", "copilot")
+    return ("claude", "codex") if client == "entrambi" else (client,)
+
+
+def ripulisci_hook_claude_locali(vault, rapporto):
+    """Gli handler Teseo sono già nel file condiviso; conserva quelli dell'utente."""
+    path = vault / ".claude/settings.local.json"
+    if not path.exists():
+        return True
+    try:
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
+        if not isinstance(data, dict) or not isinstance(data.get("hooks", {}), dict):
+            raise ValueError("hooks deve essere un oggetto JSON")
+        prima = json.dumps(data, sort_keys=True)
+        for evento, gruppi in data.get("hooks", {}).items():
+            if not isinstance(gruppi, list):
+                raise ValueError(f"hooks.{evento} deve essere una lista")
+            nuovi = []
+            for gruppo in gruppi:
+                if not isinstance(gruppo, dict) or not isinstance(gruppo.get("hooks"), list):
+                    raise ValueError(f"gruppo hooks.{evento} non valido")
+                if any(not isinstance(h, dict) or not isinstance(h.get("command", ""), str) for h in gruppo["hooks"]):
+                    raise ValueError(f"handler hooks.{evento} non valido")
+                altri = [h for h in gruppo["hooks"] if not any(s in h.get("command", "") for s in CLAUDE_HANDLER)]
+                if altri:
+                    nuovi.append({**gruppo, "hooks": altri})
+            data["hooks"][evento] = nuovi
+    except ValueError as error:
+        rapporto.avviso(f".claude/settings.local.json non valido ({error}): lasciato invariato")
+        return False
+    if prima != json.dumps(data, sort_keys=True):
+        shutil.copyfile(path, path.with_name(f"settings.local.json.bak-{adesso()}"))
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        rapporto(".claude/settings.local.json", "rimossi doppioni Teseo; hook utente conservati")
+    return True
+
+
+def unisci_hook_copilot(vault, rapporto):
+    """Configurazione nativa Copilot CLI v1; nessuna modifica al consenso utente."""
+    path = vault / ".github" / "hooks" / "teseo.json"
+    eventi = {"sessionStart": 15, "userPromptSubmitted": 45, "userPromptTransformed": 45,
+              "postToolUse": 10, "agentStop": 10, "sessionEnd": 10}
+    try:
+        attuale = json.loads(path.read_text(encoding="utf-8-sig")) if path.exists() else {"version": 1}
+        if not isinstance(attuale, dict) or attuale.get("version") != 1:
+            raise ValueError("version deve essere 1")
+        if not isinstance(attuale.get("hooks", {}), dict):
+            raise ValueError("hooks deve essere un oggetto JSON")
+        for evento in eventi:
+            handlers = attuale.get("hooks", {}).get(evento, [])
+            if not isinstance(handlers, list) or any(not isinstance(h, dict) for h in handlers):
+                raise ValueError(f"hooks.{evento} deve essere una lista di handler")
+    except ValueError as error:
+        rapporto.avviso(f".github/hooks/teseo.json non valido ({error}): lasciato invariato")
+        return False
+    prima = json.dumps(attuale, ensure_ascii=False, sort_keys=True)
+    hooks = attuale.setdefault("hooks", {})
+    script = str(vault / ".graph" / "copilot_hook.py")
+    for evento, timeout in eventi.items():
+        altri = [h for h in hooks.get(evento, []) if "copilot_hook.py" not in json.dumps(h)]
+        hooks[evento] = altri + [{"type": "command", "exec": sys.executable,
+                                 "args": [script, evento], "cwd": str(vault), "timeoutSec": timeout}]
+    if prima == json.dumps(attuale, ensure_ascii=False, sort_keys=True):
+        rapporto(".github/hooks/teseo.json", "hook già registrati")
+        return True
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        shutil.copyfile(path, path.with_name(f"teseo.json.bak-{adesso()}"))
+    path.write_text(json.dumps(attuale, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    rapporto(".github/hooks/teseo.json", "registrati 6 hook nativi Copilot CLI")
+    return True
+
+
+def unisci_hook_codex(vault, rapporto):
+    """File nativo Codex; conserva gli hook estranei e richiede trust normale."""
+    path = vault / ".codex" / "hooks.json"
+    try:
+        attuale = json.loads(path.read_text(encoding="utf-8-sig")) if path.exists() else {}
+        if not isinstance(attuale, dict) or not isinstance(attuale.get("hooks", {}), dict):
+            raise ValueError("hooks deve essere un oggetto JSON")
+        for evento in ("SessionStart", "UserPromptSubmit", "PostToolUse", "Stop"):
+            gruppi = attuale.get("hooks", {}).get(evento, [])
+            if not isinstance(gruppi, list):
+                raise ValueError(f"hooks.{evento} deve essere una lista")
+            for gruppo in gruppi:
+                if not isinstance(gruppo, dict) or not isinstance(gruppo.get("hooks"), list):
+                    raise ValueError(f"gruppo hooks.{evento} non valido")
+                if any(not isinstance(h, dict) or not isinstance(h.get("command", ""), str)
+                       for h in gruppo["hooks"]):
+                    raise ValueError(f"handler hooks.{evento} non valido")
+    except ValueError as error:
+        rapporto.avviso(f".codex/hooks.json non valido ({error}): lasciato invariato")
+        return False
+    prima = json.dumps(attuale, ensure_ascii=False, sort_keys=True)
+    hooks = attuale.setdefault("hooks", {})
+    argv = [sys.executable, str(vault / ".graph" / "codex_hook.py")]
+    command = subprocess.list2cmdline(argv) if os.name == "nt" else shlex.join(argv)
+    for evento, timeout in (("SessionStart", 15), ("UserPromptSubmit", 45), ("PostToolUse", 10), ("Stop", 10)):
+        gruppi = hooks.setdefault(evento, [])
+        nuovi = []
+        for gruppo in gruppi:
+            altri = [h for h in gruppo.get("hooks", []) if "codex_hook.py" not in h.get("command", "")]
+            if altri:
+                nuovi.append({**gruppo, "hooks": altri})
+        handler = {"type": "command", "command": command, "timeout": timeout}
+        if evento in ("SessionStart", "UserPromptSubmit"):
+            handler["additionalContextLimit"] = 5000
+        gruppo = {"hooks": [handler]}
+        if evento == "PostToolUse":
+            gruppo["matcher"] = "(^Read$|(^|__)(read_file|read_text_file)$)"
+        nuovi.append(gruppo)
+        hooks[evento] = nuovi
+    if prima == json.dumps(attuale, ensure_ascii=False, sort_keys=True):
+        rapporto(".codex/hooks.json", "hook già registrati")
+        return True
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        backup = path.with_name(f"hooks.json.bak-{adesso()}")
+        shutil.copyfile(path, backup)
+    path.write_text(json.dumps(attuale, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    rapporto(".codex/hooks.json", "registrati recall, memoria e avvio (review/trust richiesti da Codex)")
+    return True
+
+
+def installa_skill(modo, vault, aggiorna, rapporto, client="claude"):
     if modo == "no":
         rapporto("skill", "non installate (--skill no)")
         return
-    radice = Path.home() / ".claude" / "skills" if modo == "utente" else vault / ".claude" / "skills"
+    cartella_client = {"claude": ".claude", "codex": ".agents",
+                       "copilot": ".copilot" if modo == "utente" else ".github"}[client]
+    radice = (Path.home() if modo == "utente" else vault) / cartella_client / "skills"
     for cartella in sorted((KIT / "skills").iterdir()):
         dest = radice / cartella.name / "SKILL.md"
-        copia_file(cartella / "SKILL.md", dest, aggiorna, dest.parent / f"backup-{adesso()}", rapporto,
-                   f"skill {cartella.name} ({modo})")
+        backup = vault / ".graph_backup" / adesso() / "skills" / client / cartella.name
+        copia_file(cartella / "SKILL.md", dest, aggiorna, backup, rapporto,
+                   f"skill {cartella.name} ({client}, {modo})")
 
 
 def copia_esempio(vault, rapporto):
@@ -147,28 +293,37 @@ def copia_esempio(vault, rapporto):
     rapporto("vault d'esempio", "8 pagine, 2 fonti, banco.json, righe dell'indice")
 
 
-def controlla_ambiente(rapporto):
+def controlla_ambiente(rapporto, client="claude"):
     try:
         import yaml  # noqa: F401
         rapporto("PyYAML", "presente")
     except ImportError:
         rapporto.avviso(f"PyYAML manca: {sys.executable} -m pip install pyyaml")
     try:
-        sqlite3.connect(":memory:").execute("CREATE VIRTUAL TABLE t USING fts5(x)")
+        db = sqlite3.connect(":memory:")
+        try:
+            db.execute("CREATE VIRTUAL TABLE t USING fts5(x)")
+        finally:
+            db.close()
         rapporto("SQLite FTS5", "presente")
     except sqlite3.Error:
         rapporto.avviso("SQLite di questo Python non ha FTS5: il ripiego sul testo non funzionerà")
-    if not shutil.which("claude"):
+    if "claude" in clienti(client) and not shutil.which("claude"):
         rapporto.avviso("eseguibile claude non nel PATH: il routing verso Haiku non partirà (risponde il modello della sessione)")
+    if "codex" in clienti(client) and not shutil.which("codex"):
+        rapporto.avviso("Codex CLI non nel PATH: gli hook/skill nell'app restano utilizzabili, "
+                        "ma chiedi_codex.py richiede la CLI autenticata")
+    if "copilot" in clienti(client) and not shutil.which("copilot"):
+        rapporto.avviso("Copilot CLI non nel PATH: configurazione locale preparata, installare/autenticare la CLI per usarla")
 
 
 def controlla_vault(vault, rapporto):
     """Cosa manca a un vault già in uso perché il grafo lo veda bene. Solo lettura."""
-    nascoste = {".graph", ".claude", ".obsidian", ".git", ".trash", ".graph_backup"}
+    nascoste = {".graph", ".claude", ".codex", ".agents", ".github", ".obsidian", ".git", ".trash", ".graph_backup"}
     fuori = [p for p in vault.rglob("*.md")
              if not set(p.relative_to(vault).parts) & nascoste
              and p.relative_to(vault).parts[0] not in ("wiki", "raw")
-             and p.relative_to(vault).as_posix() not in SCHEMA]
+             and p.relative_to(vault).as_posix() not in [*SCHEMA, "AGENTS.md"]]
     sotto = [p for p in (vault / "wiki").rglob("*.md") if p.parent != vault / "wiki"]
     if fuori:
         rapporto.avviso(f"{len(fuori)} pagine fuori da wiki/ e raw/ (es. {fuori[0].relative_to(vault).as_posix()}): "
@@ -192,38 +347,91 @@ def esegui(vault, *argomenti):
     return p.returncode, p.stdout.decode("utf-8", "replace") + p.stderr.decode("utf-8", "replace")
 
 
-def installa(vault, skill="utente", aggiorna=False, esempio=False):
+def installa(vault, skill="vault", aggiorna=False, esempio=False, client="tutti", solo_integrazione=False):
     vault = vault.resolve()
+    if solo_integrazione and not (vault / ".graph" / "recall_hook.py").is_file():
+        raise ValueError("--solo-integrazione richiede un vault con Teseo già installato")
     gia_in_uso = vault.exists() and any(vault.rglob("*.md"))
     rapporto = Rapporto()
     print(f"Teseo → {vault}  ({'vault già in uso' if gia_in_uso else 'vault nuovo'})")
-    for cartella in ("raw", "wiki", ".graph"):
+    for cartella in ((".graph",) if solo_integrazione else ("raw", "wiki", ".graph")):
         (vault / cartella).mkdir(parents=True, exist_ok=True)
 
     backup = vault / ".graph_backup" / adesso()
     diversi = []
-    for f in sorted((KIT / "graph").glob("*.py")) + [KIT / "vault" / "requirements.txt", KIT.parent / "ADATTA.md"]:
+    selezionati = clienti(client)
+    migra_claude = "claude" in selezionati or ("copilot" in selezionati and any(
+        (vault / ".claude" / name).exists() for name in ("settings.json", "settings.local.json")))
+    adattatori = set()
+    if "codex" in selezionati:
+        adattatori.update(CODEX_SCRIPT)
+    if "copilot" in selezionati:
+        adattatori.update(COPILOT_SCRIPT)
+    if migra_claude:
+        adattatori.update(CLAUDE_SCRIPT)
+    sorgenti = sorted((KIT / "graph").glob("*.py"))
+    sorgenti = [f for f in sorgenti if f.name not in CODEX_SCRIPT | COPILOT_SCRIPT | CLAUDE_SCRIPT or f.name in adattatori]
+    if solo_integrazione:
+        sorgenti = [f for f in sorgenti if f.name in adattatori]
+    else:
+        sorgenti += [KIT / "vault" / "requirements.txt", KIT.parent / "ADATTA.md"]
+    for f in sorgenti:
         nome = f".graph/{f.name}" + (" (facoltativo)" if f.name in FACOLTATIVI else "")
         if copia_file(f, vault / ".graph" / f.name, aggiorna, backup, rapporto, nome) == "diverso":
             diversi.append(f.name)
-    if aggiorna and backup.exists():
+    if aggiorna and backup.exists() and not solo_integrazione:
         rapporto.avviso(f"script sostituiti: riportare a mano i dati di dominio dal backup "
                         f"({backup.relative_to(vault).as_posix()}): {DOMINIO}")
-    for nome in SCHEMA:
+    schema = [] if solo_integrazione else [n for n in SCHEMA if n != "CLAUDE.md"]
+    schema += ["CLAUDE.md"] if "claude" in clienti(client) else []
+    schema += ["AGENTS.md"] if "codex" in clienti(client) else []
+    for nome in schema:
         dest = vault / nome
         if dest.exists():
             rapporto(nome, "già presente, non toccato")
         else:
+            dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(KIT / "vault" / nome, dest)
             rapporto(nome, "creato dal modello del kit")
-    unisci_hook(vault, rapporto)
-    installa_skill(skill, vault, aggiorna, rapporto)
+    hook_ok = True
+    if migra_claude:
+        hook_ok = unisci_hook(vault, rapporto) and hook_ok
+        if hook_ok and "copilot" in selezionati:
+            hook_ok = ripulisci_hook_claude_locali(vault, rapporto) and hook_ok
+    if "codex" in clienti(client):
+        hook_ok = unisci_hook_codex(vault, rapporto) and hook_ok
+        if not (vault / ".graph" / "codex.json").exists():
+            shutil.copyfile(KIT / "graph" / "codex.json", vault / ".graph" / "codex.json")
+            rapporto(".graph/codex.json", "ruoli Sol/Astra/Luna creati")
+    if "copilot" in selezionati:
+        hook_ok = unisci_hook_copilot(vault, rapporto) and hook_ok
+        dest = vault / ".github/copilot-instructions.md"
+        if not dest.exists():
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(KIT / "vault/copilot-instructions.md", dest)
+            rapporto(".github/copilot-instructions.md", "creato dal modello del kit")
+        else:
+            rapporto(".github/copilot-instructions.md", "già presente, non toccato")
+    for selezionato in clienti(client):
+        installa_skill(skill, vault, aggiorna, rapporto, selezionato)
     if esempio:
         copia_esempio(vault, rapporto)
-    controlla_ambiente(rapporto)
-    if gia_in_uso:
+    controlla_ambiente(rapporto, client)
+    if gia_in_uso and not solo_integrazione:
         controlla_vault(vault, rapporto)
     rapporto.stampa()
+
+    if not hook_ok:
+        print("\nIntegrazione incompleta: correggere i file hook segnalati e rilanciare l'installazione.")
+        return 1
+
+    if "codex" in clienti(client):
+        print("\nCodex: riaprire il vault e revisionare/autorizzare gli hook con /hooks nella CLI "
+              "o nel controllo hook dell'app, se disponibile. Il progetto deve essere trusted. "
+              "L'installatore non modifica il trust né il modello attivo.")
+    if solo_integrazione:
+        print("\nIntegrazione completata: pagine, script di dominio e database esistenti non aggiornati.")
+        return 0
 
     codice, uscita = esegui(vault, ".graph/build_graph.py", "--check")
     righe = uscita.strip().splitlines()
@@ -237,18 +445,19 @@ def installa(vault, skill="utente", aggiorna=False, esempio=False):
     if diversi:
         print(f"\nScript diversi dal kit, lasciati come sono: {', '.join(diversi)}. "
               "Per aggiornarli: python installa.py <vault> --aggiorna")
-    print("\nPoi: riaprire Claude Code nella cartella del vault (gli hook valgono dalla sessione successiva)."
+    print("\nPoi: riaprire il client selezionato nella cartella del vault (gli hook valgono dalla sessione successiva)."
           + ("\nVault già in uso: seguire .graph/ADATTA.md per far vedere le pagine al grafo. Si può chiedere a Claude:"
              "\n  «Adatta questo vault al kit Teseo seguendo .graph/ADATTA.md, un passo alla volta, chiedendomi"
              " conferma prima di spostare o rinominare file.»" if gia_in_uso else ""))
     return codice
 
 
-def prova():
+def prova(client="tutti"):
     """Installazione di prova con il vault d'esempio in una cartella temporanea: niente esce da lì."""
     cartella = Path(tempfile.mkdtemp(prefix="teseo-prova-"))
     try:
-        installa(cartella, skill="vault", esempio=True)
+        if installa(cartella, skill="vault", esempio=True, client=client):
+            return 1
         print("\n=== verifica")
         controlli = [
             ("build_graph --check", [".graph/build_graph.py", "--check"], "nessun problema"),
@@ -284,17 +493,24 @@ def main():
     sys.stdout.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("vault", nargs="?", type=Path, help="cartella del vault (creata se non esiste)")
-    ap.add_argument("--skill", choices=("utente", "vault", "no"), default="utente",
-                    help="dove installare le 4 skill: ~/.claude/skills (utente), <vault>/.claude/skills (vault), no")
+    ap.add_argument("--skill", choices=("utente", "vault", "no"), default="vault",
+                    help="skill nel vault per default: .claude/skills, .agents/skills, .github/skills; "
+                         "utente per l'installazione globale, no per saltarle")
+    ap.add_argument("--client", choices=("claude", "codex", "copilot", "entrambi", "tutti"), default="tutti",
+                    help="client da configurare (predefinito: tutti, nel vault; entrambi = Claude e Codex)")
+    ap.add_argument("--solo-integrazione", action="store_true",
+                    help="aggiunge il supporto client a Teseo già installato, senza aggiornare grafo o pagine")
     ap.add_argument("--aggiorna", action="store_true", help="sostituisce script e skill diversi dal kit, con copia di sicurezza")
     ap.add_argument("--esempio", action="store_true", help="aggiunge il vault d'esempio (solo se wiki/ è vuota)")
     ap.add_argument("--prova", action="store_true", help="prova completa in una cartella temporanea, poi la cancella")
     args = ap.parse_args()
     if args.prova:
-        sys.exit(prova())
+        sys.exit(prova(args.client))
     if not args.vault:
         ap.error("indicare la cartella del vault, oppure --prova")
-    sys.exit(installa(args.vault, args.skill, args.aggiorna, args.esempio))
+    if args.solo_integrazione and args.esempio:
+        ap.error("--solo-integrazione non è compatibile con --esempio")
+    sys.exit(installa(args.vault, args.skill, args.aggiorna, args.esempio, args.client, args.solo_integrazione))
 
 
 if __name__ == "__main__":

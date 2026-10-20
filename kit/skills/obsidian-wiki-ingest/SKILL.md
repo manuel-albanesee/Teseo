@@ -15,6 +15,8 @@ Il vault è un repo di file markdown a 3 livelli:
 
 ## Procedura
 
+**Client:** in Copilot CLI leggi `.github/copilot-instructions.md`: gli hook `.github/hooks/teseo.json` aggiungono il recall al prompt del modello e registrano le letture `view` riuscite. Usa il modello attivo della sessione; i ruoli Sol/Astra/Luna riguardano solo Codex. In Codex leggi anche `AGENTS.md`. Gli hook nativi sono in `.codex/hooks.json`; se hanno già fornito il recall, usa quel contesto. Per le letture da shell usa `.graph/leggi.py` con il token di turno fornito dall'hook, così la memoria registra le pagine effettivamente aperte. In PowerShell adatta gli esempi POSIX (`/dev/null`, `&&`) alla shell disponibile, mantenendo il controllo dei codici di uscita.
+
 1. **Localizza il vault e lo schema.** Se non è ovvio dal contesto, chiedi o cerca il file indice/convenzioni (spesso in root del vault). Non riscrivere le convenzioni esistenti senza motivo: seguile.
 2. **Leggi la fonte grezza** per intero (o a blocchi se molto lunga). Se disponibile, usa i timestamp/riferimenti originali (es. `[mm:ss → mm:ss]`) per poterli citare nelle note.
 3. **Distilla, non trascrivere.** Ogni nota è **atomica**, in stile enciclopedico, un concetto/entità per nota — non un riassunto lineare né una copia verbatim della fonte. Collega densamente con `[[wikilink]]` alle note esistenti e a quelle nuove.
@@ -39,5 +41,5 @@ Il vault è un repo di file markdown a 3 livelli:
 ## Note operative
 
 - Preferisci restare coinvolti passo-passo su fonti singole importanti (l'utente legge i riassunti e guida cosa enfatizzare); per batch di più fonti a bassa supervisione, procedi e riporta un riepilogo finale.
-- Se la fonte è lunga (es. trascrizioni >30 min) e il lavoro è quindi corposo (20-45 min), valuta di lanciarlo come **agente in background** con **Opus 5** (`model: opus`), salvo diversa indicazione dell'utente — è la convenzione già in uso su vault esistenti (vedi memoria di progetto se presente).
+- Per lavori corposi usa il modello di ricerca del client: Opus in Claude Code; Sol o Astra in Codex, secondo la configurazione del vault. Eventuali agenti in background seguono l'autorizzazione dell'utente e le capacità del client: questa skill non autorizza automaticamente una delega o un cambio di modello.
 - Non modificare mai i raw sources.

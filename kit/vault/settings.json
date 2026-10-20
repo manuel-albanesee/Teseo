@@ -3,14 +3,14 @@
     "SessionStart": [
       {
         "hooks": [
-          { "type": "command", "command": "python \"${CLAUDE_PROJECT_DIR}/.graph/modello_hook.py\"", "timeout": 15 }
+          { "type": "command", "command": "python \"${CLAUDE_PROJECT_DIR}/.graph/claude_hook.py\"", "timeout": 15 }
         ]
       }
     ],
     "UserPromptSubmit": [
       {
         "hooks": [
-          { "type": "command", "command": "python \"${CLAUDE_PROJECT_DIR}/.graph/modello_hook.py\"", "timeout": 180 }
+          { "type": "command", "command": "python \"${CLAUDE_PROJECT_DIR}/.graph/claude_hook.py\"", "timeout": 180 }
         ]
       }
     ],
@@ -18,14 +18,14 @@
       {
         "matcher": "Read",
         "hooks": [
-          { "type": "command", "command": "python \"${CLAUDE_PROJECT_DIR}/.graph/learn_hook.py\"", "timeout": 10 }
+          { "type": "command", "command": "python \"${CLAUDE_PROJECT_DIR}/.graph/claude_hook.py\"", "timeout": 10 }
         ]
       }
     ],
     "Stop": [
       {
         "hooks": [
-          { "type": "command", "command": "python \"${CLAUDE_PROJECT_DIR}/.graph/learn_hook.py\"", "timeout": 10 }
+          { "type": "command", "command": "python \"${CLAUDE_PROJECT_DIR}/.graph/claude_hook.py\"", "timeout": 10 }
         ]
       }
     ]

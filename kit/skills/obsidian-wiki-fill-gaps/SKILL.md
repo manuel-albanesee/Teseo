@@ -17,6 +17,10 @@ resto del vault e al grafo.
 
 ## Prerequisiti
 
+- In Copilot CLI leggi `.github/copilot-instructions.md`: gli hook `.github/hooks/teseo.json` aggiungono il recall al prompt del modello e registrano le letture `view` riuscite. Usa il modello attivo della sessione, senza avviare Claude o Codex.
+
+- In Codex leggi anche `AGENTS.md`: gli hook nativi sono in `.codex/hooks.json`. Per leggere da shell e registrare la memoria usa `.graph/leggi.py` con il token fornito dall'hook. Adatta gli esempi POSIX alla shell disponibile (in PowerShell non usare `/dev/null`). I ruoli di ricerca sono Sol/Astra in Codex e Opus in Claude Code; la sessione di domande resta interattiva nel client corrente.
+
 - Leggi per primo lo schema del vault (es. `Wiki reference.md` o `CLAUDE.md`): chiave per le note dell'autore,
   convenzioni di frontmatter, vocabolario delle relazioni, dove stanno i punti aperti. Le convenzioni del vault
   prevalgono su questa skill.
