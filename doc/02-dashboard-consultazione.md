@@ -1,14 +1,14 @@
 # 2 — Dashboard locale di consultazione
 
-Stato: progettazione futura. Dipende dal [contratto 1](01-contratto-dati-operazioni.md). Obiettivo utente: collegare una cartella già installata, vedere ontologia, grafo e diagnostica con una chiara indicazione della revisione. Non serve reinstallare o caricare il vault su un servizio remoto.
+Stato: bootstrap e attach readonly (2.1) implementati; API grafo e UI di consultazione ancora future. Dipende dal [contratto 1](01-contratto-dati-operazioni.md). Obiettivo utente: collegare una cartella già installata, vedere ontologia, grafo e diagnostica con una chiara indicazione della revisione. Non serve reinstallare o caricare il vault su un servizio remoto. Dettagli effettivamente disponibili nel [registro implementazioni](08-analisi-avanzamento.md).
 
 ## Punto di partenza e scope
 
-Nel [README](../README.md) e nell'[installatore](../installa.py) sono presenti strumenti CLI e integrazioni per client; non è presente un server/frontend. [build_graph.py](../kit/graph/build_graph.py) produce tabelle `entities`, `relations`, `aliases`, `varianti` e FTS `testo`. [Wiki reference.md](../kit/vault/Wiki%20reference.md) definisce convenzioni e vocabolario, non una API. Questa fase consulta; non modifica ontologia, non esegue ingest/lint e non sincronizza Git. Il rebuild locale derivato resta un job esplicito e coordinato, mai un effetto nascosto di una GET.
+Il punto di partenza era un kit di strumenti CLI e integrazioni per client; il bootstrap HTTP locale è stato aggiunto nell'incremento 2.1. [build_graph.py](../kit/graph/build_graph.py) produce tabelle `entities`, `relations`, `aliases`, `varianti` e FTS `testo`. [Wiki reference.md](../kit/vault/Wiki%20reference.md) definisce convenzioni e vocabolario, non una API. Questa fase consulta; non modifica ontologia, non esegue ingest/lint e non sincronizza Git. Il rebuild locale derivato resta un job esplicito e coordinato, mai un effetto nascosto di una GET.
 
 ## Componenti e flusso proposti
 
-`kit/dashboard/server.py` serve API e asset; `graph_service.py` apre generazioni readonly; un registro in `.teseo/local/` associa UUID a percorsi canonici locali. Un comando futuro `teseo-dashboard --vault "C:/Obsidian/MioVault"` avvia su loopback e apre il browser. Il packaging del comando è parte dell'implementazione, non esiste oggi.
+`kit/dashboard/server.py` serve il bootstrap API e la pagina di collegamento. Il launcher disponibile è `python .graph/teseo_dashboard.py --vault "C:/Obsidian/MioVault"`, con `--no-browser` facoltativo. Il registro di questo incremento è in memoria e termina con il servizio; la persistenza proposta in `.teseo/local/` è rinviata alla distribuzione completa (2.4). API grafo, metadati di revisione e UI di consultazione seguono nei prossimi incrementi; non esiste ancora un entrypoint binario `teseo-dashboard`.
 
 1. L'utente indica un percorso locale tramite comando o form e visualizza la cartella risolta.
 2. `POST /api/v1/vaults/attach` valida root, file attesi e compatibilità senza eseguire file del vault. Restituisce `vault_id`, modalità `readonly/compatible/legacy/incompatible`, problemi e capacità.
@@ -55,7 +55,7 @@ Ogni lettura usa una generazione stabile e breve connessione SQLite; durante reb
 - Rebuild fallito mostra l'ultima revisione valida e la causa; una GET non cambia DB domande/memoria.
 - Provare vault grande, paginazione, refresh durante cambio generazione, browser senza rete, XSS Markdown, POST cross-origin e path traversal.
 
-Comandi **esistenti** per regressione futura dalla root: `python installa.py --prova`, `python -m unittest discover -s tests -v`. Test **da creare**: `tests/test_dashboard_readonly.py`, poi `python -m unittest discover -s tests -p 'test_dashboard_readonly.py' -v`; smoke browser documentato dopo scelta della libreria, senza inventare oggi un runner E2E. Verifica manuale su Windows: SQLite aperto mentre il servizio pubblica una nuova generazione. Non sono test eseguiti da questa redazione.
+Regressioni dalla root: `python installa.py --prova`, `python -m unittest discover -s tests -v`. Test bootstrap disponibili: `tests/test_dashboard_readonly.py`, eseguibili con `python -m unittest discover -s tests -p 'test_dashboard_readonly.py' -v`. Test API grafo e UI completa restano futuri. Smoke browser ECC e risultati correnti sono registrati nel [registro implementazioni](08-analisi-avanzamento.md); il gate Windows del lettore SQLite aperto è stato verificato nell'incremento 1.4.
 
 ## Rollout, rollback e questioni aperte
 

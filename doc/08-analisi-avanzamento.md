@@ -23,7 +23,7 @@ a generazioni restano prerequisiti per attivare la dashboard e le automazioni.
 | Passo | Valutazione / lavoro restante |
 | --- | --- |
 | 1 | Contratti, journal, lock, snapshot, generazioni e backup disponibili; apply protetto note e recovery multi-file ancora da realizzare |
-| 2 | Bootstrap e UI attendono le fondazioni; scegliere server solo dopo prova packaging |
+| 2 | Bootstrap HTTP, launcher e attach readonly disponibili; API grafo e UI di consultazione ancora future |
 | 3 | Parser conservativo necessario; nessuna riscrittura implicita del vocabolario |
 | 4 | Probe e ricevuta da provare su ogni client; Stop non certifica il successo |
 | 5 | Canonicalizzazione disponibile; schema eventi per tipo, DAG, proiezioni e migrazione ancora da sviluppare |
@@ -220,3 +220,76 @@ validazione/manifest, scrittura esterna, arresto `os._exit` e ripresa, lettori C
 installati, hook, backup WAL e backup incompleto. Prova installatore, compilazione
 Python e revisione diff superate. Nessuna nuova dipendenza. Non dichiarati
 coverage, lint dedicato o type checking non configurati.
+
+## Incremento 5 — bootstrap servizio e attach readonly (passo 2.1)
+
+`server.py`, `readonly.py` e `bootstrap_ui.py` introducono un servizio locale
+con pagina di collegamento e registro effimero dei vault. Scelta iniziale:
+`http.server` della standard library, vincolato a `127.0.0.1`, porta dinamica
+predefinita. Nessuna dipendenza server/UI aggiunta. Il servizio è per l'uso locale
+di questo bootstrap; nessuna esposizione di rete o hosting pubblico.
+
+Dal kit: `python -m kit.dashboard.server --vault "C:/Obsidian/MioVault"`.
+Da un vault aggiornato: `python .graph/teseo_dashboard.py --vault "C:/Obsidian/MioVault"`.
+`--vault` è ripetibile; senza argomento si sceglie la cartella nel form.
+`--no-browser` stampa solo il link; `--port` consente una porta esplicita.
+Il launcher è distribuito automaticamente dal percorso installer già esistente.
+Un aggiornamento completo del kit conserva personalizzazioni e backup; nessuna
+adozione implicita o scrittura del manifest progetto.
+
+Il servizio genera un token casuale per processo e apre il browser con il token
+nel frammento URL, che non è inviato nelle richieste HTTP. La pagina lo conserva
+solo in memoria e rimuove subito il frammento dall'indirizzo. Niente cookie,
+localStorage o sessionStorage; per ricaricare/riaprire la sessione si usa il link
+completo del launcher. La chiusura del tab lascia il processo attivo; Ctrl+C lo
+arresta e invalida la sessione. Token e header non sono salvati su disco o nei log
+HTTP. Il link stampato dal launcher resta una credenziale per quel processo.
+
+| Endpoint disponibile | Comportamento |
+| --- | --- |
+| `GET /` | Pagina statica, senza dati dei vault o token inseriti dal server |
+| `POST /api/v1/session` | Token di sessione obbligatorio; restituisce il CSRF |
+| `POST /api/v1/vaults/attach` | Sessione + Origin + CSRF; valida il solo campo `path` |
+| `GET /api/v1/vaults` | Lista dei vault collegati nella sessione autenticata |
+| `GET /api/v1/vaults/{uuid}/status` | Ricontrolla struttura, identità e compatibilità |
+
+Tutte le API richiedono `X-Teseo-Session`; le POST richiedono Origin esatto,
+JSON e `X-Teseo-CSRF` (escluso il bootstrap della sessione, protetto dal token).
+Host esatto, CORS chiuso, CSP con nonce, cache disabilitata, errori senza
+traceback, massimo 16 KiB per richiesta, 32 vault, 8 connessioni servite insieme,
+timeout socket 5 s e limite globale 120 richieste/minuto. Nessun endpoint shell,
+SQL, file arbitrari, rebuild o sync. HTML della pagina fisso; i dati dinamici
+vengono inseriti solo con `textContent`. Il codice ricevuto nei vault non viene
+importato o eseguito dal servizio.
+
+Attach accetta cartelle locali assolute, rifiuta URL/UNC e segnala errori
+strutturati per root errata o versioni incompatibili. `mode` è sempre `readonly`;
+`compatibility` distingue `compatible` da `legacy_readonly`. Il vault compatibile
+usa il proprio UUID; il legacy riceve un UUID derivato dal percorso canonico.
+Due clone con lo stesso UUID non sono collegati contemporaneamente nello stesso
+processo. `content_revision` e `graph_generation` sono null: l'attach non legge
+il grafo e non promette ancora una revisione dei contenuti. Le capacità grafo,
+rebuild, scrittura e sync sono esplicitamente disabilitate.
+
+Decisione di scope: registro solo in memoria per evitare qualsiasi scrittura
+nei vault, inclusi i legacy. Persistenza del registro rinviata al 2.4 e da
+progettare senza trasformare l'attach in una migrazione implicita. Nessun DB
+personale viene aperto, nessun file locale creato da attach o GET. La UI del 2.1
+mostra solo collegamento e compatibilità; grafo/ontologia/diagnostica sono il
+prossimo incremento 2.2, con revisione dichiarata e letture coerenti.
+
+Verifiche ECC `verification-loop` e `security-review`: suite completa 107 test,
+106 superati e uno skip symlink già noto. I 15 test del bootstrap includono HTTP
+reale su loopback, sessioni, Host/Origin/CSRF, input/size limit, CORS, rate limit,
+formato futuro, conflitto UUID tra clone, junction esterna, hash invariati dei
+file e nessuna esecuzione di script, launcher installato e arresto KeyboardInterrupt.
+Compilazione Python, revisione diff e `installa.py --prova` superati. Nessuna
+dipendenza aggiunta; coverage/type checker/lint dedicato non configurati.
+
+Smoke browser con Chrome DevTools ECC: pagina e sessione inizializzate, frammento
+URL rimosso, errore leggibile per percorso assente e attach di vault legacy
+riuscito. L'unico errore di rete osservato nello smoke corrisponde al 422 atteso
+del percorso assente. Servizio di prova e schede creati per il test arrestati e
+chiusi, fixture rimossa. Per rendere il listener raggiungibile dal browser è
+stato necessario eseguire il processo fuori dal sandbox Windows, sempre su
+loopback. Nessun vault reale è stato collegato o modificato per lo smoke.

@@ -403,6 +403,7 @@ memoria e conservazione dei dati. Per esplorare il codice:
 | --- | --- |
 | `python .graph/build_graph.py --check` | Valida e ricostruisce solo se valido; in caso di errore conserva il grafo precedente. |
 | `python .graph/backup_personal.py` | Backup consistente di memoria/domande in `.teseo/local/backups/`, per vault con manifest compatibile. |
+| `python .graph/teseo_dashboard.py --vault "C:/Obsidian/MioVault"` | Avvia il collegamento del vault in sola lettura su loopback; `--no-browser` stampa il collegamento senza aprire il browser. |
 | `python .graph/recall.py "domanda"` | Mostra i fatti collegati dal grafo. |
 | `python .graph/misura.py` | Misura il recupero sulle domande configurate per il vault. |
 | `python .graph/domande.py` | Elenca le domande aperte per l'autore. |
