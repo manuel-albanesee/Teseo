@@ -2,10 +2,11 @@
 
 Branch di sviluppo: `codex/dashboard-foundations`, creato da `main` il 22 ottobre
 2026. Nessun merge; i branch principali non vengono aggiornati. Ogni incremento
-runtime verificato prevede commit e push separati su questo branch. Il primo
-push è stato bloccato dalla revisione automatica: attesa conferma esplicita della
-destinazione `https://github.com/manuel-albanesee/Teseo.git`. I commit restano locali
-finché questa autorizzazione non è acquisita.
+runtime verificato prevede commit e push separati su questo branch.
+Destinazione autorizzata esplicitamente dall'utente:
+`https://github.com/manuel-albanesee/Teseo.git`. Pubblicati con due push ordinari
+distinti, in ordine: `01ba97e` (contratti) e `2e16787` (builder). Il branch locale
+segue `origin/codex/dashboard-foundations`; nessun merge eseguito.
 
 ## Valutazione del piano
 
