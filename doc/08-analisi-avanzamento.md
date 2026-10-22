@@ -369,3 +369,53 @@ corrotto, grafo precedente/legacy e assenza di modifiche ai file o ai DB
 personali. Superati anche gate del builder, regressioni bootstrap e launcher,
 compilazione Python, revisione diff e `installa.py --prova`. Nessuna nuova
 dipendenza; coverage, type checker e lint dedicato non configurati né dichiarati.
+
+
+## Incremento 7 — UI di consultazione (passo 2.3)
+
+Workbench statico servito dallo stesso processo: selezione/attach vault, revisioni,
+grafo diretto con lista equivalente, filtri per tipo/relazione, ricerca nei soli
+nodi caricati, dettaglio con proprietà/alias/fonti/testo, ontologia e diagnostica.
+Asset suddivisi in bootstrap_ui.py, ui_style.py e ui_script.py, copiati dal meccanismo
+esistente dell'installatore; nessuna nuova dipendenza o risorsa remota.
+
+Pin generazione per ogni richiesta dati, epoch della vista e contatori richiesta
+separati per grafo e dettaglio impediscono a risposte tardive di contaminare la
+selezione corrente. Paginazione esplicita da 50 nodi/archi; ricerca e conteggi
+etichettati come dati caricati. Disegno limitato a 12 nodi/80 archi tra questi,
+con etichette complete e direzione nelle liste. Perdita connessione, assenza grafo,
+risultati vuoti, dati parziali, stale e 409 hanno messaggi leggibili e retry esplicito.
+Nessun rebuild automatico, scrittura nei vault o storage persistente nel browser.
+
+Tutti i dati inseriti via textContent; il testo escaped delle API viene decodificato
+una sola volta con tre entità fisse e mostrato in pre, senza interpretare HTML,
+link o immagini. Il nonce CSP e la protezione della sessione/CSRF restano attivi.
+Selezione nodo sposta focus al dettaglio; controlli etichettati, focus visibile,
+lista equivalente e layout mobile impilato con grafo a scorrimento confinato.
+Il token resta in memoria e il link launcher va riaperto dopo reload della scheda.
+
+ECC verification-loop e frontend-design-direction: 121 test Python, 120 pass e
+uno skip Windows già noto; installer --prova superato. Compilazione Python,
+sintassi JS, controllo diff e scansione sink/storage client superati. Nessun
+coverage/type checker/linter dedicato configurato. Dopo gli ultimi adeguamenti
+UI rieseguite le 15 regressioni HTTP/packaging del bootstrap.
+
+Smoke Chrome DevTools ECC: 20 controlli riproducibili nello script
+`tests/dashboard_ui_smoke.js`, fixture sintetica da `tests/dashboard_ui_fixture.py`.
+Coperti paginazione completa di 57 nodi senza duplicati, filtri, vuoti, HTML ostile,
+fonti e direzioni, race dettaglio e refresh, offline simulato, caricamento sospeso,
+grafo assente simulato, pin nelle richieste e assenza chiamate mutanti. Gli hash
+di tutti i file fixture sono rimasti identici prima/dopo lo smoke. Verificati anche
+stale reale dopo modifica nota, rebuild esplicito esterno e 409 reale mantenendo
+50 nodi precedenti; refresh successivo legge il nuovo testo. Tastiera Enter/Tab,
+focus e contenuti lunghi verificati su mobile; scheda separata senza sessione
+mostra blocco e indicazione del link launcher. Nessun vault reale coinvolto.
+
+[Contratto e report ECC](evidence/step-2-3/report.json), con screenshot a viewport
+misurati 1440x900 e 390x844. Checker della skill superato; evidenze solo locali.
+Non è una certificazione screen reader/cross-browser né una suite UI in CI.
+L'unico errore console nell'ultima sessione browser è il 409 atteso della prova
+reale di cambio generazione. Servizio e fixture di prova rimossi a fine verifica.
+
+Prossimo incremento: distribuzione completa, arresto pulito e rebuild coordinato
+via API/UI (2.4), prima di procedere all'editor ontologia del passo 3.

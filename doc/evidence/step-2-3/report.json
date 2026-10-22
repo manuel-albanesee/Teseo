@@ -1,0 +1,21 @@
+{
+  "contract": "contract.md: workbench readonly, revisioni coerenti, lista equivalente al grafo, riferimento locale crema/verde",
+  "targetViewports": ["1440x900", "390x844"],
+  "accessibility": {"status":"pass", "evidence":"Chrome ECC: selezione nodo con Enter, Tab verso fonte, focus visibile solid; labels native e aria-pressed nelle viste, live status; pulsante nodo mobile 69px, hit area SVG 58 unità (oltre 44px anche con scala minima 700/900). Contrasto testo #242b2c/#f7f5ef e verde #205c53 su carta/bianco verificato; nessuna animazione o transizione, quindi nessuna dipendenza dal movimento. Lista con etichette complete equivalente al disegno limitato."},
+  "responsive": {"status":"pass", "evidence":"Emulazione ECC con innerWidth/innerHeight misurati 1440x900 e 390x844; scrollWidth del documento non supera innerWidth. Colonne impilate su mobile, grafo scorre nel proprio contenitore; dettaglio con hash e Markdown lungo va a capo, pre senza overflow orizzontale."},
+  "contentStates": {
+    "loading": {"status":"pass", "evidence":"Smoke riproducibile: richiesta status trattenuta, visibile Caricamento prima della risposta."},
+    "empty": {"status":"pass", "evidence":"Smoke: ricerca senza risultati e pagina grafo vuota simulata; testo Nessun nodo e invito a cambiare ricerca/filtri."},
+    "error": {"status":"pass", "evidence":"Smoke: fetch offline simulato con TypeError, retry esplicito riuscito; grafo assente simulato disabilita filtri e mantiene motivo diagnostico. Inoltre 409 reale dopo rebuild della fixture: 50 nodi precedenti conservati, paginazione bloccata; refresh legge il nuovo testo."},
+    "partial": {"status":"pass", "evidence":"Fixture reale: 50 nodi/50 archi iniziali, avviso dati parziali; pagine successive fino a tutti i 57 nodi senza duplicati. Grafo visuale limitato esplicitamente a 12 nodi e 80 archi. Modifica live della nota senza rebuild produce graph_stale visibile."},
+    "success": {"status":"pass", "evidence":"20 check browser pass (browser-checks.json), fonti/proprietà/relazioni e ontologia/diagnostica leggibili. Script/img/link della nota restano testo, nessun XSS o elemento attivo. Race di dettaglio e refresh ignorano risposte obsolete. Hash di tutti i file fixture identici prima/dopo smoke."},
+    "permission": {"status":"pass", "evidence":"Scheda ECC separata aperta senza frammento sessione: messaggio Sessione assente, Collega vault disabilitato, nessun dato caricato; sessione autenticata rimuove frammento dalla barra URL."}
+  },
+  "renderedEvidence": [
+    {"viewport":"1440x900", "artifact":"desktop.png", "observation":"Vista autenticata con filtri, revisioni, conteggi parziali e grafo diretto; etichette separate dopo riduzione da 24 a 12 nodi."},
+    {"viewport":"390x844", "artifact":"mobile.png", "observation":"Filtri impilati, messaggio dati parziali, scorrimento confinato al grafo, lista equivalente sotto."},
+    {"viewport":"390x844", "artifact":"mobile-detail.png", "observation":"Relazioni dirette e testo Markdown ostile inerte, contenuti lunghi a capo senza overflow."},
+    {"viewport":"390x844", "artifact":"revision-conflict.png", "observation":"Conflitto reale di generazione, avviso leggibile e richiesta di refresh esplicito."}
+  ],
+  "limits": "Verifica manuale con Chrome e smoke in pagina; non è un audit con screen reader né una matrice cross-browser. Solo fixture sintetica. Nessun servizio esterno riceve evidenze o contenuti. Coverage, type checker e linter dedicati non configurati."
+}

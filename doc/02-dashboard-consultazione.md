@@ -1,6 +1,6 @@
 # 2 — Dashboard locale di consultazione
 
-Stato: bootstrap/attach readonly (2.1) e API grafo, nodi, ontologia e diagnostica (2.2) implementati; UI di consultazione e rebuild via API ancora futuri. Dipende dal [contratto 1](01-contratto-dati-operazioni.md). Obiettivo utente: collegare una cartella già installata, vedere ontologia, grafo e diagnostica con una chiara indicazione della revisione. Non serve reinstallare o caricare il vault su un servizio remoto. Dettagli effettivamente disponibili nel [registro implementazioni](08-analisi-avanzamento.md).
+Stato: bootstrap/attach readonly (2.1), API (2.2) e UI di consultazione (2.3) implementati; distribuzione completa e rebuild via API (2.4) ancora futuri. Dipende dal [contratto 1](01-contratto-dati-operazioni.md). Obiettivo utente: collegare una cartella già installata, vedere ontologia, grafo e diagnostica con una chiara indicazione della revisione. Non serve reinstallare o caricare il vault su un servizio remoto. Dettagli effettivamente disponibili nel [registro implementazioni](08-analisi-avanzamento.md).
 
 ## Punto di partenza e scope
 
@@ -8,7 +8,7 @@ Il punto di partenza era un kit di strumenti CLI e integrazioni per client; il b
 
 ## Componenti e flusso proposti
 
-`kit/dashboard/server.py` serve le API readonly e la pagina di collegamento; `read_api.py` legge le generazioni del grafo. Il launcher disponibile è `python .graph/teseo_dashboard.py --vault "C:/Obsidian/MioVault"`, con `--no-browser` facoltativo. Il registro è in memoria e termina con il servizio; la persistenza proposta in `.teseo/local/` è rinviata alla distribuzione completa (2.4). La UI di consultazione segue nel 2.3; non esiste ancora un entrypoint binario `teseo-dashboard`.
+`kit/dashboard/server.py` serve le API readonly e la pagina di collegamento; `read_api.py` legge le generazioni del grafo. Il workbench UI offre grafo/lista, filtri, dettaglio, ontologia e diagnostica. Il launcher disponibile è `python .graph/teseo_dashboard.py --vault "C:/Obsidian/MioVault"`, con `--no-browser` facoltativo. Il registro è in memoria e termina con il servizio; la persistenza proposta in `.teseo/local/` è rinviata alla distribuzione completa (2.4). La UI di consultazione è disponibile dal 2.3; non esiste ancora un entrypoint binario `teseo-dashboard`.
 
 1. L'utente indica un percorso locale tramite comando o form e visualizza la cartella risolta.
 2. `POST /api/v1/vaults/attach` valida root, file attesi e compatibilità senza eseguire file del vault. Restituisce `vault_id`, modalità `readonly/compatible/legacy/incompatible`, problemi e capacità.
@@ -60,8 +60,36 @@ Ogni lettura usa una generazione stabile e breve connessione SQLite; durante reb
 - Rebuild fallito mostra l'ultima revisione valida e la causa; una GET non cambia DB domande/memoria.
 - Provare vault grande, paginazione, refresh durante cambio generazione, browser senza rete, XSS Markdown, POST cross-origin e path traversal.
 
-Regressioni dalla root: `python installa.py --prova`, `python -m unittest discover -s tests -v`. Test disponibili: `tests/test_dashboard_readonly.py` e `tests/test_dashboard_queries.py`, eseguibili con unittest discover e il relativo pattern. I test UI completa restano futuri. Smoke browser ECC e risultati correnti sono registrati nel [registro implementazioni](08-analisi-avanzamento.md); il gate Windows del lettore SQLite aperto è stato verificato nell'incremento 1.4.
+Regressioni dalla root: `python installa.py --prova`, `python -m unittest discover -s tests -v`. Test disponibili: `tests/test_dashboard_readonly.py` e `tests/test_dashboard_queries.py`, eseguibili con unittest discover e il relativo pattern. Lo smoke UI riproducibile è in `tests/dashboard_ui_smoke.js`, con fixture generata da `python tests/dashboard_ui_fixture.py <nuova-cartella>`. Le [evidenze ECC](evidence/step-2-3/report.json) documentano lo smoke Chrome; non è una suite browser automatica di CI. Smoke browser ECC e risultati correnti sono registrati nel [registro implementazioni](08-analisi-avanzamento.md); il gate Windows del lettore SQLite aperto è stato verificato nell'incremento 1.4.
 
 ## Rollout, rollback e questioni aperte
 
 Rilasciare sola consultazione prima dei pulsanti mutanti, che restano nascosti finché i passi successivi non sono disponibili. Arrestare il processo termina la UI locale; chiudere solo il tab non equivale ad arrestare il servizio. Rollback rimuove l'attivazione del launcher e conserva registro locale; gli asset possono essere ripristinati dal backup dell'installatore. Scelte aperte: porta dinamica, libreria HTTP, accessibilità del grafo tramite lista equivalente e dimensione massima pagina; definirle con fixture rappresentative, senza stime rigide.
+
+## UI disponibile (2.3)
+
+Avviare il launcher aggiornato e aprire il collegamento completo stampato nel
+terminale. Il frammento di sessione viene rimosso e il token resta solo in memoria:
+ricaricare la scheda richiede riaprire quel collegamento. Il registro vault termina
+con il servizio. I dati non vengono salvati nel browser.
+
+Selezione vault e Aggiorna vista caricano status, fissano la generazione e passano
+quel pin a tutte le letture successive. Filtri per tipo e relazione sono server-side;
+la ricerca testuale riguarda esclusivamente i nodi caricati. Le pagine contengono
+al massimo 50 nodi e 50 archi ciascuna; nodi e archi avanzano separatamente nel
+medesimo cursore. I conteggi descrivono dati caricati, non totali del vault.
+Il disegno mostra al massimo 12 nodi e 80 archi tra questi: frecce e liste esplicitano
+sorgente → tipo → destinazione. Su mobile il disegno scorre nel proprio contenitore.
+La lista completa dei nodi caricati offre etichette non abbreviate e navigazione
+tastiera. Selezione nodo sposta il focus al dettaglio con proprietà, alias, fonti,
+archi e documento della generazione. Markdown è testo preformattato: nessun HTML
+attivo né fetch di immagini/link dal contenuto. Fonti e relazioni aprono nodi tramite
+ID esatto; il percorso della nota è indicativo e non apre file arbitrari.
+
+Lo stato stale riguarda i contenuti vivi rispetto alla generazione pubblicata;
+si controlla con Aggiorna vista, senza polling implicito. Un 409 conserva i dati già
+caricati e blocca paginazione/filtri/dettagli fino al refresh esplicito. Risposte
+obsolete dopo cambio vista/vault/nodo sono scartate. Errori di rete offrono retry,
+grafo assente disabilita la consultazione e mantiene il motivo diagnostico. Nessuna
+GET avvia rebuild. Operazioni busy, persistenza registro, rebuild e relativa UI
+restano per il 2.4; export diagnostica non ancora disponibile.
