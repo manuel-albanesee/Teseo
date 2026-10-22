@@ -319,7 +319,7 @@ def controlla_ambiente(rapporto, client="claude"):
 
 def controlla_vault(vault, rapporto):
     """Cosa manca a un vault già in uso perché il grafo lo veda bene. Solo lettura."""
-    nascoste = {".graph", ".claude", ".codex", ".agents", ".github", ".obsidian", ".git", ".trash", ".graph_backup"}
+    nascoste = {".graph", ".claude", ".codex", ".agents", ".github", ".obsidian", ".git", ".trash", ".graph_backup", ".teseo"}
     fuori = [p for p in vault.rglob("*.md")
              if not set(p.relative_to(vault).parts) & nascoste
              and p.relative_to(vault).parts[0] not in ("wiki", "raw")
@@ -379,6 +379,12 @@ def installa(vault, skill="vault", aggiorna=False, esempio=False, client="tutti"
         nome = f".graph/{f.name}" + (" (facoltativo)" if f.name in FACOLTATIVI else "")
         if copia_file(f, vault / ".graph" / f.name, aggiorna, backup, rapporto, nome) == "diverso":
             diversi.append(f.name)
+    if not solo_integrazione:
+        for f in sorted((KIT / "dashboard").glob("*.py")):
+            nome = f".graph/dashboard/{f.name}"
+            if copia_file(f, vault / ".graph/dashboard" / f.name, aggiorna,
+                          backup / "dashboard", rapporto, nome) == "diverso":
+                diversi.append(nome)
     if aggiorna and backup.exists() and not solo_integrazione:
         rapporto.avviso(f"script sostituiti: riportare a mano i dati di dominio dal backup "
                         f"({backup.relative_to(vault).as_posix()}): {DOMINIO}")

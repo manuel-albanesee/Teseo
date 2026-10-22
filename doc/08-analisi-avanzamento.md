@@ -22,7 +22,7 @@ a generazioni restano prerequisiti per attivare la dashboard e le automazioni.
 
 | Passo | Valutazione / lavoro restante |
 | --- | --- |
-| 1 | Contratti, journal, lock kernel e snapshot implementati; integrazione chiamanti, apply protetto e generazioni ancora da realizzare |
+| 1 | Contratti, journal, lock, snapshot, generazioni e backup disponibili; apply protetto note e recovery multi-file ancora da realizzare |
 | 2 | Bootstrap e UI attendono le fondazioni; scegliere server solo dopo prova packaging |
 | 3 | Parser conservativo necessario; nessuna riscrittura implicita del vocabolario |
 | 4 | Probe e ricevuta da provare su ogni client; Stop non certifica il successo |
@@ -151,3 +151,72 @@ immutabilità raw, copia corrotta, fallimento di checkpoint e junction Windows.
 `python installa.py --prova`, compilazione Python, controllo whitespace e revisione
 diff superati. Nessuna dipendenza aggiunta; type checker, lint dedicato e coverage
 non configurati e non dichiarati eseguiti.
+
+## Incremento 4 — generazioni e backup consistenti (passo 1.4)
+
+Il 23 ottobre 2026 `graph_service.py` introduce il rebuild derivato su vault con
+manifest v1 compatibile. Non crea manifest e non adotta implicitamente i vault
+legacy. Usa `VaultLock`, acquisisce uno snapshot e costruisce da una copia dei
+byte acquisiti. Un confronto contenuti precede il cambio di generazione: una
+modifica esterna rilevata conserva il manifest precedente. Non risolve la race
+successiva all'ultimo hash con editor non cooperanti, né applica note o eventi.
+
+Il DB è `.teseo/local/graphs/<generation>.sqlite`; l'identificatore deriva dal
+digest contenuti e dalla versione del builder, inizialmente 1. Chi cambia il
+formato o la semantica del builder deve incrementare `BUILDER_VERSION`. Il piccolo
+manifest atomico `.teseo/local/graph-current.json` contiene revisione contenuti,
+generazione e SHA-256 del DB. Il candidato è chiuso, validato e fsyncato prima
+della promozione. I file già pubblicati non vengono sostituiti né cancellati.
+Un no-op con hash DB valido non cambia manifest e non avvia un nuovo build.
+
+Recovery del solo grafo: un arresto prima del cambio manifest lascia corrente
+la vecchia generazione. Un DB orfano è ricostruito e confrontato byte per byte
+prima di riutilizzarlo; una differenza blocca la promozione. Il fallimento del
+replace del manifest conserva la vista precedente. Dopo il cambio, il manifest
+identifica la vista completa. Non viene dichiarata recovery automatica delle
+operazioni mutanti del journal, né riparazione silenziosa di manifest corrotti.
+File orfani e vecchie generazioni restano conservati; pulizia e retention future.
+
+`graph_db.py` risolve il manifest una volta per connessione, apre SQLite readonly
+e associa `content_revision`, `graph_generation` e `graph_path`. I lettori già
+aperti terminano sulla vecchia generazione, inclusi su Windows. Recall, domande,
+memoria, sintesi, misura, banco, candidati e modello/recall hook usano questa
+apertura comune. Recall JSON e contesto dell'hook dichiarano revisione e
+generazione. Banco e misura passano ai sottoprocessi il percorso già fissato.
+I report legacy che leggono anche note vive non sono snapshot globali della UI;
+la futura API readonly dovrà servire dati della stessa revisione.
+
+CLI builder e recall hook attivano il nuovo percorso solo dove esiste il manifest
+del progetto (o una generazione già attiva, che non può tornare alle scritture
+legacy se il manifest progetto scompare). Gli hook confrontano contenuti per i
+vault compatibili, mentre il comportamento legacy basato su mtime resta
+compatibile. Gli export `--out` diversi dal percorso standard restano espliciti
+build legacy. Gli eventi condivisi bloccano il rebuild con errore strutturato
+finché non sarà disponibile il validatore del passo 5.
+
+L'installatore ora distribuisce i moduli in `.graph/dashboard/` e `graph_db.py`,
+preservando le personalizzazioni e i backup con la policy esistente
+`--aggiorna`. `--solo-integrazione` non aggiorna il runtime condiviso; per passare
+alle nuove capacità occorre aggiornamento completo del kit. L'installazione non
+crea manifest progetto e non cambia il formato dei DB personali.
+
+`python .graph/backup_personal.py` su vault compatibile esegue l'online backup
+SQLite dei DB personali esistenti, incluso WAL committato. Non copia i file
+SQLite a mano, non crea sorgenti mancanti e non rimuove/modifica la storia
+personale. Ogni destinazione UUID in `.teseo/local/backups/` ha un `backup.json`
+solo dopo integrità e hash verificati; una directory senza marker è incompleta
+e conservata per diagnosi. Timeout massimo configurabile via API, default 30 s
+per DB. I due DB sono backup individualmente consistenti, non una transazione
+congiunta fra memoria e domande. Nessun restore o export automatico.
+
+Prossimo passo: bootstrap servizio e attach readonly (2.1), senza attivare
+scritture delle note o sincronizzazione Git. Il requisito di apply protetto e la
+recovery multi-file rimangono bloccanti per i passi mutanti successivi.
+
+Verifica ECC `verification-loop`: suite completa 91 test (90 superati, uno skip
+symlink già noto); dopo l'aggiunta del crash reale, suite generazioni di 12 test
+tutti superati. Verificati lettore SQLite aperto su Windows, no-op, errori di
+validazione/manifest, scrittura esterna, arresto `os._exit` e ripresa, lettori CLI
+installati, hook, backup WAL e backup incompleto. Prova installatore, compilazione
+Python e revisione diff superate. Nessuna nuova dipendenza. Non dichiarati
+coverage, lint dedicato o type checking non configurati.

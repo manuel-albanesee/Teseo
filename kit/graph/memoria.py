@@ -33,6 +33,7 @@ import argparse
 import json
 import re
 import sqlite3
+from graph_db import connect_graph
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -266,7 +267,7 @@ def main():
         sys.exit(f"nessuna domanda corrisponde a «{args.dimentica}»" if not candidate else
                  f"«{args.dimentica}» è ambigua, corrisponde a: " + "; ".join(f"«{t}»" for t in candidate))
     if args.domanda:
-        grafo = sqlite3.connect(args.grafo)
+        grafo = connect_graph(args.grafo)
         esistenti = {id_ for (id_,) in grafo.execute("SELECT id FROM entities")}
         grafo.close()
         for pagina, testo in ricorda(mem, args.domanda, esistenti):

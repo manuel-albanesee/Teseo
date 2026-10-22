@@ -36,6 +36,7 @@ import argparse
 import json
 import re
 import sqlite3
+from graph_db import connect_graph
 import sys
 from collections import defaultdict
 from datetime import datetime
@@ -194,7 +195,7 @@ def main():
     ap.add_argument("--verifica", action="store_true", help="controlla le pagine generate per entropia")
     args = ap.parse_args()
     sys.stdout.reconfigure(encoding="utf-8")
-    db = sqlite3.connect(args.db)
+    db = connect_graph(args.db)
 
     if args.verifica:
         problemi = verifica(db, qui)

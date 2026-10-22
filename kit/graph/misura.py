@@ -47,6 +47,7 @@ import os
 import re
 import shutil
 import sqlite3
+from graph_db import connect_graph
 import subprocess
 import sys
 import time
@@ -538,7 +539,7 @@ def carica_regole(cartella):
 
 def esegui_hook(claude, vault, db_path, modello, domanda, regole, precarica):
     """Una domanda come la gestisce modello_hook.py: contesto del grafo, pagine pre-caricate, Haiku (o altro modello)."""
-    db = sqlite3.connect(db_path)
+    db = connect_graph(db_path)
     try:
         info = {id_: (tipo, descr) for id_, tipo, descr in db.execute("SELECT id, tipo, descrizione FROM entities")}
         semi, fatti, omessi = richiama(db, domanda)
@@ -618,7 +619,8 @@ def main():
             ap.error(f"{args.banco_confronta} non è un salvataggio di --banco-salva")
     if args.routing:
         sys.exit(1 if misura_routing() else 0)
-    db = sqlite3.connect(args.db)
+    db = connect_graph(args.db)
+    args.db = db.graph_path
     if args.solo_banco:
         usa_banco(db, args, prima)
         sys.exit(0)

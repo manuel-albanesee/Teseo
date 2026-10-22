@@ -1,4 +1,7 @@
-"""Costruisce .graph/graph.sqlite dal vault. Deterministico: nessun LLM.
+"""Costruisce il grafo dal vault. Deterministico: nessun LLM.
+
+Con manifest progetto compatibile pubblica generazioni in .teseo/local/graphs/;
+nei vault legacy mantiene .graph/graph.sqlite. Nessuna adozione implicita.
 
 Nodi: ogni pagina di wiki/ (id = nome del file) e ogni chiave citata in `fonti`.
 Archi:
@@ -40,7 +43,10 @@ from pathlib import Path
 
 import yaml
 
-from stemmer import stem
+try:
+    from .stemmer import stem
+except ImportError:
+    from stemmer import stem
 
 # Nomi che sono anche parole comuni: valgono solo scritti con la maiuscola (stessa lista di recall.PAROLE_COMUNI,
 # che non si può importare da qui: recall importa build_graph)
@@ -307,6 +313,15 @@ def publish_generation(candidate, out):
 
 
 def costruisci(vault, out):
+    managed = (vault / ".teseo/project.json").exists() or (vault / ".teseo/local/graph-current.json").exists()
+    if out.resolve() == (vault / ".graph/graph.sqlite").resolve() and managed:
+        try:
+            from ..dashboard.graph_service import rebuild
+        except ImportError:
+            from dashboard.graph_service import rebuild
+        reference = rebuild(vault)
+        print(f"→ {reference.path} · revisione {reference.content_revision}")
+        return []
     snapshot = parse_snapshot(vault)
     candidate = build_candidate(snapshot, out)
     try:

@@ -23,6 +23,7 @@ import argparse
 import json
 import re
 import sqlite3
+from graph_db import connect_graph
 import sys
 from collections import Counter, defaultdict
 from datetime import datetime
@@ -190,7 +191,8 @@ def carica(qui):
     d = SimpleNamespace(avvisi=avvisi, pagine={}, titolo_radici={}, corpo_radici={}, radici_pagina={},
                         alias_di=defaultdict(list), alias_norm=defaultdict(set), nomi=defaultdict(set),
                         collegate=defaultdict(set))
-    db = sqlite3.connect(grafo.resolve().as_uri() + "?mode=ro", uri=True)
+    db = connect_graph(grafo)
+    grafo = db.graph_path
     try:
         for id_, tipo, tags in db.execute("SELECT id, tipo, tags FROM entities WHERE tipo != 'fonte'"):
             d.pagine[id_] = {"tipo": tipo, "entropia": TAG_ENTROPIA in (tags or "").split(", ")}

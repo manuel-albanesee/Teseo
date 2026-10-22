@@ -21,6 +21,7 @@ import argparse
 import json
 import os
 import sqlite3
+from graph_db import connect_graph, resolve_graph
 import subprocess
 import sys
 from pathlib import Path
@@ -36,9 +37,9 @@ ORIGINI = {"sintesi", "hub", "isolata", "atteso_ko", "manuale"}
 
 
 def connetti(percorso):
-    if not percorso.exists():
+    if not resolve_graph(percorso).exists():
         sys.exit(f"{percorso} non esiste: lanciare prima .graph/build_graph.py")
-    return sqlite3.connect(percorso)
+    return connect_graph(percorso)
 
 
 def relazioni_tipizzate(db):
@@ -90,7 +91,7 @@ def domande_sintesi(db_path):
             return json.loads(esito.stdout.decode("utf-8"))
     except (OSError, ValueError, subprocess.SubprocessError):
         pass
-    db = sqlite3.connect(db_path)
+    db = connect_graph(db_path)
     try:
         return sintesi.candidate(db, QUI, tutte=True)
     finally:
@@ -188,7 +189,7 @@ def main():
     sys.stdout.reconfigure(encoding="utf-8")
     db = connetti(args.db)
     if args.semi:
-        scrivi_semi(args.db, db, QUI / "banco_semi.json")
+        scrivi_semi(db.graph_path, db, QUI / "banco_semi.json")
         return
     problemi = verifica(db, args.banco)
     for livello, testo in problemi:

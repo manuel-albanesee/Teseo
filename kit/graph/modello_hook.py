@@ -46,6 +46,7 @@ import re
 import shutil
 import subprocess
 import sqlite3
+from graph_db import connect_graph
 import sys
 import time
 from datetime import datetime, timedelta, timezone
@@ -298,7 +299,7 @@ def richiama(evento):
 
 def riconosciute(prompt):
     try:
-        db = sqlite3.connect(QUI / "graph.sqlite")
+        db = connect_graph(QUI / "graph.sqlite")
         try:
             return punti_di_partenza(db, prompt)
         finally:
@@ -317,7 +318,7 @@ def pagine_precaricate(domanda, vault=VAULT, budget=MAX_PAGINE_PRECARICATE):
     se restano meno di MIN_PAGINA_TRONCATA caratteri la si salta, perché un frammento non serve.
     """
     try:
-        db = sqlite3.connect(QUI / "graph.sqlite")
+        db = connect_graph(QUI / "graph.sqlite")
         try:
             semi = punti_di_partenza(db, domanda)
             tags = {id_: (t or "").split(", ") for id_, t in db.execute("SELECT id, tags FROM entities")}
@@ -373,7 +374,7 @@ def hub_fra(semi):
     if not semi:
         return []
     try:
-        db = sqlite3.connect(QUI / "graph.sqlite")
+        db = connect_graph(QUI / "graph.sqlite")
         try:
             return [s for s in semi if db.execute(
                 "SELECT COUNT(*) FROM relations WHERE type = 'parte_di' AND target_id = ?", (s,)).fetchone()[0]
@@ -389,7 +390,7 @@ def solo_nomi(domanda, semi):
     testo = f" {norm(domanda)} "
     nomi = list(semi)
     try:
-        db = sqlite3.connect(QUI / "graph.sqlite")
+        db = connect_graph(QUI / "graph.sqlite")
         try:
             nomi += [a for (a,) in db.execute(
                 f"SELECT alias FROM aliases WHERE entity_id IN ({','.join('?' * len(semi))})", semi)]

@@ -1,6 +1,7 @@
 """Hook UserPromptSubmit: mette nel contesto i fatti del grafo legati al prompt, prima che il modello parta.
 
 Se una pagina di wiki/, index.md o Wiki reference.md è più recente di graph.sqlite, ricostruisce prima il grafo.
+Nei vault con manifest compatibile usa invece snapshot/digest e generazioni immutabili con lock comune.
 Tutto lavora sul solo testo scritto dall'utente (recall.scritto): i blocchi <pasted_content> incollati non danno
 punti di partenza, non cercano nella memoria, non restano in sospeso e non fanno uscire domande aperte.
 Fatti: tutte le relazioni tipizzate e al più 10 link generici (limiti per tipo in recall.py); se qualcosa resta fuori,
@@ -42,6 +43,7 @@ import io
 import json
 import os
 import sqlite3
+from graph_db import connect_graph, resolve_graph, graph_reference
 import sys
 import time
 from pathlib import Path
@@ -104,6 +106,10 @@ def origine_semi(db, testo, dal_grafo, ricordate, dal_testo, semi):
 
 
 def aggiorna(vault, db):
+    if (vault / ".teseo/project.json").exists() or (vault / ".teseo/local/graph-current.json").exists():
+        from dashboard.graph_service import rebuild
+        previous = graph_reference(db).generation
+        return rebuild(vault).generation != previous
     sorgenti = [vault / "wiki", vault / "index.md", vault / "Wiki reference.md", *(vault / "wiki").glob("*.md")]
     ultima = max(p.stat().st_mtime for p in sorgenti if p.exists())
     if db.exists() and db.stat().st_mtime >= ultima:
@@ -131,10 +137,10 @@ def recall():
     try:
         ricostruito = aggiorna(qui.parent, db_path)
     except (Exception, SystemExit) as e:  # SystemExit: build_graph esce con sys.exit su alcuni errori
-        if not db_path.exists():
+        if not resolve_graph(db_path).exists():
             raise RuntimeError(f"grafo non ricostruito ({breve(e)}) e graph.sqlite assente") from e
         errore_build = breve(e)  # si va avanti col grafo precedente, dichiarandolo
-    db = sqlite3.connect(db_path)
+    db = connect_graph(db_path)
     mem = None if os.environ.get("GRAFO_SENZA_MEMORIA") == "1" else apri(qui / "memoria.sqlite")
     errore_domande = None
     turno = ([], [])  # (semi con origine, pagine iniettate) per il log; vuoti se il recall fallisce prima
@@ -175,6 +181,8 @@ def recall():
     ms = round((time.perf_counter() - inizio) * 1000)
 
     nota = " (grafo ricostruito)" if ricostruito else ""
+    if db.graph_generation:
+        nota += f" · generazione {db.graph_generation[:12]}"
     nota += f" · {len(dal_testo)} pagine dal testo" if dal_testo else ""
     nota += f" · {len(ricordate)} pagine dalla memoria" if ricordate else ""
     nota += " · domanda in attesa delle pagine lette" if in_sospeso else ""
@@ -184,6 +192,8 @@ def recall():
         nota += f" · domande aperte non disponibili: {errore_domande}"
     # il grafo vecchio può non rispecchiare le ultime modifiche: il modello lo deve sapere, anche senza fatti
     avvisi = [AVVISO_GRAFO_VECCHIO.format(errore=errore_build)] if errore_build else []
+    if db.content_revision:
+        avvisi.append(f"Revisione del grafo: {db.content_revision}; generazione: {db.graph_generation}.")
     if not semi:
         uscita = {"systemMessage": f"grafo: nessuna pagina riconosciuta · {ms} ms{nota}"}
         uscita["hookSpecificOutput"] = {"hookEventName": "UserPromptSubmit",

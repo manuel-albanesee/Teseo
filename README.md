@@ -402,11 +402,17 @@ memoria e conservazione dei dati. Per esplorare il codice:
 | Comando | Uso |
 | --- | --- |
 | `python .graph/build_graph.py --check` | Valida e ricostruisce solo se valido; in caso di errore conserva il grafo precedente. |
+| `python .graph/backup_personal.py` | Backup consistente di memoria/domande in `.teseo/local/backups/`, per vault con manifest compatibile. |
 | `python .graph/recall.py "domanda"` | Mostra i fatti collegati dal grafo. |
 | `python .graph/misura.py` | Misura il recupero sulle domande configurate per il vault. |
 | `python .graph/domande.py` | Elenca le domande aperte per l'autore. |
 | `python .graph/sintesi.py` | Trova risposte distribuite tra più pagine, candidate alla sintesi. |
 | `python .graph/memoria.py --turni` | Confronta pagine suggerite e pagine lette, turno per turno. |
+
+Nei vault con `.teseo/project.json` compatibile, il builder usa generazioni
+immutabili e i lettori risolvono `.teseo/local/graph-current.json`. Il file
+`.graph/graph.sqlite` resta il percorso legacy; può essere assente nella nuova
+modalità. L'installatore non crea il manifest e non migra automaticamente i vault.
 
 </details>
 

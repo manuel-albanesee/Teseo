@@ -36,6 +36,7 @@ import datetime
 import json
 import re
 import sqlite3
+from graph_db import connect_graph
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -380,7 +381,7 @@ def main():
     ap.add_argument("--consolida", action="store_true", help="segna come consolidate le risposte (fine del lint)")
     args = ap.parse_args()
     sys.stdout.reconfigure(encoding="utf-8")
-    db = sqlite3.connect(args.db)
+    db = connect_graph(args.db)
     if args.json or args.risposta or args.risposte or args.consolida:
         archivio = apri()
         if args.json:

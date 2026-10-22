@@ -50,6 +50,7 @@ import json
 import math
 import re
 import sqlite3
+from graph_db import connect_graph, resolve_graph
 import sys
 from collections import Counter, namedtuple
 from pathlib import Path
@@ -493,16 +494,19 @@ def main():
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args()
     sys.stdout.reconfigure(encoding="utf-8")
-    if not args.db.exists():
+    if not resolve_graph(args.db).exists():
         sys.exit(f"{args.db} non esiste: lanciare prima .graph/build_graph.py")
 
-    db = sqlite3.connect(args.db)
+    db = connect_graph(args.db)
     domanda = args.domanda if args.domanda is not None else sys.stdin.read()
     semi, fatti, omessi = richiama(db, domanda, args.tipizzate, args.menziona)
     if not semi:
         return
     if args.json:
-        print(json.dumps({"semi": semi, "fatti": fatti, "omessi": omessi}, ensure_ascii=False, indent=2))
+        result = {"semi": semi, "fatti": fatti, "omessi": omessi}
+        if db.content_revision:
+            result.update(content_revision=db.content_revision, graph_generation=db.graph_generation)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
     else:
         info = {id_: (tipo, descr) for id_, tipo, descr in db.execute("SELECT id, tipo, descrizione FROM entities")}
         print(formatta(semi, fatti, info, omessi))
