@@ -2,7 +2,10 @@
 
 Branch di sviluppo: `codex/dashboard-foundations`, creato da `main` il 22 ottobre
 2026. Nessun merge; i branch principali non vengono aggiornati. Ogni incremento
-runtime verificato ha commit e push separati su questo branch.
+runtime verificato prevede commit e push separati su questo branch. Il primo
+push è stato bloccato dalla revisione automatica: attesa conferma esplicita della
+destinazione `https://github.com/manuel-albanesee/Teseo.git`. I commit restano locali
+finché questa autorizzazione non è acquisita.
 
 ## Valutazione del piano
 
@@ -60,3 +63,29 @@ consentita su questo Windows); installazione `--prova` superata, compilazione e
 controllo whitespace superati. I test filesystem sono stati ripetuti fuori dal
 sandbox perché l'API Windows di risoluzione stretta dei percorsi viene negata
 anche nelle cartelle scrivibili. Nessun controllo del runtime è stato indebolito.
+
+## Incremento 2 — gate del builder legacy
+
+`build_graph.py` separa `parse_snapshot`, `validate_snapshot`, `build_candidate`
+e `publish_generation`. Parsing e controlli semantici precedono la creazione del
+candidato. Temporanei unici per build, connessioni chiuse, controllo integrità
+SQLite readonly e cleanup su errore. Sia CLI con/senza `--check` sia chiamata
+dall'hook rifiutano il grafo invalido: il precedente resta disponibile; l'hook
+usa il proprio fallback già esistente e dichiara il rebuild fallito.
+
+Questo completa la protezione da pubblicazione invalida del passo 1.3, non il
+passo 1 completo. `parse_snapshot` legge i dati in memoria, ma il chiamante deve
+ancora fornire una copia stabile: non offre isolamento da editor concorrenti.
+La pubblicazione conserva per compatibilità `.graph/graph.sqlite`: lettori Windows
+possono impedire il replace, che fallisce conservando il DB precedente. Restano
+da realizzare generazioni immutabili e migrazione dei lettori (1.4), journal,
+lock, digest e verifica pre-apply (1.2). Il vecchio hook controlla ancora mtime.
+Non vengono attivati dashboard, ingest/lint automatici o sincronizzazione dati.
+
+Esito incremento 2: suite completa 55 test, 54 superati e lo stesso skip symlink;
+dopo la revisione, suite mirata del builder rieseguita con tutti i 12 test
+superati (incluso il nuovo caso wiki mancante e frontmatter senza chiusura).
+`installa.py --prova`, compilazione Python, controllo whitespace e revisione diff
+superati. Nessuna nuova dipendenza. Nessun risultato di coverage o type checking
+è dichiarato. `main` resta sul commit iniziale `19e5288`; non esiste un branch
+locale `master` e nessun branch principale è stato modificato.

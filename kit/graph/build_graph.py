@@ -23,7 +23,8 @@ Vocabolario delle relazioni: tabella "## Relazioni tipizzate" in Wiki reference.
 
 Uso:
   python .graph/build_graph.py            ricostruisce graph.sqlite
-  python .graph/build_graph.py --check    ricostruisce e segnala problemi (exit 1 se ce ne sono)
+  python .graph/build_graph.py --check    valida e ricostruisce solo se valido (exit 1 per problemi)
+Anche senza --check un grafo invalido non sostituisce quello precedente.
 Una pagina con frontmatter YAML non valido non si salta: il build si ferma con un errore che ne dice il nome
 (ValueError da leggi; da riga di comando «errore: ...», exit 1).
 """
@@ -32,6 +33,7 @@ import os
 import re
 import sqlite3
 import sys
+import tempfile
 import unicodedata
 from functools import lru_cache
 from pathlib import Path
@@ -124,9 +126,15 @@ def leggi(path):
         fine = testo.find("\n---", 3)
         if fine != -1:
             try:
-                return yaml.safe_load(testo[3:fine]) or {}, testo[fine + 4:]
+                fm = yaml.safe_load(testo[3:fine])
+                if fm is None:
+                    fm = {}
+                if not isinstance(fm, dict):
+                    raise ValueError(f"{path.name}: frontmatter deve essere una mappa YAML")
+                return fm, testo[fine + 4:]
             except yaml.YAMLError as e:  # senza il nome della pagina l'errore di yaml non dice dove cercare
                 raise ValueError(f"{path.name}: frontmatter non valido ({str(e).strip().splitlines()[0]})") from e
+        raise ValueError(f"{path.name}: frontmatter senza delimitatore di chiusura")
     return {}, testo
 
 
@@ -142,7 +150,14 @@ def tipo_ammesso(ammessi, tipo, tipo_altro):
     return "qualsiasi" in ammessi or tipo in ammessi or ("stesso tipo" in ammessi and tipo == tipo_altro)
 
 
-def costruisci(vault, out):
+def parse_snapshot(vault):
+    """Legge i sorgenti in memoria senza scrivere il DB.
+
+    Il chiamante futuro deve fornire uno snapshot stabile: questa lettura legacy
+    non offre ancora isolamento dagli editor o coordinamento degli scrittori.
+    """
+    if not (vault / "wiki").is_dir():
+        raise ValueError("vault non valido: directory wiki/ assente")
     ref_path = vault / "Wiki reference.md"
     ref = ref_path.read_text(encoding="utf-8") if ref_path.exists() else ""
     indice = vault / "index.md"
@@ -153,7 +168,10 @@ def costruisci(vault, out):
     fonti_censite = {k: f.strip().strip("`").strip() for k, f in RIGA_FONTE.findall(ref)}
     vocabolario = leggi_vocabolario(ref)
 
-    pagine = {p.stem: leggi(p) for p in sorted((vault / "wiki").glob("*.md"))}
+    files = sorted((vault / "wiki").glob("*.md"))
+    if len({p.stem.casefold() for p in files}) != len(files):
+        raise ValueError("wiki/: nomi pagina con collisione di maiuscole/minuscole")
+    pagine = {p.stem: leggi(p) for p in files}
     nomi = {p.lower(): p for p in pagine}
     problemi = []
     entita, relazioni, alias = [], set(), []
@@ -192,7 +210,7 @@ def costruisci(vault, out):
 
     for chiave in sorted(fonti_usate):
         if chiave in nomi:
-            sys.exit(f"errore: la fonte '{chiave}' ha lo stesso nome di una pagina")
+            raise ValueError(f"la fonte '{chiave}' ha lo stesso nome di una pagina")
         if chiave not in fonti_censite:
             problemi.append(f"fonte '{chiave}' usata ma non censita in Wiki reference")
         entita.append((chiave, "fonte", fonti_censite.get(chiave), None, "", ""))
@@ -215,10 +233,34 @@ def costruisci(vault, out):
         if altro != nome:
             problemi.append(f"alias '{a}' di {nome} coincide con {altro}")
 
-    tmp = out.with_suffix(".tmp")
-    tmp.unlink(missing_ok=True)
-    db = sqlite3.connect(tmp)
-    db.executescript("""
+    return {"pagine": pagine, "entita": entita, "relazioni": relazioni,
+            "alias": alias, "problemi": tuple(problemi), "fonti_usate": fonti_usate,
+            "tipizzate": tipizzate, "vocabolario": vocabolario}
+
+
+class GraphValidationError(ValueError):
+    def __init__(self, problemi):
+        self.problemi = tuple(problemi)
+        super().__init__("; ".join(self.problemi))
+
+
+def validate_snapshot(snapshot):
+    """Diagnostica deterministica dei dati già letti, senza pubblicazione."""
+    return snapshot["problemi"]
+
+
+def build_candidate(snapshot, out):
+    """Candidato unico nello stesso filesystem, connessione chiusa prima del return."""
+    problemi = validate_snapshot(snapshot)
+    if problemi:
+        raise GraphValidationError(problemi)
+    fd, name = tempfile.mkstemp(prefix=f".{out.name}-", suffix=".tmp", dir=out.parent)
+    os.close(fd)
+    tmp = Path(name)
+    db = None
+    try:
+        db = sqlite3.connect(tmp)
+        db.executescript("""
         CREATE TABLE entities (id TEXT PRIMARY KEY, tipo TEXT, descrizione TEXT, path TEXT, tags TEXT, aggiornato TEXT);
         CREATE TABLE relations (source_id TEXT, target_id TEXT, type TEXT, UNIQUE (source_id, target_id, type));
         CREATE TABLE aliases (entity_id TEXT, alias TEXT);
@@ -227,24 +269,60 @@ def costruisci(vault, out):
         CREATE TABLE varianti (entity_id TEXT, variante TEXT);
         CREATE VIRTUAL TABLE testo USING fts5(id UNINDEXED, titolo, corpo, radici_titolo, radici_corpo,
                                               tokenize = 'unicode61 remove_diacritics 2');
-    """)
-    db.executemany("INSERT INTO entities VALUES (?,?,?,?,?,?)", entita)
-    db.executemany("INSERT INTO relations VALUES (?,?,?)", sorted(relazioni))
-    db.executemany("INSERT INTO aliases VALUES (?,?)", alias)
-    db.executemany("INSERT INTO varianti VALUES (?,?)",
-                   varianti_nomi([(nome, nome) for nome in pagine] + alias))
-    db.executemany("INSERT INTO testo VALUES (?,?,?,?,?)",
-                   [(nome, nome, corpo, ridotto(nome), ridotto(corpo)) for nome, (_, corpo) in pagine.items()])
-    db.commit()
-    db.close()
-    os.replace(tmp, out)
+        """)
+        pagine, alias = snapshot["pagine"], snapshot["alias"]
+        db.executemany("INSERT INTO entities VALUES (?,?,?,?,?,?)", snapshot["entita"])
+        db.executemany("INSERT INTO relations VALUES (?,?,?)", sorted(snapshot["relazioni"]))
+        db.executemany("INSERT INTO aliases VALUES (?,?)", alias)
+        db.executemany("INSERT INTO varianti VALUES (?,?)",
+                       varianti_nomi([(nome, nome) for nome in pagine] + alias))
+        db.executemany("INSERT INTO testo VALUES (?,?,?,?,?)",
+                       [(nome, nome, corpo, ridotto(nome), ridotto(corpo)) for nome, (_, corpo) in pagine.items()])
+        db.commit()
+    except BaseException:
+        if db is not None:
+            db.close()
+            db = None
+        tmp.unlink(missing_ok=True)
+        raise
+    finally:
+        if db is not None:
+            db.close()
+    return tmp
 
+
+def publish_generation(candidate, out):
+    """Compatibilità graph.sqlite: valida SQLite e sostituisce solo a DB chiuso.
+
+    Non implementa ancora le generazioni immutabili. Se un lettore Windows nega
+    il replace, l'errore risale al chiamante e il vecchio grafo resta corrente.
+    """
+    db = sqlite3.connect(candidate.resolve().as_uri() + "?mode=ro", uri=True)
+    try:
+        if db.execute("PRAGMA integrity_check").fetchall() != [("ok",)]:
+            raise ValueError("candidato SQLite non integro")
+    finally:
+        db.close()
+    os.replace(candidate, out)
+
+
+def costruisci(vault, out):
+    snapshot = parse_snapshot(vault)
+    candidate = build_candidate(snapshot, out)
+    try:
+        publish_generation(candidate, out)
+    finally:
+        candidate.unlink(missing_ok=True)
+
+    pagine, relazioni = snapshot["pagine"], snapshot["relazioni"]
+    fonti_usate, tipizzate = snapshot["fonti_usate"], snapshot["tipizzate"]
+    alias, vocabolario = snapshot["alias"], snapshot["vocabolario"]
     conta = lambda tipo: sum(1 for r in relazioni if r[2] == tipo)
     print(f"{len(pagine)} pagine, {len(fonti_usate)} fonti · {conta('menziona')} menziona, "
           f"{conta('documentato_in')} documentato_in, {len(tipizzate)} tipizzate, {len(alias)} alias"
           f"{'' if vocabolario is not None else ' · vocabolario non definito in Wiki reference'}")
     print(f"→ {out}")
-    return problemi
+    return []
 
 
 def main():
@@ -252,13 +330,18 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--vault", type=Path, default=qui.parent)
     ap.add_argument("--out", type=Path, default=qui / "graph.sqlite")
-    ap.add_argument("--check", action="store_true", help="segnala i problemi trovati; exit 1 se ce ne sono")
+    ap.add_argument("--check", action="store_true", help="valida e pubblica solo se valido; exit 1 per problemi")
     args = ap.parse_args()
     sys.stdout.reconfigure(encoding="utf-8")
 
     try:
         problemi = costruisci(args.vault, args.out)
-    except ValueError as e:  # frontmatter non valido: messaggio leggibile invece del traceback
+    except GraphValidationError as e:
+        for problema in e.problemi:
+            print(f"  ⚠️ {problema}")
+        print(f"{len(e.problemi)} problemi · grafo precedente conservato")
+        sys.exit(1)
+    except (ValueError, OSError, sqlite3.Error) as e:
         sys.exit(f"errore: {e}")
     if args.check:
         for p in problemi:

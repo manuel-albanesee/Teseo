@@ -401,7 +401,7 @@ memoria e conservazione dei dati. Per esplorare il codice:
 
 | Comando | Uso |
 | --- | --- |
-| `python .graph/build_graph.py --check` | Ricostruisce il grafo e segnala i problemi. |
+| `python .graph/build_graph.py --check` | Valida e ricostruisce solo se valido; in caso di errore conserva il grafo precedente. |
 | `python .graph/recall.py "domanda"` | Mostra i fatti collegati dal grafo. |
 | `python .graph/misura.py` | Misura il recupero sulle domande configurate per il vault. |
 | `python .graph/domande.py` | Elenca le domande aperte per l'autore. |
