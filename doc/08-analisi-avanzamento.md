@@ -23,7 +23,7 @@ a generazioni restano prerequisiti per attivare la dashboard e le automazioni.
 | Passo | Valutazione / lavoro restante |
 | --- | --- |
 | 1 | Contratti, journal, lock, snapshot, generazioni e backup disponibili; apply protetto note e recovery multi-file ancora da realizzare |
-| 2 | Bootstrap HTTP, launcher e attach readonly disponibili; API grafo e UI di consultazione ancora future |
+| 2 | Bootstrap, launcher, attach e API grafo/nodi/ontologia/diagnostica disponibili; UI di consultazione ancora futura |
 | 3 | Parser conservativo necessario; nessuna riscrittura implicita del vocabolario |
 | 4 | Probe e ricevuta da provare su ogni client; Stop non certifica il successo |
 | 5 | Canonicalizzazione disponibile; schema eventi per tipo, DAG, proiezioni e migrazione ancora da sviluppare |
@@ -293,3 +293,79 @@ del percorso assente. Servizio di prova e schede creati per il test arrestati e
 chiusi, fixture rimossa. Per rendere il listener raggiungibile dal browser è
 stato necessario eseguire il processo fuori dal sandbox Windows, sempre su
 loopback. Nessun vault reale è stato collegato o modificato per lo smoke.
+
+## Incremento 6 — API di consultazione coerenti (passo 2.2)
+
+`read_api.py` implementa GET status, graph, nodes, ontology e diagnostics sul
+servizio autenticato esistente. Nessuna GET ricostruisce, avvia modelli/Git o
+modifica note, raw, schema e DB personali. L'attach rimane una validazione leggera:
+capacità effettiva del grafo e metadati sono restituiti da `/status`.
+
+`BUILDER_VERSION` passa a 2. Ogni generazione incorpora `graph_documents` con
+note top-level, Wiki reference, index e log dello stesso snapshot del grafo.
+Raw, eventi e DB personali non sono copiati in questa tabella. I documenti
+versionati eliminano la lettura di note/schema vivi da parte delle API: un
+vault modificato dopo il build viene segnalato stale, ma testo e ontologia
+restano quelli della revisione pubblicata. I lettori CLI precedenti restano
+compatibili con le tabelle del grafo. Versione 1 e grafi legacy non forniscono
+questo contratto: `graph_upgrade_required` / `graph_unavailable`, senza migrazione
+implicita; per vault già compatibili, usare esplicitamente il builder aggiornato.
+
+Il parser del builder ora offre `leggi_testo` e `parse_documents`, riutilizzati
+dalla diagnostica in memoria senza temporanei né esecuzione di script del vault
+collegato. I moduli del parser sono quelli del runtime fidato del servizio e
+sono caricati solo quando necessari; bootstrap, help e attach legacy non
+importano builder dal vault. Il codice di un percorso registrato non viene
+aggiunto al percorso di import del servizio.
+
+Le API risolvono la generazione una volta per connessione, verificano SHA-256
+e metadati, poi usano SQLite readonly/immutable. Ogni risposta dati dichiara
+`content_revision` e `graph_generation`. Le richieste successive possono
+inviare `generation=<id>`; se la generazione corrente è cambiata ricevono
+`409 revision_changed`. Non è un pin globale automatico per tutte le richieste
+del processo: il client deve riportare l'ID della propria lettura. Una richiesta
+già aperta può terminare sulla precedente generazione, dichiarandola.
+
+| Endpoint | Risultato e limiti iniziali |
+| --- | --- |
+| `/status` | Capacità grafo, revisione pubblicata e live, stale, problemi; busy è null con busy_known=false finché non esiste il registry job |
+| `/graph` | Nodi e archi ordinati; limit 1–200 per ciascuna lista, default 100; filtri type/relation e cursore |
+| `/nodes/{node_id}` | ID esatto URL-encoded, proprietà normalizzate JSON, testo escaped, alias/fonti/archi con flag di troncamento oltre 200 |
+| `/ontology` | Tipi, relazioni dirette con significato/esempio, testo e sezioni opache escaped; catalogo dichiarato distinto dai tipi osservati/vincoli |
+| `/diagnostics` | Errori di parsing/semantica sulla generazione, problemi del grafo e stale; ogni problema include codice, severità, percorso e revisione |
+
+Il filtro `type` seleziona i nodi e il sottografo indotto su entrambi gli estremi;
+`relation` filtra gli archi, lasciando i nodi selezionati. Nodi e archi hanno
+progressione indipendente nello stesso cursore, per conservare anche archi tra
+nodi restituiti in pagine diverse. Cursori firmati HMAC per sessione, legati a
+vault, generazione, filtri e page size: alterazioni e riuso incompatibile sono
+rifiutati. Nessuna interpolazione di valori client nelle query SQL. Gli ID sono
+opachi ed esatti, non percorsi filesystem; traversal e separatori sono rifiutati.
+
+Risposte GET con ETag e supporto a If-None-Match esatto (304 senza corpo).
+Rimane `Cache-Control: no-store`: i client possono fare richieste condizionali
+esplicite, ma il servizio non abilita cache persistenti dei contenuti privati.
+Le risposte di errore non promettono una revisione dati e riportano campi null.
+Per un grafo indisponibile la diagnostica resta leggibile con revisione null.
+
+Limiti: DB massimo 512 MiB e query SQL limitate a 5 s; documento singolo 2 MiB;
+analisi semantica completa fino a 8 MiB / 2000 documenti, altrimenti avviso
+`diagnostics_limited`; massimo 200 problemi con flag truncated. Lo stato live
+usa lo scanner da 64 MiB e può dichiarare revisione live non disponibile. La
+diagnostica non certifica note vive non pubblicate né assenza di contraddizioni
+semantiche del dominio. I tipi inferiti dall'osservazione non diventano uno
+schema canonico e nessun documento è riscritto. Testo in `escaped_markdown`:
+nessun HTML ricevuto viene eseguito dal servizio.
+
+Prossimo punto: UI home, filtri, dettaglio e gestione stale/errori (2.3).
+Rebuild via API, registro persistente e coordinator mutanti rimangono futuri.
+
+Verifiche ECC: suite completa 121 test, 120 superati e uno skip symlink già noto.
+I 14 test delle query HTTP coprono stessa revisione sui cinque endpoint,
+paginazione senza duplicati, filtri e SQL injection, cursor tamper, cambio
+generazione/409, ETag/304, note e schema modificati senza rebuild, Unicode e
+traversal, HTML escaped, ontologia e diagnostica parsing/semantica, hash DB
+corrotto, grafo precedente/legacy e assenza di modifiche ai file o ai DB
+personali. Superati anche gate del builder, regressioni bootstrap e launcher,
+compilazione Python, revisione diff e `installa.py --prova`. Nessuna nuova
+dipendenza; coverage, type checker e lint dedicato non configurati né dichiarati.

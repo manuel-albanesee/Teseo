@@ -1,5 +1,4 @@
 """Generazioni derivate: il solo manifest corrente viene sostituito atomicamente."""
-import hashlib
 import os
 from pathlib import Path
 import sqlite3
@@ -7,7 +6,7 @@ import tempfile
 import time
 from uuid import uuid4
 
-from .contracts import ContractError, canonical_json, content_hash, resolve_path
+from .contracts import ContractError, canonical_json, content_hash, resolve_path, file_hash
 from .storage import VaultLock, capture_snapshot, _no_link
 
 try:  # sorgenti del kit / pacchetto installato in .graph/dashboard
@@ -17,15 +16,7 @@ except ImportError:
     import build_graph
     from graph_db import graph_reference
 
-BUILDER_VERSION = 1
-
-
-def file_hash(path):
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
+BUILDER_VERSION = 2
 
 
 def _atomic_marker(path, record):
@@ -90,7 +81,14 @@ def rebuild(root):
                 try:
                     db.execute("CREATE TABLE graph_metadata (key TEXT PRIMARY KEY, value TEXT)")
                     db.executemany("INSERT INTO graph_metadata VALUES (?,?)",
-                                   [("content_revision", snapshot.digest), ("generation", generation)])
+                                   [("content_revision", snapshot.digest), ("generation", generation),
+                                    ("builder_version", str(BUILDER_VERSION))])
+                    db.execute("CREATE TABLE graph_documents (path TEXT PRIMARY KEY, content TEXT NOT NULL)")
+                    documents = [(entry.path, entry.data.decode("utf-8")) for entry in snapshot.files
+                                 if entry.path in ("Wiki reference.md", "index.md", "log.md")
+                                 or (entry.path.startswith("wiki/") and entry.path.count("/") == 1
+                                     and entry.path.endswith(".md"))]
+                    db.executemany("INSERT INTO graph_documents VALUES (?,?)", documents)
                     db.commit()
                 finally:
                     db.close()
@@ -108,7 +106,8 @@ def rebuild(root):
         db = sqlite3.connect(destination.resolve().as_uri() + "?mode=ro", uri=True)
         try:
             metadata = dict(db.execute("SELECT key, value FROM graph_metadata"))
-            if metadata != {"content_revision": snapshot.digest, "generation": generation}:
+            if metadata != {"content_revision": snapshot.digest, "generation": generation,
+                            "builder_version": str(BUILDER_VERSION)}:
                 raise ContractError("graph_corrupt", "Metadati generazione non corrispondenti")
         finally:
             db.close()

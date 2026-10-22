@@ -1,6 +1,6 @@
 # 2 — Dashboard locale di consultazione
 
-Stato: bootstrap e attach readonly (2.1) implementati; API grafo e UI di consultazione ancora future. Dipende dal [contratto 1](01-contratto-dati-operazioni.md). Obiettivo utente: collegare una cartella già installata, vedere ontologia, grafo e diagnostica con una chiara indicazione della revisione. Non serve reinstallare o caricare il vault su un servizio remoto. Dettagli effettivamente disponibili nel [registro implementazioni](08-analisi-avanzamento.md).
+Stato: bootstrap/attach readonly (2.1) e API grafo, nodi, ontologia e diagnostica (2.2) implementati; UI di consultazione e rebuild via API ancora futuri. Dipende dal [contratto 1](01-contratto-dati-operazioni.md). Obiettivo utente: collegare una cartella già installata, vedere ontologia, grafo e diagnostica con una chiara indicazione della revisione. Non serve reinstallare o caricare il vault su un servizio remoto. Dettagli effettivamente disponibili nel [registro implementazioni](08-analisi-avanzamento.md).
 
 ## Punto di partenza e scope
 
@@ -8,7 +8,7 @@ Il punto di partenza era un kit di strumenti CLI e integrazioni per client; il b
 
 ## Componenti e flusso proposti
 
-`kit/dashboard/server.py` serve il bootstrap API e la pagina di collegamento. Il launcher disponibile è `python .graph/teseo_dashboard.py --vault "C:/Obsidian/MioVault"`, con `--no-browser` facoltativo. Il registro di questo incremento è in memoria e termina con il servizio; la persistenza proposta in `.teseo/local/` è rinviata alla distribuzione completa (2.4). API grafo, metadati di revisione e UI di consultazione seguono nei prossimi incrementi; non esiste ancora un entrypoint binario `teseo-dashboard`.
+`kit/dashboard/server.py` serve le API readonly e la pagina di collegamento; `read_api.py` legge le generazioni del grafo. Il launcher disponibile è `python .graph/teseo_dashboard.py --vault "C:/Obsidian/MioVault"`, con `--no-browser` facoltativo. Il registro è in memoria e termina con il servizio; la persistenza proposta in `.teseo/local/` è rinviata alla distribuzione completa (2.4). La UI di consultazione segue nel 2.3; non esiste ancora un entrypoint binario `teseo-dashboard`.
 
 1. L'utente indica un percorso locale tramite comando o form e visualizza la cartella risolta.
 2. `POST /api/v1/vaults/attach` valida root, file attesi e compatibilità senza eseguire file del vault. Restituisce `vault_id`, modalità `readonly/compatible/legacy/incompatible`, problemi e capacità.
@@ -16,7 +16,12 @@ Il punto di partenza era un kit di strumenti CLI e integrazioni per client; il b
 4. La home mostra conteggi e stato locale. Vista grafo filtrabile per tipo/relazione, frecce e legenda; dettaglio nodo mostra frontmatter, fonti e collegamenti verificabili al testo.
 5. Vista ontologia legge la sezione canonica; diagnostica distingue errore di parsing, struttura, compatibilità e controllo semantico. Esportare una diagnosi oscura percorsi sensibili e non include note per default.
 
-## Contratto API futuro
+## Contratto API readonly e operazioni future
+
+Le GET sotto sono disponibili su generazioni builder v2. Le POST di rebuild e
+le operazioni restano future. Passare `generation=<id>` alle GET successive per
+fissare una lettura; cambio della generazione corrente produce `409 revision_changed`.
+Un vecchio grafo richiede rebuild esplicito con il kit aggiornato, mai una GET.
 
 Tutti i percorsi sotto `/api/v1/vaults/{id}`. GET non lancia modelli, Git o mutazioni dei DB personali.
 
@@ -55,7 +60,7 @@ Ogni lettura usa una generazione stabile e breve connessione SQLite; durante reb
 - Rebuild fallito mostra l'ultima revisione valida e la causa; una GET non cambia DB domande/memoria.
 - Provare vault grande, paginazione, refresh durante cambio generazione, browser senza rete, XSS Markdown, POST cross-origin e path traversal.
 
-Regressioni dalla root: `python installa.py --prova`, `python -m unittest discover -s tests -v`. Test bootstrap disponibili: `tests/test_dashboard_readonly.py`, eseguibili con `python -m unittest discover -s tests -p 'test_dashboard_readonly.py' -v`. Test API grafo e UI completa restano futuri. Smoke browser ECC e risultati correnti sono registrati nel [registro implementazioni](08-analisi-avanzamento.md); il gate Windows del lettore SQLite aperto è stato verificato nell'incremento 1.4.
+Regressioni dalla root: `python installa.py --prova`, `python -m unittest discover -s tests -v`. Test disponibili: `tests/test_dashboard_readonly.py` e `tests/test_dashboard_queries.py`, eseguibili con unittest discover e il relativo pattern. I test UI completa restano futuri. Smoke browser ECC e risultati correnti sono registrati nel [registro implementazioni](08-analisi-avanzamento.md); il gate Windows del lettore SQLite aperto è stato verificato nell'incremento 1.4.
 
 ## Rollout, rollback e questioni aperte
 

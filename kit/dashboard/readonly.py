@@ -33,6 +33,7 @@ class VaultRegistry:
                     str(uuid5(NAMESPACE_URL, "teseo-local:" + os.path.normcase(str(root)))))
         return {"vault_id": vault_id, "path": str(root), "mode": "readonly",
                 "compatibility": compatibility.mode, "issues": list(compatibility.issues),
+                "schema_version": compatibility.manifest["schema_version"] if compatibility.manifest else None,
                 "capabilities": {"attach_readonly": True, "graph": False, "rebuild": False,
                                  "write_notes": False, "sync": False},
                 "content_revision": None, "graph_generation": None}
@@ -65,3 +66,8 @@ class VaultRegistry:
         with self._lock:
             identifiers = list(self._roots)
         return [self.status(identifier) for identifier in identifiers]
+
+    def root(self, vault_id):
+        self.status(vault_id)
+        with self._lock:
+            return self._roots[vault_id]

@@ -127,7 +127,12 @@ def valori(v):
 
 
 def leggi(path):
-    testo = path.read_text(encoding="utf-8").lstrip("﻿")
+    return leggi_testo(path.read_text(encoding="utf-8"), path.name)
+
+
+def leggi_testo(testo, nome):
+    """Parser condiviso per file e documenti di una generazione readonly."""
+    testo = testo.lstrip("﻿")
     if testo.startswith("---"):
         fine = testo.find("\n---", 3)
         if fine != -1:
@@ -136,11 +141,11 @@ def leggi(path):
                 if fm is None:
                     fm = {}
                 if not isinstance(fm, dict):
-                    raise ValueError(f"{path.name}: frontmatter deve essere una mappa YAML")
+                    raise ValueError(f"{nome}: frontmatter deve essere una mappa YAML")
                 return fm, testo[fine + 4:]
             except yaml.YAMLError as e:  # senza il nome della pagina l'errore di yaml non dice dove cercare
-                raise ValueError(f"{path.name}: frontmatter non valido ({str(e).strip().splitlines()[0]})") from e
-        raise ValueError(f"{path.name}: frontmatter senza delimitatore di chiusura")
+                raise ValueError(f"{nome}: frontmatter non valido ({str(e).strip().splitlines()[0]})") from e
+        raise ValueError(f"{nome}: frontmatter senza delimitatore di chiusura")
     return {}, testo
 
 
@@ -164,20 +169,25 @@ def parse_snapshot(vault):
     """
     if not (vault / "wiki").is_dir():
         raise ValueError("vault non valido: directory wiki/ assente")
-    ref_path = vault / "Wiki reference.md"
-    ref = ref_path.read_text(encoding="utf-8") if ref_path.exists() else ""
-    indice = vault / "index.md"
+    files = [*(vault / "wiki").glob("*.md"),
+             *(vault / name for name in ("Wiki reference.md", "index.md", "log.md") if (vault / name).exists())]
+    return parse_documents({path.relative_to(vault).as_posix(): path.read_text(encoding="utf-8") for path in files})
+
+
+def parse_documents(documents):
+    """Stessi controlli del builder su documenti già acquisiti, senza filesystem."""
+    ref = documents.get("Wiki reference.md", "")
     descrizioni = {}
-    if indice.exists():
-        for link, riga in RIGA_INDICE.findall(indice.read_text(encoding="utf-8")):
+    if "index.md" in documents:
+        for link, riga in RIGA_INDICE.findall(documents["index.md"]):
             descrizioni[bersaglio(link)] = riga
     fonti_censite = {k: f.strip().strip("`").strip() for k, f in RIGA_FONTE.findall(ref)}
     vocabolario = leggi_vocabolario(ref)
 
-    files = sorted((vault / "wiki").glob("*.md"))
+    files = sorted(Path(path) for path in documents if path.startswith("wiki/") and path.count("/") == 1 and path.endswith(".md"))
     if len({p.stem.casefold() for p in files}) != len(files):
         raise ValueError("wiki/: nomi pagina con collisione di maiuscole/minuscole")
-    pagine = {p.stem: leggi(p) for p in files}
+    pagine = {p.stem: leggi_testo(documents[p.as_posix()], p.name) for p in files}
     nomi = {p.lower(): p for p in pagine}
     problemi = []
     entita, relazioni, alias = [], set(), []

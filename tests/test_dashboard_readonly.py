@@ -86,7 +86,9 @@ class ReadonlyHTTP(unittest.TestCase):
             self.assertFalse(record["capabilities"]["rebuild"])
             status, _, body = self.request("GET", f'/api/v1/vaults/{record["vault_id"]}/status')
             self.assertEqual(status, 200, body)
-            self.assertEqual(json.loads(body), record)
+            self.assertEqual(json.loads(body)["vault_id"], record["vault_id"])
+            self.assertEqual(json.loads(body)["compatibility"], record["compatibility"])
+            self.assertIsNone(json.loads(body)["graph_generation"])
             status, _, body = self.request("GET", "/api/v1/vaults")
             self.assertEqual(json.loads(body)["vaults"], [record])
         self.assertEqual(self.hashes(), before)
@@ -225,6 +227,7 @@ class ReadonlyHTTP(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr.decode("utf-8", "replace"))
         self.assertIn(b"--no-browser", result.stdout)
         self.assertFalse((self.root / ".teseo").exists())
+        self.assertFalse((self.root / "EXECUTED").exists())
 
     def test_launcher_preattach_no_browser_and_keyboard_interrupt(self):
         before = self.hashes()

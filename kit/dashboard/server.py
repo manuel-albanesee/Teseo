@@ -3,15 +3,18 @@ import argparse
 from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import hashlib
+import re
 import secrets
 import threading
 import time
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, parse_qs, unquote
 import webbrowser
 
 from .bootstrap_ui import PAGE
 from .contracts import ContractError, parse_json
 from .readonly import VaultRegistry
+from .read_api import ReadAPI
 
 MAX_BODY_BYTES = 16 * 1024
 
@@ -21,6 +24,7 @@ class DashboardServer(ThreadingHTTPServer):
 
     def __init__(self, port=0, registry=None, rate_limit=120):
         self.registry = registry or VaultRegistry()
+        self.read_api = ReadAPI(self.registry)
         self.session_token = secrets.token_urlsafe(32)
         self.csrf_token = secrets.token_urlsafe(32)
         self.rate_limit, self._requests = rate_limit, deque()
@@ -76,11 +80,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
         # Non registrare URL, header di sessione o contenuto del vault.
         pass
 
-    def _reply(self, status, body, content_type="application/json; charset=utf-8", nonce=None):
+    def _reply(self, status, body, content_type="application/json; charset=utf-8", nonce=None, etag=None):
         data = body if isinstance(body, bytes) else json.dumps(body, ensure_ascii=True).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(data)))
+        if status != 304:
+            self.send_header("Content-Length", str(len(data)))
+        if etag:
+            self.send_header("ETag", etag)
         self.send_header("Cache-Control", "no-store")
         self.send_header("Connection", "close")
         self.send_header("X-Content-Type-Options", "nosniff")
@@ -93,6 +100,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.close_connection = True
         self.wfile.write(data)
+
+    def _data_reply(self, body):
+        data = json.dumps(body, ensure_ascii=True).encode("utf-8")
+        etag = '"' + hashlib.sha256(data).hexdigest() + '"'
+        if self._header("If-None-Match") in (etag, "*"):
+            self._reply(304, b"", etag=etag)
+        else:
+            self._reply(200, data, etag=etag)
 
     def _error(self, status, code, message):
         self._reply(status, {"error": {"code": code, "message": message, "retryable": status in (429, 503)},
@@ -144,7 +159,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if not self._guard():
             return
         target = urlsplit(self.path)
-        if target.scheme or target.netloc or target.query or target.fragment:
+        if (target.scheme or target.netloc or target.fragment or len(target.query) > 4096
+                or re.search(r"%(?![0-9a-fA-F]{2})", self.path)
+                or (target.query and (self.command != "GET" or not target.path.startswith("/api/v1/vaults/")))):
             self._error(400, "invalid_target", "Percorso richiesta non valido")
             return
         if self.command == "GET" and target.path == "/":
@@ -175,9 +192,28 @@ class DashboardHandler(BaseHTTPRequestHandler):
                                   "graph_generation": None})
                 return
             parts = target.path.split("/")
-            if len(parts) == 6 and parts[1:4] == ["api", "v1", "vaults"] and parts[5] == "status":
-                self._reply(200, self.server.registry.status(parts[4]))
-                return
+            try:
+                raw = parse_qs(target.query, keep_blank_values=True, strict_parsing=True,
+                               encoding="utf-8", errors="strict", max_num_fields=8)
+                if any(len(values) != 1 for values in raw.values()):
+                    raise ValueError
+                parameters = {key: values[0] for key, values in raw.items()}
+                if parts[1:4] == ["api", "v1", "vaults"]:
+                    if len(parts) == 6:
+                        reader = {"status": self.server.read_api.status, "graph": self.server.read_api.graph,
+                                  "ontology": self.server.read_api.ontology,
+                                  "diagnostics": self.server.read_api.diagnostics}.get(parts[5])
+                        if reader:
+                            self._data_reply(reader(parts[4], parameters))
+                            return
+                    if len(parts) == 7 and parts[5] == "nodes":
+                        node_id = unquote(parts[6], encoding="utf-8", errors="strict")
+                        self._data_reply(self.server.read_api.node(parts[4], node_id, parameters))
+                        return
+            except ContractError:
+                raise
+            except (ValueError, UnicodeError):
+                raise ContractError("invalid_query", "Parametri URL non validi") from None
         self._error(404, "route_missing", "Endpoint non disponibile in questo incremento")
 
     def _handle(self):
@@ -186,7 +222,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
         except ContractError as error:
             status = {"vault_missing": 404, "vault_id_conflict": 409, "vault_identity_changed": 409,
                       "vault_path_changed": 409, "incompatible_vault": 422, "vault_unreadable": 422,
-                      "vault_limit": 409}.get(error.code, 400)
+                      "vault_limit": 409, "revision_changed": 409, "node_missing": 404,
+                      "graph_unavailable": 503, "graph_upgrade_required": 503, "graph_unreadable": 503,
+                      "graph_corrupt": 503, "graph_too_large": 503, "document_unavailable": 503,
+                      "document_too_large": 422, "invalid_node_data": 422, "invalid_node": 403,
+                      "unsafe_path": 403, "linked_path": 403, "path_escape": 403}.get(error.code, 400)
             self._error(status, error.code, str(error))
         except (ConnectionError, TimeoutError):
             self.close_connection = True

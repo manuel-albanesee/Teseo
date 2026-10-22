@@ -60,8 +60,8 @@ class GraphConnection(sqlite3.Connection):
     """Attributi content_revision e graph_generation fissati all'apertura."""
 
 
-def connect_graph(path):
-    reference = graph_reference(path)
+def connect_graph(path, reference=None):
+    reference = reference or graph_reference(path)
     uri = reference.path.resolve().as_uri() + "?mode=ro"
     if reference.generation:
         uri += "&immutable=1"
