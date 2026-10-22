@@ -2,7 +2,9 @@
 
 Primo incremento disponibile in `kit/dashboard/contracts.py`: versioni e manifest,
 classificazione percorsi e canonicalizzazione JSON. Dettagli e limiti nel
-[registro implementazioni](08-analisi-avanzamento.md). Il resto resta progettuale.
+[registro implementazioni](08-analisi-avanzamento.md). Disponibili anche journal,
+lock kernel e snapshot in `kit/dashboard/storage.py` (incremento 1.2);
+apply protetto, integrazione dei chiamanti e generazioni restano futuri.
 
 Stato: progettazione futura, prerequisito dei passi successivi. Obiettivo: rendere verificabile cosa viene letto, modificato, condiviso e ripristinato. L'utente vede una revisione coerente e conserva l'ultima vista valida quando una modifica fallisce.
 

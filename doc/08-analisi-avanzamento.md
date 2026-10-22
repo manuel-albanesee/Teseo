@@ -22,7 +22,7 @@ a generazioni restano prerequisiti per attivare la dashboard e le automazioni.
 
 | Passo | Valutazione / lavoro restante |
 | --- | --- |
-| 1 | Contratti di base implementati; journal, snapshot, esclusione scrittori e generazioni ancora da realizzare |
+| 1 | Contratti, journal, lock kernel e snapshot implementati; integrazione chiamanti, apply protetto e generazioni ancora da realizzare |
 | 2 | Bootstrap e UI attendono le fondazioni; scegliere server solo dopo prova packaging |
 | 3 | Parser conservativo necessario; nessuna riscrittura implicita del vocabolario |
 | 4 | Probe e ricevuta da provare su ogni client; Stop non certifica il successo |
@@ -90,3 +90,64 @@ superati (incluso il nuovo caso wiki mancante e frontmatter senza chiusura).
 superati. Nessuna nuova dipendenza. Nessun risultato di coverage o type checking
 è dichiarato. `main` resta sul commit iniziale `19e5288`; non esiste un branch
 locale `master` e nessun branch principale è stato modificato.
+
+## Incremento 3 — journal, lock e snapshot (passo 1.2)
+
+`kit/dashboard/storage.py` introduce fondazioni non ancora attivate nel vault
+dall'installatore. Richiede manifest compatibile: nessuna adozione implicita dei
+vault legacy. Non aggiunge dipendenze. Scelta lock: standard library `msvcrt` su
+Windows, `fcntl` su POSIX. Test reali eseguiti su Windows; POSIX non verificato
+in questa sessione.
+
+`VaultLock` usa un lock esclusivo del kernel con timeout, senza rimozione del file
+in base al PID; il crash del processo libera il lock. Serializza i chiamanti che
+adottano questa API. Timeout produce `vault_busy`; attesa e coda dei job saranno
+integrate nel coordinator del passo 4. Hook e CLI legacy non usano ancora questo
+lock: non si dichiara esclusione globale degli scrittori esistenti.
+
+`capture_snapshot` legge due volte tutto il perimetro dati e confronta hash e
+percorsi. Include manifest, schema, note, index/log, raw ed eventi; esclude DB
+personali, script/client e stato locale. Censisce anche dati non selezionati per
+export. Rifiuta file inattesi nel perimetro, collisioni, path traversal, symlink
+e junction (anche se interni, scelta conservativa). Limite predefinito 64 MiB per
+scansione; le copie sono in memoria, non adatte ancora a raw molto grandi.
+Timestamp invariati non nascondono cambiamenti. `validate_raw_unchanged` permette
+aggiunte ma blocca modifica, eliminazione e rinomina di fonti preesistenti.
+
+`Journal` richiede il lock per ogni accesso. SQLite con `synchronous=FULL`
+conserva UUID, vault, tipo, revisione Git base fornita dal chiamante (null senza
+Git), digest contenuto/schema, letture, hash prima/dopo, stato, errore e checkpoint.
+Chiave idempotente uguale e stesso payload restituiscono il record esistente;
+payload diverso produce conflitto. Copie base/candidato sono scritte e fsyncate
+prima di registrare il relativo checkpoint. `prepare` controlla base live e raw,
+ricontrolla la base dopo la copia e lascia intatte le note. La validazione di
+dominio (YAML, grafo, eventi) resta responsabilità della pipeline chiamante:
+`prepared` qui certifica le sole precondizioni dello storage.
+
+Lo stato è in `.teseo/local/`, protetto da `.gitignore` con sola regola `*`;
+configurazioni che reincludono file richiedono correzione esplicita. Non vengono
+rimossi eventuali file già tracked in installazioni precedenti. Snapshot e DB
+personali non sono esportati da questo modulo. Nessuna retention automatica:
+le copie richiedono spazio e rimangono disponibili per diagnosi.
+
+Recovery iniziale conservativa: `require_recovery` marca le operazioni interrotte,
+preserva hash e checkpoint e le ripropone ai riavvii successivi; `orphan_snapshots`
+segnala copie senza record/checkpoint dopo guasti. Non ripristina e non cancella
+file. Apply e transizioni `applying`/`succeeded` sono bloccati finché non sarà
+implementata la protezione di scrittura. Non è una transazione globale tra SQLite
+e filesystem, né una promessa di resistenza a ogni guasto elettrico.
+
+Prossimo incremento: passo 1.4, generazioni immutabili, migrazione dei lettori e
+backup SQLite consistenti; integrare questi strumenti nel percorso reale prima
+di attivare il servizio. Watcher, scheduling, completamento automatico della
+recovery e protezione da editor non cooperanti restano futuri. Le scansioni hash
+rilevano modifiche, ma non eliminano la finestra tra ultimo controllo e apply.
+
+Verifica ECC `verification-loop`: suite completa 79 test (78 superati, uno skip
+symlink già noto), poi suite storage rieseguita con 24 test tutti superati dopo
+l'aggiunta del controllo timeout finiti. Inclusi processi concorrenti, attesa e
+kill del proprietario, crash con `os._exit`, scrittura esterna durante copia,
+immutabilità raw, copia corrotta, fallimento di checkpoint e junction Windows.
+`python installa.py --prova`, compilazione Python, controllo whitespace e revisione
+diff superati. Nessuna dipendenza aggiunta; type checker, lint dedicato e coverage
+non configurati e non dichiarati eseguiti.
