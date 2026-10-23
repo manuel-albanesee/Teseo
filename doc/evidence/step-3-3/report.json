@@ -1,0 +1,20 @@
+{
+  "contract": "contract.md; editor delle proposte ontologia, nessun apply",
+  "targetViewports": ["1440x900", "390x844"],
+  "accessibility": {"status":"pass","evidence":"Ogni campo ha label connessa, help e live status. Enter sul pulsante Genera preview ha inviato la proposta e spostato il focus sul risultato. Tab su mobile ha raggiunto il diff scorrevole con outline arancio visibile (rgb(180,97,0), 2.4 px misurati). Controlli form misurati almeno 44 px di altezza. Nessuna animazione; palette del workbench invariata. Non è un audit screen reader."},
+  "responsive": {"status":"pass","evidence":"Viewport CSS ECC misurati 1440x900 e 390x844, nessun overflow orizzontale documento. Desktop con form a due colonne e sorgente/destinazione affiancate nelle definizioni; mobile con una colonna, campi larghi 335.2 px e pulsanti larghi quanto il form. Digest, messaggi e diff a capo. Mobile senza emulazione touch; osservazioni DOM renderizzate archiviate in mobile-layout.json."},
+  "contentStates": {
+    "loading": {"status":"pass","evidence":"POST reale con risposta trattenuta nel browser: analisi in corso, invio duplicato disabilitato. Risposta rilasciata e focus sul risultato."},
+    "empty": {"status":"pass","evidence":"Svuota proposta mostra Nessuna modifica e disabilita Genera preview. Fixture compatibile senza grafo permette adozione esplicita e aggiunta tipo, con preview reale riuscita."},
+    "error": {"status":"pass","evidence":"Tipo ignoto dà invalid_schema con pagina/proprietà/motivo. Risposta persa dopo POST reale recuperata con la stessa chiave. Modifica reale alla nota sintetica dà preview_stale; Aggiorna base corrente conserva la bozza e permette nuova preview."},
+    "partial": {"status":"pass","evidence":"Vocabolario pubblicato separato dal form corrente; senza grafo la vista pubblicata è indisponibile ma la preview continua. Una rimozione usata e una rinomina mostrano 56 violazioni/suggerimenti senza applicare note; draft modificata/refresh mantengono il vecchio risultato marcato da rigenerare."},
+    "success": {"status":"pass","evidence":"18 controlli dello smoke browser ripetuti sul launcher effettivamente installato. Diff reale, schema HTML inerte, verso salvato visibile, nessuna nuova inferenza automatica, nessun apply. Hash delle tre fixture invariati dopo ripristino della sola nota sintetica modificata dal test."},
+    "permission": {"status":"pass","evidence":"Fixture legacy collegata realmente: spiegazione readonly e nessun form. Test HTTP esistenti verificano sessione/Origin/CSRF; la preview usa lo stesso helper autenticato. Nessun comando di apply, ingest o Git emesso dal form."}
+  },
+  "renderedEvidence": [
+    {"viewport":"1440x900","artifact":"desktop-form.jpg","observation":"Launcher installato, proposta di rinomina usa → utilizza con adozione esplicita, verso visibile, coda italiana e risultato con focus. Immagine JPEG compatta, dopo revisione anche del diff renderizzato."},
+    {"viewport":"390x844","artifact":"mobile-layout.json","observation":"Artefatto browser del layout effettivamente renderizzato: label, rettangoli, risultato presente, nessun overflow e controlli da almeno 44 px. La cattura immagine mobile non terminava ed è stata interrotta; non viene dichiarata uno screenshot."}
+  ],
+  "verification": {"python":"172 test: 171 pass e 1 skip symlink Windows noto; 219.753 s","browser":"18 check riproducibili più stale reale, tre vault, grafo assente, permesso legacy, tastiera Enter/Tab e layout mobile","installer":"--prova superato; installazione effettiva --dashboard, CLI build e launcher installato superati","static":"compileall Python, node --check client assemblato e smoke, git diff --check"},
+  "limits":"Chrome Windows e sole fixture sintetiche; non audit screen reader/cross-browser. Il tool di cattura non accettava il percorso workspace; JPEG desktop salvato localmente tramite file tool. La cattura mobile è rimasta bloccata e usa evidenza DOM renderizzata. Nessun dato inviato a servizi esterni. Coverage/type checker/linter dedicati non configurati. Apply e recovery futuri."
+}

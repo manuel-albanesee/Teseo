@@ -30,5 +30,5 @@ PAGE = """<!doctype html>
 <section id="detail" aria-label="Dettaglio nodo" tabindex="-1"><h3>Dettaglio nodo</h3><p>Seleziona un nodo dalla lista o dal grafo.</p></section></div>
 <details><summary>Relazioni caricate · sorgente → destinazione</summary><ul id="edges"></ul></details>
 </section>
-<section id="ontology" aria-label="Ontologia" hidden></section><section id="diagnostics" aria-label="Diagnostica" hidden></section>
+<section id="ontology" aria-label="Ontologia" hidden><section id="ontology-editor" aria-label="Proposta ontologia"></section><details><summary>Vocabolario della generazione pubblicata</summary><div id="ontology-published"></div></details></section><section id="diagnostics" aria-label="Diagnostica" hidden></section>
 </main></div><script nonce="__NONCE__">""" + SCRIPT + """</script></body></html>"""

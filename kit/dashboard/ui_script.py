@@ -1,7 +1,9 @@
-"""Client readonly: revisioni fissate, concorrenza controllata, testo inerte."""
+"""Workbench: consultazione e proposte ontologia, contenuti sempre inerti."""
+from .ontology_ui import EDITOR_SCRIPT
 SCRIPT = r"""
 (() => {
  'use strict';
+""" + EDITOR_SCRIPT + r"""
  const $ = id => document.getElementById(id);
  const token = new URLSearchParams(location.hash.slice(1)).get('session');
  history.replaceState(null, '', location.pathname);
@@ -18,9 +20,10 @@ SCRIPT = r"""
    const headers = {'X-Teseo-Session':token}, options = {headers,cache:'no-store'};
    if(data !== undefined) {options.method='POST';headers['Content-Type']='application/json';if(csrf) headers['X-Teseo-CSRF']=csrf;options.body=JSON.stringify(data);}
    const response = await fetch(path, options); const body = await response.json();
-   if(!response.ok) {const error = new Error(body.error?.message || 'Servizio non disponibile');error.code=body.error?.code;throw error;}
+   if(!response.ok) {const error = new Error(body.error?.message || 'Servizio non disponibile');error.code=body.error?.code;error.details=body.error?.details;throw error;}
    return body;
  }
+ const editor=createOntologyEditor({api,plain,element,getEpoch:()=>epoch,stopped:()=>stopping});
  function url(endpoint, parameters={}) {
    return '/api/v1/vaults/' + encodeURIComponent(state.vault_id) + '/' + endpoint + '?' + new URLSearchParams({generation:state.graph_generation,...parameters});
  }
@@ -67,7 +70,7 @@ SCRIPT = r"""
    $('shutdown').disabled=true;
    try {
      await api('/api/v1/shutdown',{});stopping=true;++epoch;++operationPoll;
-     document.querySelectorAll('button,input,select').forEach(control=>control.disabled=true);
+     document.querySelectorAll('button,input,select,textarea').forEach(control=>control.disabled=true);
      $('message').textContent='Arresto richiesto. Il processo attende la chiusura dei rebuild; controlla il terminale prima di chiuderlo.';
    } catch(error){$('message').textContent='Arresto non confermato: '+error.message+'. Riprova oppure usa Ctrl+C nel terminale.';$('shutdown').disabled=false;}
  });
@@ -131,7 +134,7 @@ SCRIPT = r"""
    } catch(error) {if(run===epoch&&request===detailRequest){element('p','Dettaglio non disponibile: '+error.message,$('detail'));failure(error);}}
  }
  function renderOntology(body) {
-   const container=$('ontology');container.replaceChildren();element('h3','Vocabolario e direzione',container);
+   const container=$('ontology-published');container.replaceChildren();element('h3','Vocabolario pubblicato · sorgente → destinazione',container);
    element('p','Tipi '+(body.types_source==='declared'?'dichiarati':'osservati e ricavati dai vincoli')+': '+(body.types.join(', ')||'nessuno'),container);
    for(const relation of body.relations) {const article=element('article',undefined,container);element('h4',relation.name,article);element('p',relation.from_types.join(', ')+' → '+relation.to_types.join(', '),article);element('p',relation.meaning||'Significato non dichiarato.',article);if(relation.example)element('p','Esempio: '+relation.example,article);}
    const details=element('details',undefined,container);element('summary','Schema completo · Markdown come testo',details);element('pre',plain(body.text),details);
@@ -145,30 +148,32 @@ SCRIPT = r"""
  }
  async function selectVault() {
    if(stopping)return;
+   editor.reset();
    ++operationPoll;$('rebuild').disabled=true;$('operation').textContent='';
    const run=++epoch;++graphRequest;++detailRequest;state=null;invalid=false;loadingGraph=false;nodes=[];edges=[];cursor=null;filters={};
    for(const id of ['type','relation','search','apply'])$(id).disabled=true;
    $('type').replaceChildren(new Option('Tutti i tipi',''));$('relation').replaceChildren(new Option('Tutte le relazioni',''));$('search').value='';
-   for(const id of ['nodes','edges','map','ontology','diagnostics'])$(id).replaceChildren();
+   for(const id of ['nodes','edges','map','ontology-published','diagnostics'])$(id).replaceChildren();
    $('detail').replaceChildren();element('h3','Dettaglio nodo',$('detail'));element('p','Seleziona un nodo dalla lista o dal grafo.',$('detail'));
    $('more').hidden=true;$('notice').textContent='';$('revision').textContent='';$('counts').textContent='Caricamento…';
-   const id=$('vault').value;$('refresh').disabled=!id;if(!id){$('counts').textContent='Nessun dato caricato.';for(const view of ['ontology','diagnostics'])element('p','Collega un vault per consultare questa vista.',$(view));return;}
+   const id=$('vault').value;$('refresh').disabled=!id;if(!id){$('counts').textContent='Nessun dato caricato.';for(const view of ['ontology-published','diagnostics'])element('p','Collega un vault per consultare questa vista.',$(view));return;}
    $('root').textContent='Caricamento dello stato…';
    try {
      const status=await api('/api/v1/vaults/'+encodeURIComponent(id)+'/status');if(run!==epoch)return;state=status;
      $('root').textContent=status.path;$('revision').textContent='Contenuti: '+(status.content_revision||'non disponibili')+' · Generazione: '+(status.graph_generation||'non disponibile')+' · Job di questo servizio: '+(status.busy?'rebuild attivo':'nessuno');
      $('rebuild').disabled=!status.capabilities.rebuild || !!status.busy;
+     editor.mount(status);
      if(status.active_operation_id)watchOperation(id,status.active_operation_id);
      else if(!status.capabilities.rebuild)$('operation').textContent='Rebuild non disponibile per questo formato. I vault legacy restano in sola lettura.';
      $('notice').textContent=(status.issues||[]).map(issue=>issue.code+': '+issue.message).join(' · ');
-     if(!status.capabilities.graph){$('counts').textContent='Grafo non disponibile. È necessario un rebuild esplicito con il kit aggiornato; questa vista non modifica il vault.';element('p','Ontologia non disponibile senza una generazione del grafo.',$('ontology'));renderDiagnostics({issues:status.issues});return;}
+     if(!status.capabilities.graph){$('counts').textContent='Grafo non disponibile. È necessario un rebuild esplicito con il kit aggiornato; questa vista non modifica il vault.';element('p','Vocabolario pubblicato non disponibile senza grafo. La preview usa la base corrente.',$('ontology-published'));renderDiagnostics({issues:status.issues});return;}
      if(status.stale)$('notice').textContent+=' · Stai consultando la revisione pubblicata; le modifiche del vault non sono ancora nel grafo.';
      const pin=url('ontology'),diagnostics=url('diagnostics');
      const results=await Promise.allSettled([api(pin),api(diagnostics)]);if(run!==epoch)return;
      if(results[0].status==='fulfilled') {const ontology=results[0].value;renderOntology(ontology);
        for(const type of ontology.types)$('type').append(new Option(type,type));
        for(const relation of ontology.relations)$('relation').append(new Option(relation.name,relation.name));
-     } else {element('p','Ontologia non disponibile: '+results[0].reason.message,$('ontology'));failure(results[0].reason);}
+     } else {element('p','Ontologia pubblicata non disponibile: '+results[0].reason.message,$('ontology-published'));failure(results[0].reason);}
      if(results[1].status==='fulfilled')renderDiagnostics(results[1].value);else{element('p','Diagnostica non disponibile: '+results[1].reason.message,$('diagnostics'));failure(results[1].reason);}
      for(const key of ['type','relation','search','apply'])$(key).disabled=invalid;
      if(invalid)$('counts').textContent='Caricamento interrotto: aggiorna la vista per leggere la nuova generazione.';

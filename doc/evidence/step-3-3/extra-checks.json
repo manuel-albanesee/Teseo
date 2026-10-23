@@ -1,0 +1,20 @@
+{
+  "empty": {
+    "preview": true,
+    "relationFieldsHidden": true,
+    "typeDescriptionVisible": true
+  },
+  "legacy": {
+    "blocked": true,
+    "message": "Prepara una modificaSolo preview: nessun file viene modificato. Applicazione e migrazioni saranno disponibili in un passo successivo.Editor non disponibile: il vault legacy resta in sola lettura. È necessario un manifest compatibile, senza adozione automatica."
+  },
+  "back": {
+    "name": "altra_bo zza",
+    "queue": "Aggiungi relazione · approvaDefinizione propostapersona → approva → personaBozza successivaEsempio: Anna → BrunoRimuovi modifica 1"
+  },
+  "viewport": [
+    1440,
+    900
+  ],
+  "stale": "Modifica reale della nota sintetica: 409 preview_stale; Aggiorna base corrente seguito da preview pronta con bozza preservata. Nota ripristinata byte per byte."
+}

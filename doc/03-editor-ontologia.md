@@ -1,6 +1,6 @@
 # 3 — Editor dell'ontologia e migrazioni
 
-Stato: parser/serializer, proposta pura di adozione e validazione del catalogo tipi implementati (3.1); API preview con analisi impatto e suggerimenti disponibile (3.2). Editor UI e apply restano futuri (3.3–3.4). Dipendenze: [contratto 1](01-contratto-dati-operazioni.md), [dashboard 2](02-dashboard-consultazione.md); le migrazioni con mapping di pagine condivise richiedono anche il formato/eventi del [passo 5](05-stato-condiviso.md). Parser, preview e modifiche senza mapping possono precederlo. L'utente modifica tipi, relazioni, direzione e tipi ammessi, vede le pagine interessate e applica soltanto una migrazione verificata. Le convenzioni libere conservano testo e struttura.
+Stato: parser/serializer e validazione (3.1), API preview con impatto (3.2) e form UI delle proposte con diff e capacità semantiche (3.3) implementati. Apply transazionale resta futuro (3.4). Dipendenze: [contratto 1](01-contratto-dati-operazioni.md), [dashboard 2](02-dashboard-consultazione.md); le migrazioni con mapping di pagine condivise richiedono anche il formato/eventi del [passo 5](05-stato-condiviso.md). Parser, preview e modifiche senza mapping possono precederlo. L'utente prepara modifiche a tipi e relazioni, vede le pagine interessate e potrà applicare soltanto una migrazione verificata. Le convenzioni libere conservano testo e struttura.
 
 ## Stato attuale e limiti da rispettare
 
@@ -88,6 +88,43 @@ richieste ammesse nel servizio, analisi/cache serializzate; ulteriori richieste
 schema/parsing 422 (dettagli localizzati quando disponibili), revisione 409.
 `requires_confirmation` è true e `apply_available` false; nessun preview ID
 autorizza scritture in questo rilascio.
+
+## Form UI disponibile (3.3)
+
+La vista Ontologia mostra prima il form della proposta e poi, in un dettaglio
+separato, il vocabolario della generazione pubblicata. Il form usa la base
+corrente dello snapshot e funziona anche senza grafo; un vault senza manifest
+compatibile rimane readonly con spiegazione. Nessuna adozione viene selezionata
+automaticamente: il catalogo assente richiede la scelta esplicita del checkbox.
+
+Campi per tipi e relazioni, aggiunta/modifica/rimozione/rinomina, vincoli sorgente
+e destinazione, significato ed esempio. Il verso è sempre sorgente → relazione
+→ destinazione, senza comando di inversione. Le definizioni sono complete:
+campi omessi in update tornano vuoti, come indicato nel form. I nomi e vincoli
+sono inseriti dall'utente e validati dal servizio; non viene presunto che il
+vocabolario pubblicato sia quello corrente. «Aggiungi alla proposta» compone
+una coda revisionabile, con rimozione e dettaglio delle definizioni; «Genera
+preview» è l'unica azione che invia la patch al servizio.
+
+Risultato con diff, schema candidato inerte, pagina/proprietà/motivo delle
+violazioni, suggerimenti di migrazione, testo libero da revisionare, pagine,
+archi e riferimenti interessati, uso di tipi/proprietà/alias/fonti. Le liste
+mostrano al massimo 200 elementi con conteggio e avviso visibile; la risposta
+completa rimane quella del servizio. Nessuna nuova inferenza automatica viene
+promessa e nessun pulsante di apply è disponibile.
+
+Bozza e campi conservati soltanto in memoria per vault durante refresh e cambio
+selezione; chiudere la scheda li elimina. Una modifica alla bozza o un refresh
+marca il risultato precedente da rigenerare. Risposte tardive dopo modifica o
+cambio vault non sostituiscono la bozza corrente. Invio duplicato disabilitato,
+chiave riusata se la risposta è persa, errori localizzati e retry esplicito.
+Per conflitto esterno «Aggiorna base corrente» conserva la patch e richiede
+nuova preview. ID/hash e scadenza visibili; alla scadenza il risultato è marcato
+da rigenerare. Nessuna persistenza browser o scrittura nel vault.
+
+Label connesse, live status, focus sul risultato, form a due colonne desktop e
+impilato su mobile. Verifiche browser riproducibili in
+`tests/dashboard_ontology_smoke.js`; [evidenze ECC](evidence/step-3-3/report.json).
 
 ## Apply e migrazione futuri
 

@@ -1,0 +1,18 @@
+{
+  "viewport": "390x844",
+  "source": "ECC Chrome DevTools evaluate_script sul launcher installato",
+  "documentHorizontalOverflow": false,
+  "heading": "Prepara una modifica",
+  "fieldLayout": "colonna singola",
+  "fields": [
+    {"id":"ontology-category","label":"Elemento","width":335.2,"height":44},
+    {"id":"ontology-action","label":"Modifica","width":335.2,"height":44},
+    {"id":"ontology-name","label":"Nome","width":335.2,"height":44.4},
+    {"id":"ontology-to","label":"Nuovo nome","width":335.2,"height":44.4}
+  ],
+  "previewButton": {"width":335.2,"height":44.4},
+  "animations": 0,
+  "resultVisibleInDocument": true,
+  "resultContains": ["Nessuna modifica applicata", "Nessuna nuova inferenza automatica", "Diff dello schema", "usa", "utilizza"],
+  "limits": "Viewport CSS emulato, senza emulazione touch. Artefatto di layout DOM renderizzato; la cattura immagine mobile è stata interrotta perché non terminava. Non è uno screenshot o un audit screen reader."
+}

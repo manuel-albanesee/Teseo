@@ -1,0 +1,24 @@
+{
+  "checks": [
+    "empty: clear proposal has no submission",
+    "direction: saved source to target is explicit",
+    "loading: duplicate submission disabled",
+    "success: no inference or apply implied",
+    "focus: result receives keyboard focus",
+    "security: schema HTML remains text",
+    "contract: explicit adoption precedes oriented relation",
+    "draft edit: old result marked obsolete",
+    "refresh: queue, fields and old result preserved as obsolete",
+    "impact: used removal shows located violations",
+    "rename: migration is suggestion requiring confirmation",
+    "error: invalid schema gives located details and preserved draft",
+    "offline: uncertain response has explicit retry",
+    "retry: same key recovers response",
+    "race: late response does not replace edited draft",
+    "accessibility: every form control has a label",
+    "safety: editor sends only preview POSTs",
+    "revision: preview does not pin old graph generation"
+  ],
+  "previewPosts": 7,
+  "runtime": "launcher installato con --dashboard; smoke rieseguito sugli asset finali"
+}

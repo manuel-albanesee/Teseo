@@ -24,7 +24,7 @@ a generazioni restano prerequisiti per attivare la dashboard e le automazioni.
 | --- | --- |
 | 1 | Contratti, journal, lock, snapshot, generazioni e backup disponibili; apply protetto note e recovery multi-file ancora da realizzare |
 | 2 | Bootstrap, API e UI di consultazione, distribuzione e rebuild coordinato disponibili; adozione legacy ed export diagnostica futuri |
-| 3 | Parser/serializer, catalogo tipi e validazione (3.1), API preview con impatto e suggerimenti (3.2) disponibili; UI editing e apply futuri |
+| 3 | Parser/serializer e validazione (3.1), API preview (3.2), form UI con diff/impatto (3.3) disponibili; apply e recovery futuri |
 | 4 | Probe e ricevuta da provare su ogni client; Stop non certifica il successo |
 | 5 | Canonicalizzazione disponibile; schema eventi per tipo, DAG, proiezioni e migrazione ancora da sviluppare |
 | 6 | Staging Git isolato e attribuzione precisa obbligatori prima del push dati |
@@ -595,3 +595,40 @@ Nessuna UI modificata, nessuno smoke browser nuovo. Solo fixture sintetiche.
 
 Prossimo punto: 3.3, form UI con verso visibile, diff e capacità semantiche;
 apply transazionale e recovery restano al 3.4. Nessun merge dei branch principali.
+
+## Incremento 11 — Form proposte ontologia (passo 3.3)
+
+Vista Ontologia con form di tipi/relazioni, verso sorgente → destinazione,
+significato/esempio e coda di modifiche con etichette italiane. Adozione catalogo
+esplicita, update come definizione completa, rimozione/rinomina senza inversione
+automatica. Genera preview invia solo la POST protetta già disponibile; schema
+pubblicato separato dal candidato e dalla base corrente, anche senza grafo.
+Modelli, schema e diff restano testo inerte. Apply e migrazioni non disponibili.
+
+Diff e impatto con pagina/proprietà/motivo, suggerimenti da confermare, conteggi,
+testo libero e file condivisi. Liste oltre 200 elementi marcate parziali senza
+alterare il risultato completo del servizio. Avviso esplicito: nuove relazioni
+non producono nuove inferenze o regole. Bozza/campi conservati in memoria per
+vault su refresh/cambio selezione; niente storage browser. Risultati obsoleti e
+scadenza segnalati, epoch/versione impediscono sostituzione da risposte tardive.
+Retry dopo perdita risposta riusa la chiave, conflitti offrono aggiornamento
+esplicito della base e nuova preview, preservando la patch.
+
+ECC frontend-design-direction, frontend-a11y e verification-loop: suite Python
+172 test, 171 pass e uno skip symlink Windows noto. Smoke ECC Chrome DevTools
+con 18 controlli riproducibili, ripetuto sul launcher installato con --dashboard;
+prove aggiuntive su cambio reale della nota sintetica, base aggiornata, vault
+senza grafo, legacy readonly, bozza per vault e tastiera Enter/Tab. Tutti gli hash
+delle tre fixture invariati dopo restore byte della sola nota di prova.
+Servizi di prova arrestati con uscita 0, fixture sacrificate e rimosse.
+
+Compilazione Python, node --check del client assemblato e smoke, controllo diff
+e installer --prova superati. Asset finali installati e CLI build/launcher reali
+funzionanti. Nessuna nuova dipendenza, nessun coverage/type checker/linter
+dedicato configurato. Desktop 1440x900 con screenshot JPEG, mobile 390x844 con
+evidenza DOM renderizzata: la cattura immagine mobile non terminava ed è stata
+interrotta. Nessun overflow e controlli da almeno 44 px, nessuna animazione;
+non certificazione screen reader/cross-browser. [Report ECC e limiti](evidence/step-3-3/report.json).
+
+Prossimo punto: 3.4, apply transazionale con mapping rinomine e recovery,
+subordinato ai gate di protezione degli editor esterni e ai formati condivisi.
