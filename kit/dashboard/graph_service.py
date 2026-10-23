@@ -56,7 +56,7 @@ def _check_metadata(path, revision, generation):
         db.close()
 
 
-def rebuild(root, *, lock=None, cancelled=None, validating=None):
+def rebuild(root, *, lock=None, cancelled=None, validating=None, operation_id=None):
     """Build da copia dei byte, lock comune e controllo contenuti prima del marker.
 
     Non modifica note e non applica operazioni del journal. Un crash prima del
@@ -72,6 +72,10 @@ def rebuild(root, *, lock=None, cancelled=None, validating=None):
     with (nullcontext(lock) if lock is not None else VaultLock(root, timeout=5)) as lock:
         check_cancelled()
         root = lock.root
+        if (root / '.teseo/local/operations.sqlite').exists():
+            from .storage import Journal
+            with Journal(lock) as journal:
+                journal.assert_notes_idle(operation_id)
         snapshot = capture_snapshot(root)
         if any(entry.path.startswith(".teseo/shared/events/") for entry in snapshot.files):
             raise ContractError("event_validation_unavailable", "Validazione eventi non ancora disponibile")

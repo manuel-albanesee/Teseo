@@ -21,10 +21,18 @@ from .contracts import (
 )
 
 
-def _compatible_root(root):
+def _compatible_root(root, allow_missing_schema=False):
     root = Path(root).resolve(strict=True)
     compatibility = inspect_vault(root)
     if compatibility.mode != "compatible":
+        if allow_missing_schema and not (root / 'Wiki reference.md').exists() and (root / 'wiki').is_dir():
+            for relative in ('.teseo', '.teseo/project.json', 'wiki', 'Wiki reference.md'):
+                _no_link(root / relative)
+                resolve_path(root, relative)
+            with (root / '.teseo/project.json').open('rb') as stream:
+                data = stream.read(65537)
+            if len(data) <= 65536:
+                return root, parse_manifest(data)['vault_id']
         raise ContractError("vault_readonly", "Richiesto manifest compatibile; nessuna adozione implicita")
     return root, compatibility.manifest["vault_id"]
 
@@ -60,10 +68,11 @@ class VaultLock(AbstractContextManager):
     ritentare. La chiusura/crash del processo libera il lock del kernel.
     """
 
-    def __init__(self, root, timeout=0):
+    def __init__(self, root, timeout=0, *, recovery=False):
         if type(timeout) not in (int, float) or not math.isfinite(timeout) or timeout < 0:
             raise ValueError("timeout deve essere finito e non negativo")
-        self.root, self.vault_id = _compatible_root(root)
+        self.recovery = recovery
+        self.root, self.vault_id = _compatible_root(root, recovery)
         self.timeout, self._stream = timeout, None
 
     @property
@@ -73,7 +82,7 @@ class VaultLock(AbstractContextManager):
     def __enter__(self):
         if self.held:
             raise ContractError("lock_reentry", "Lock già acquisito")
-        if _compatible_root(self.root)[1] != self.vault_id:
+        if _compatible_root(self.root, self.recovery)[1] != self.vault_id:
             raise ContractError("vault_changed", "Identità vault cambiata prima del lock")
         local = _local_directory(self.root)
         path = local / "vault.lock"
@@ -192,7 +201,7 @@ def _scan(root, max_bytes):
     return Snapshot(tuple(sorted(entries, key=lambda entry: entry.path)))
 
 
-def capture_snapshot(root, max_bytes=64 * 1024 * 1024):
+def capture_snapshot(root, max_bytes=64 * 1024 * 1024, *, allow_missing_schema=False):
     """Due scansioni di confronto, limite esplicito; nessuna garanzia anti-race.
 
     Byte della prima scansione conservati in memoria e successivamente copiabili
@@ -200,12 +209,12 @@ def capture_snapshot(root, max_bytes=64 * 1024 * 1024):
     """
     if type(max_bytes) is not int or max_bytes <= 0:
         raise ValueError("max_bytes deve essere un intero positivo")
-    root, _ = _compatible_root(root)
+    root, _ = _compatible_root(root, allow_missing_schema)
     try:
         snapshot = _scan(root, max_bytes)
         if snapshot.digest != _scan(root, max_bytes).digest:
             raise ContractError("blocked_external_change", "Modifica durante la cattura dello snapshot")
-        _compatible_root(root)
+        _compatible_root(root, allow_missing_schema)
         return snapshot
     except OSError as error:
         raise ContractError("snapshot_unreadable", "File cambiato o non accessibile durante lo snapshot") from error
@@ -291,6 +300,30 @@ class Journal(AbstractContextManager):
             self.db.execute("INSERT INTO operations VALUES (?,?,?,?)",
                             (operation_id, idempotency_key, request, canonical_json(record)))
         return record
+
+    def find_request(self, kind, payload, key):
+        self._require_lock()
+        row = self.db.execute('SELECT operation_id,request_digest FROM operations WHERE idempotency_key=?', (key,)).fetchone()
+        if not row:
+            return None
+        if row[1] != content_hash({'kind': kind, 'payload': payload}):
+            raise ContractError('idempotency_conflict', 'Chiave già usata con payload diverso')
+        return self.get(row[0])
+
+    def assert_notes_idle(self, allowed=None):
+        self._require_lock()
+        for (identifier,) in self.db.execute('SELECT operation_id FROM operations').fetchall():
+            record = self.get(identifier)
+            if (identifier != allowed and record['kind'] == 'ontology_apply'
+                    and record['state'] not in ('succeeded', 'rolled_back', 'failed', 'blocked_external_change', 'cancelled')):
+                raise ContractError('recovery_required', 'Operazione note da completare o ripristinare prima di altre scritture')
+
+    def save_ontology(self, record):
+        """Solo il coordinator specifico può avanzare il protocollo note."""
+        self._require_lock()
+        if record['kind'] != 'ontology_apply' or self.get(record['operation_id'])['kind'] != 'ontology_apply':
+            raise ContractError('invalid_transition', 'Richiesta operazione ontologia')
+        self._save(record)
 
     def _persist_snapshot(self, relative, snapshot):
         destination = resolve_path(self.lock.root, relative)

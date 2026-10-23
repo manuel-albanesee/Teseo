@@ -17,6 +17,7 @@ from .readonly import VaultRegistry
 from .read_api import ReadAPI
 from .jobs import RebuildCoordinator
 from .ontology_preview import PreviewService
+from .ontology_apply import ApplyService
 
 MAX_BODY_BYTES = 16 * 1024
 
@@ -29,6 +30,8 @@ class DashboardServer(ThreadingHTTPServer):
         self.operations = RebuildCoordinator(self.registry)
         self.read_api = ReadAPI(self.registry, self.operations)
         self.previews = PreviewService(self.registry)
+        self.applies = ApplyService(self.registry, self.previews)
+        self.operations.note_activity = self.applies.active
         self.session_token = secrets.token_urlsafe(32)
         self.csrf_token = secrets.token_urlsafe(32)
         self.rate_limit, self._requests = rate_limit, deque()
@@ -39,11 +42,14 @@ class DashboardServer(ThreadingHTTPServer):
 
     def server_close(self):
         self.operations.request_stop()
+        self.applies.request_stop()
         super().server_close()
         self.operations.close()
+        self.applies.close()
 
     def request_stop(self):
         self.operations.request_stop()
+        self.applies.request_stop()
         threading.Thread(target=self.shutdown, name="teseo-stop", daemon=True).start()
 
     @property
@@ -220,6 +226,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self.server.request_stop()
                 return
             parts = target.path.split("/")
+            if len(parts) == 7 and parts[1:4] == ['api', 'v1', 'vaults'] and parts[5:] == ['ontology', 'apply']:
+                self._reply(202, self.server.applies.submit(parts[4], body, self._header('If-Match')))
+                return
+            if len(parts) == 8 and parts[1:4] == ['api', 'v1', 'vaults'] and parts[5] == 'operations' and parts[7] == 'recover':
+                self._reply(202, self.server.applies.recover(parts[4], parts[6], body, self._header('If-Match')))
+                return
             if len(parts) == 7 and parts[1:4] == ["api", "v1", "vaults"] and parts[5:] == ['ontology', 'preview']:
                 self._reply(200, self.server.previews.preview(parts[4], body))
                 return
@@ -242,6 +254,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     if len(parts) == 6:
                         reader = {"status": self.server.read_api.status, "graph": self.server.read_api.graph,
                                   "ontology": self.server.read_api.ontology,
+                                  "operations": self.server.operations.list,
                                   "diagnostics": self.server.read_api.diagnostics}.get(parts[5])
                         if reader:
                             self._data_reply(reader(parts[4], parameters))
@@ -279,6 +292,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
                       'preview_limit': 422, 'preview_parse_failed': 422, 'preview_encoding': 422,
                       'ontology_manual': 422, 'catalog_adoption_required': 422,
                       'invalid_schema': 422}.get(error.code, status)
+            status = {'manual_confirmation_required': 422, 'apply_platform_unavailable': 422,
+                      'precondition_required': 428, 'migration_manual': 422, 'migration_collision': 409,
+                      'migration_invalid': 422, 'invalid_migrations': 400, 'shared_mapping_unavailable': 422,
+                      'recovery_required': 409, 'recovery_conflict': 409}.get(error.code, status)
             self._error(status, error.code, str(error), getattr(error, 'details', None))
         except (ConnectionError, TimeoutError):
             self.close_connection = True

@@ -24,7 +24,7 @@ a generazioni restano prerequisiti per attivare la dashboard e le automazioni.
 | --- | --- |
 | 1 | Contratti, journal, lock, snapshot, generazioni e backup disponibili; apply protetto note e recovery multi-file ancora da realizzare |
 | 2 | Bootstrap, API e UI di consultazione, distribuzione e rebuild coordinato disponibili; adozione legacy ed export diagnostica futuri |
-| 3 | Parser/serializer e validazione (3.1), API preview (3.2), form UI con diff/impatto (3.3) disponibili; apply e recovery futuri |
+| 3 | Parser/serializer (3.1), preview (3.2), form UI (3.3), apply manuale locale e recovery (3.4) disponibili; automatico disabilitato, mapping pagine/eventi al passo 5 |
 | 4 | Probe e ricevuta da provare su ogni client; Stop non certifica il successo |
 | 5 | Canonicalizzazione disponibile; schema eventi per tipo, DAG, proiezioni e migrazione ancora da sviluppare |
 | 6 | Staging Git isolato e attribuzione precisa obbligatori prima del push dati |
@@ -632,3 +632,39 @@ non certificazione screen reader/cross-browser. [Report ECC e limiti](evidence/s
 
 Prossimo punto: 3.4, apply transazionale con mapping rinomine e recovery,
 subordinato ai gate di protezione degli editor esterni e ai formati condivisi.
+
+## Incremento 12 — Apply manuale locale e recovery (passo 3.4)
+
+Apply esplicito su volume Windows locale fisso, con editor/hook sospesi e due
+conferme distinte nella UI. Richiede preview corrente, hash proposta, If-Match,
+selezione delle migrazioni e chiave idempotente persistente. Schema e rinomine
+di tipo/proprietà passano prima dalla validazione completa e dal build su copia
+isolata; migrazioni delle note preservano corpo, commenti e newline. YAML ambiguo,
+selezioni incomplete e record condivisi impediscono l'applicazione.
+
+Journal, snapshot e backup univoci permettono completamento o rollback espliciti
+dopo crash. ReplaceFileW conserva la versione realmente sostituita; una modifica
+estranea tra controllo hash e replace rimane nel backup e blocca il recovery.
+Nessuna atomicità nativa multi-file o esclusione degli editor promessa. Il gate
+con processo esterno dimostra che VaultLock è soltanto cooperativo: automatico
+ed external_writer_exclusion restano false. Mapping di pagine/eventi rinviato
+al passo 5; nessuna pubblicazione automatica introdotta.
+
+Lista operazioni readonly e comandi recovery disponibili nella UI, anche dopo
+riavvio e schema temporaneamente assente per errore nativo. Polling prosegue
+durante il worker di recovery, fino a succeeded o rolled_back. Altre scritture
+del servizio restano bloccate finché un'operazione note è pendente.
+
+Verifica ECC database-migrations, verification-loop e frontend: 189 test,
+188 pass e uno skip symlink Windows noto (386.396 s), inclusi 17 nuovi test.
+Quattro controlli mirati ripetuti sul codice finale dopo il gate del volume:
+tutti pass. Crash reale di processo dopo prima nota, fault nativi, concorrenza,
+race e preservazione dati estranei verificati su fixture sacrificabili.
+Installer --prova --dashboard, compilazione Python, node --check e diff superati.
+Browser ECC sul runtime installato: apply da tastiera fino a succeeded e
+interruzione/ripristino fino a rolled_back, desktop 1440x900 e mobile 390x844.
+[Evidenze, report e limiti](evidence/step-3-4/verification.md).
+
+Prossimo punto: 4.1, registry job/ricevute e adapter finto deterministico.
+Il protocollo pagine/eventi e il gate di esclusione restano prerequisiti per
+estendere l'apply oltre il percorso manuale documentato. Nessun merge.

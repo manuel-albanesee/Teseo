@@ -20,6 +20,7 @@ PAGE = """<!doctype html>
 <p id="root" class="path">Collega un vault per iniziare.</p><p id="revision" class="hint"></p>
 <p id="notice" role="status" aria-live="polite"></p>
 <p id="operation" role="status" aria-live="polite"></p>
+<details><summary>Operazioni persistenti e recovery</summary><button id="list-operations" type="button">Leggi operazioni del vault</button><div id="operation-list"></div></details>
 <nav aria-label="Viste del vault"><button data-view="graph" aria-pressed="true">Grafo</button><button data-view="ontology" aria-pressed="false">Ontologia</button><button data-view="diagnostics" aria-pressed="false">Diagnostica</button></nav>
 <section id="graph" aria-label="Grafo">
 <form id="filters" class="toolbar"><div><label for="type">Tipo</label><select id="type" disabled><option value="">Tutti i tipi</option></select></div>

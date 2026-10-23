@@ -1,0 +1,11 @@
+{
+  "viewport": [
+    1440,
+    900
+  ],
+  "initiallyDisabled": true,
+  "enabledAfterConfirmations": true,
+  "warning": true,
+  "overflow": false,
+  "focus": "ontology-apply"
+}

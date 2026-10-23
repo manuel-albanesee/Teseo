@@ -14,6 +14,7 @@ from uuid import uuid4
 from .contracts import ContractError, content_hash
 from .storage import capture_snapshot
 from .read_api import _parser
+from .ontology_migrations import describe, migration_id
 
 MAX_RESPONSE = 2 * 1024 * 1024
 MAX_ITEMS = 20000
@@ -226,6 +227,13 @@ def analyze(snapshot, patch):
     for path in ('index.md', 'log.md', 'Wiki reference.md'):
         for target in parser.LINK.findall(documents.get(path, '')):
             reference(path, 'body', target, 'document')
+    for migration in migrations:
+        migration['migration_id'] = migration_id(migration)
+        if migration['deterministic']:
+            try:
+                migration.update(describe(documents[migration['page']].encode('utf-8'), migration))
+            except ContractError:
+                migration.update(deterministic=False, reason='YAML complesso o ambiguo: migrazione manuale richiesta')
     entity_types = {item[0]: item[1] for item in base['entita']}
     changed_nodes = {name for name, tipo in entity_types.items() if isinstance(tipo, str) and tipo in changed_types}
     edges = [{'page': 'wiki/' + source + '.md', 'property': prop, 'target': target}
@@ -327,3 +335,12 @@ class PreviewService:
                 return deepcopy(record)
         finally:
             self._slots.release()
+
+    def proposal(self, vault_id, preview_id, proposal_hash):
+        with self._lock:
+            for (identifier, _), (expires, _, record) in self._cache.items():
+                if identifier == vault_id and record['preview_id'] == preview_id:
+                    if expires <= time.monotonic() or record['proposal_hash'] != proposal_hash:
+                        break
+                    return deepcopy(record)
+        raise ContractError('preview_stale', 'Preview assente, scaduta o hash diverso; generare una nuova preview')

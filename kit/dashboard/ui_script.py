@@ -16,14 +16,36 @@ SCRIPT = r"""
  let nodes = [], edges = [], cursor = null, filters = {}, invalid = false, loadingGraph = false;
  let stopping = false, operationPoll = 0;
  const pendingRebuild = new Map();
- async function api(path, data) {
-   const headers = {'X-Teseo-Session':token}, options = {headers,cache:'no-store'};
+ async function api(path, data, extraHeaders={}) {
+   const headers = {'X-Teseo-Session':token,...extraHeaders}, options = {headers,cache:'no-store'};
    if(data !== undefined) {options.method='POST';headers['Content-Type']='application/json';if(csrf) headers['X-Teseo-CSRF']=csrf;options.body=JSON.stringify(data);}
    const response = await fetch(path, options); const body = await response.json();
    if(!response.ok) {const error = new Error(body.error?.message || 'Servizio non disponibile');error.code=body.error?.code;error.details=body.error?.details;throw error;}
    return body;
  }
- const editor=createOntologyEditor({api,plain,element,getEpoch:()=>epoch,stopped:()=>stopping});
+ const editor=createOntologyEditor({api,plain,element,getEpoch:()=>epoch,stopped:()=>stopping,onOperation:(vault,id)=>watchOperation(vault,id)});
+ $('list-operations').addEventListener('click',async()=>{
+   const vault=$('vault').value,run=epoch;if(!vault||stopping)return;
+   const root='/api/v1/vaults/'+encodeURIComponent(vault),container=$('operation-list');container.replaceChildren();
+   element('p','Lettura del journal…',container);
+   try{const body=await api(root+'/operations');if(run!==epoch)return;container.replaceChildren();
+     if(!body.operations.length)element('p','Nessuna operazione registrata.',container);
+     if(body.truncated)element('p','Visualizzate le ultime 50 operazioni.',container);
+     for(const item of body.operations){const section=element('section',undefined,container);element('p',item.operation_id+' · '+item.kind+' · '+item.state,section);
+       if(item.error)element('p',item.error.code+' · '+item.error.message,section);
+       if(item.kind==='ontology_apply'&&item.state==='recovery_required'){
+         element('p','Recovery manuale non protetto: sospendi editor/hook e verifica base, candidato e backup. Un conflitto estraneo blocca il recovery.',section);
+         const input=element('input',undefined,section);input.type='checkbox';input.id='recover-'+item.operation_id;
+         const label=element('label','Ho sospeso gli scrittori esterni e revisionato lo stato dei file e dei backup.',section);label.htmlFor=input.id;
+         for(const [action,text]of [['finish','Completa candidato'],['rollback','Ripristina base']]){const button=element('button',text,section);button.type='button';button.disabled=!body.live_content_revision;
+           button.addEventListener('click',async()=>{if(!input.checked){element('p','Conferma prima la sospensione e la revisione.',section);return;}button.disabled=true;
+             try{const job=await api(root+'/operations/'+encodeURIComponent(item.operation_id)+'/recover',{action,mode:'manual_paused',external_writers_paused:true,semantic_reviewed:true},{'If-Match':'"'+body.live_content_revision+'"'});if(run===epoch)watchOperation(vault,job.operation_id);}
+             catch(error){if(run===epoch)element('p',error.code+': '+error.message+' · Rileggi le operazioni prima di riprovare.',section);}
+           });}
+       }
+     }
+   }catch(error){if(run===epoch)element('p','Operazioni non disponibili: '+error.message,container);}
+ });
  function url(endpoint, parameters={}) {
    return '/api/v1/vaults/' + encodeURIComponent(state.vault_id) + '/' + endpoint + '?' + new URLSearchParams({generation:state.graph_generation,...parameters});
  }
@@ -40,9 +62,10 @@ SCRIPT = r"""
      try {
        const job=await api('/api/v1/vaults/'+encodeURIComponent(vaultId)+'/operations/'+encodeURIComponent(identifier));
        if(run!==epoch || poll!==operationPoll || stopping)return;
-       const terminal=['succeeded','failed','cancelled','blocked_external_change','recovery_required'].includes(job.state);
-       $('operation').textContent='Rebuild '+identifier+' · '+job.state;
-       if(job.state==='succeeded')$('operation').textContent+=' · Completato. Premi Aggiorna vista per caricare la generazione pubblicata.';
+       const terminal=['succeeded','rolled_back','failed','cancelled','blocked_external_change','recovery_required'].includes(job.state);
+       $('operation').textContent=(job.kind==='ontology_apply'?'Applicazione ontologia ':'Rebuild ')+identifier+' · '+job.state;
+       if(['succeeded','rolled_back'].includes(job.state))$('operation').textContent+=' · Completato. File cambiati: '+(job.checkpoint?.changed_files||[]).join(', ')+'. Premi Aggiorna vista per caricare la generazione pubblicata.';
+       if(job.state==='recovery_required')$('operation').textContent+=' · Conserva base, candidato e backup. Sospendi gli editor e scegli recovery esplicito; nessun rollback automatico.';
        if(job.error)$('operation').textContent+=' · '+job.error.code+': '+job.error.message+' '+(job.error.details||[]).join(' · ')+' · Correggi il problema e aggiorna la vista prima di riprovare.';
        if(terminal){$('rebuild').disabled=!state?.capabilities.rebuild;return;}
      } catch(error) {
@@ -149,6 +172,7 @@ SCRIPT = r"""
  async function selectVault() {
    if(stopping)return;
    editor.reset();
+   $('operation-list').replaceChildren();
    ++operationPoll;$('rebuild').disabled=true;$('operation').textContent='';
    const run=++epoch;++graphRequest;++detailRequest;state=null;invalid=false;loadingGraph=false;nodes=[];edges=[];cursor=null;filters={};
    for(const id of ['type','relation','search','apply'])$(id).disabled=true;

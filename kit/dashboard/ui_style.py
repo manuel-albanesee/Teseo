@@ -14,5 +14,7 @@ nav{display:flex;gap:8px;border-bottom:1px solid var(--line);padding:12px 0;marg
 @media(max-width:1000px){.toolbar{grid-template-columns:1fr 1fr}.shell{grid-template-columns:235px minmax(0,1fr)}main{padding:24px}.columns{grid-template-columns:1fr}#detail{border-left:0;border-top:1px solid var(--line);padding:20px 0 0}}
 @media(max-width:640px){header{padding:14px 18px;gap:12px}header span:not(.badge){display:none}.shell{display:block}aside{padding:20px;border-right:0;border-bottom:1px solid var(--line)}aside .hint{margin-top:16px}main{padding:24px 20px}.heading{align-items:flex-start}h2{font-size:26px}.toolbar{grid-template-columns:1fr}nav button{flex:1;padding:9px}#map svg{min-height:230px}.node-list{max-height:320px}}
 .ontology-fields>[data-field=name],.ontology-fields>[data-field=description]{grid-column:1/-1}
+#ontology-result input[type=checkbox]{width:24px;min-height:44px;vertical-align:middle;margin-right:10px}#ontology-result input[type=checkbox]+label{display:inline}#ontology-result button{margin-top:12px}
+#operation-list input[type=checkbox]{width:24px;min-height:44px;vertical-align:middle}#operation-list input+label{display:inline}#operation-list button{margin:10px 10px 10px 0}#operation-list p{overflow-wrap:anywhere}
 @media(max-width:640px){.ontology-fields{grid-template-columns:1fr}#ontology-changes button{margin:8px 0;display:block}.editor-actions button{width:100%}}
 """

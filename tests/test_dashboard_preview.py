@@ -195,7 +195,7 @@ class Preview(unittest.TestCase):
             self.assertEqual(self.post(payload, **kwargs)[0], 403)
         self.assertEqual(self.post(b'x' * (16384 + 1))[0], 400)
         status, _, _ = self.request('POST', self.base + 'ontology/apply', {'preview_id': 'fake'})
-        self.assertEqual(status, 404)
+        self.assertEqual(status, 400)
 
     def test_limits_parse_failure_and_no_graph_required(self):
         self.page.write_text('---\ntipo: [broken\n---\n', encoding='utf-8')

@@ -1,13 +1,13 @@
-"""Editor delle proposte: solo preview esplicita, testo del vault sempre inerte."""
+"""Editor proposte e apply manuale confermato; testo del vault sempre inerte."""
 EDITOR_SCRIPT = r"""
- function createOntologyEditor({api, plain, element, getEpoch, stopped}) {
+ function createOntologyEditor({api, plain, element, getEpoch, stopped, onOperation}) {
    const drafts=new Map();let context=0,timer;
    const initial={category:'relation',action:'add',name:'',to:'',description:'',from_types:'',to_types:'',meaning:'',example:''};
    function reset(){++context;clearTimeout(timer);document.getElementById('ontology-editor').replaceChildren();}
    function mount(status) {
      reset();const container=document.getElementById('ontology-editor');
      element('h3','Prepara una modifica',container);
-     element('p','Solo preview: nessun file viene modificato. Applicazione e migrazioni saranno disponibili in un passo successivo.',container).className='hint';
+     element('p','Componi e verifica la proposta. L’applicazione manuale richiede conferme separate dopo la preview; nessuna modifica automatica.',container).className='hint';
      if(!status.capabilities.ontology_preview){element('p','Editor non disponibile: il vault legacy resta in sola lettura. È necessario un manifest compatibile, senza adozione automatica.',container);return;}
      if(!status.live_content_revision){element('p','Base corrente non leggibile. Correggi i problemi del vault e premi Aggiorna vista.',container);return;}
      const vault=status.vault_id, run=getEpoch(), active=context;
@@ -48,6 +48,7 @@ EDITOR_SCRIPT = r"""
      function invalidated(text='Bozza modificata. Genera una nuova preview.') {
        ++draft.version;draft.pending=null;obsolete=true;
        message.textContent=text+(draft.result?' La preview precedente non è aggiornata.':'');if(draft.result)result.setAttribute('data-obsolete','true');
+       for(const control of result.querySelectorAll('[data-apply-control]'))control.disabled=!draft.applyPending;
      }
      function fields() {
        const relation=controls.category.value==='relation',definition=['add','update'].includes(controls.action.value),rename=controls.action.value==='rename';
@@ -93,9 +94,38 @@ EDITOR_SCRIPT = r"""
        details(result,'Riferimenti',body.references,item=>item.page+' · '+item.property+' → '+item.target);
        details(result,'Record condivisi',body.shared_records,item=>item);
        const usage=element('details',undefined,result);element('summary','Uso di tipi e proprietà, alias e fonti',usage);element('pre',JSON.stringify(body.usage,null,2),usage);
+       if(status.capabilities.ontology_apply){
+         const panel=element('section',undefined,result);element('h4','Applicazione manuale',panel);
+         element('p','Modalità non protetta dagli editor esterni. Sospendi Obsidian, hook e altri scrittori prima di applicare; il lock del servizio non li esclude. Apply automatico disabilitato.',panel);
+         const selected=[];
+         for(const item of body.migration_suggestions.slice(0,200)){
+           const row=element('div',undefined,panel),input=element('input',undefined,row);input.type='checkbox';input.id='migration-'+item.migration_id;input.disabled=!item.deterministic;input.dataset.applyControl='';
+           const label=element('label',item.page+' · '+item.from+' → '+item.to+(item.deterministic?'':' · Solo manuale esterno'),row);label.htmlFor=input.id;
+           input.addEventListener('change',()=>{const index=selected.indexOf(item.migration_id);if(input.checked&&index<0)selected.push(item.migration_id);else if(!input.checked&&index>=0)selected.splice(index,1);});
+           if(item.diff){const note=element('details',undefined,panel);element('summary','Diff della nota · '+item.page,note);element('pre',plain(item.diff),note);}
+         }
+         const confirmations=[];
+         for(const [id,text]of [['writers','Ho sospeso gli editor e gli hook esterni.'],['review','Ho revisionato diff schema/note, significato e testo libero.']]){
+           const row=element('div',undefined,panel),input=element('input',undefined,row);input.type='checkbox';input.id='apply-'+id;input.dataset.applyControl='';
+           const label=element('label',text,row);label.htmlFor=input.id;confirmations.push(input);
+         }
+         const button=element('button',draft.applyPending?'Recupera esito applicazione':'Applica manualmente la proposta',panel);button.type='button';button.id='ontology-apply';button.dataset.applyControl='';button.disabled=!draft.applyPending;
+         const enabled=()=>{button.disabled=!draft.applyPending&&(obsolete||!confirmations.every(input=>input.checked)||!!body.shared_records.length);};
+         for(const input of confirmations)input.addEventListener('change',enabled);
+         button.addEventListener('click',async()=>{
+           if(stopped()||button.disabled)return;
+           if(!draft.applyPending)draft.applyPending={body:{preview_id:body.preview_id,proposal_hash:body.proposal_hash,selected_migrations:[...selected],idempotency_key:crypto.randomUUID(),mode:'manual_paused',external_writers_paused:true,semantic_reviewed:true},base:body.base_content_digest};
+           button.disabled=true;message.textContent='Richiesta di applicazione manuale…';
+           try{const job=await api('/api/v1/vaults/'+encodeURIComponent(vault)+'/ontology/apply',draft.applyPending.body,{'If-Match':'"'+draft.applyPending.base+'"'});draft.applyPending=null;
+             if(!current())return;invalidated('Operazione '+job.operation_id+' avviata. Segui lo stato sopra la vista.');onOperation(vault,job.operation_id);
+           }catch(error){if(!current())return;if(error.code){draft.applyPending=null;obsolete=true;}message.textContent=(error.code?error.code+': ':'Esito apply non confermato: ')+error.message+'. '+(draft.applyPending?'Recupera esito applicazione con la stessa richiesta.':'Correggi e genera una nuova preview.');
+             if(error.details?.length)for(const item of error.details)element('p',item.page+' · '+item.property+' · '+item.reason,panel);
+             button.textContent=draft.applyPending?'Recupera esito applicazione':'Applica manualmente la proposta';enabled();}
+         });
+       }
        obsolete=Date.now()>=body.expires_at*1000;
        if(obsolete){result.setAttribute('data-obsolete','true');message.textContent='Preview scaduta. Genera una nuova preview.';}
-       clearTimeout(timer);if(!obsolete)timer=setTimeout(()=>{if(current()&&draft.result===body){obsolete=true;draft.pending=null;result.setAttribute('data-obsolete','true');message.textContent='Preview scaduta. Genera una nuova preview.';}},Math.max(0,body.expires_at*1000-Date.now()));
+       clearTimeout(timer);if(!obsolete)timer=setTimeout(()=>{if(current()&&draft.result===body){obsolete=true;draft.pending=null;result.setAttribute('data-obsolete','true');for(const control of result.querySelectorAll('[data-apply-control]'))control.disabled=!draft.applyPending;message.textContent='Preview scaduta. Genera una nuova preview.';}},Math.max(0,body.expires_at*1000-Date.now()));
        if(focus)result.focus();
      }
      for(const input of Object.values(controls))input.addEventListener('input',()=>{draft.fields[input.name]=input.value;invalidated();fields();});
@@ -108,7 +138,7 @@ EDITOR_SCRIPT = r"""
        if(['add','update'].includes(f.action))item.value=f.category==='type'?{description:f.description}:{from_types:f.from_types.split(',').map(x=>x.trim()),to_types:f.to_types.split(',').map(x=>x.trim()),meaning:f.meaning,example:f.example,direction:'source_to_target'};
        draft.patch.push(item);invalidated('Modifica aggiunta. Genera la preview per verificarla.');drawQueue();preview.focus();
      });
-     clear.addEventListener('click',()=>{draft.patch=[];draft.adopt=false;adopt.checked=false;draft.result=null;invalidated('Proposta svuotata. Nessun file modificato.');result.replaceChildren();drawQueue();controls.name.focus();});
+     clear.addEventListener('click',()=>{if(draft.applyPending){message.textContent='Recupera prima l’esito dell’applicazione incerta.';return;}draft.patch=[];draft.adopt=false;adopt.checked=false;draft.result=null;invalidated('Proposta svuotata. Nessun file modificato.');result.replaceChildren();drawQueue();controls.name.focus();});
      rebase.addEventListener('click',async()=>{
        rebase.disabled=true;invalidated('Lettura della base corrente…');
        try{const fresh=await api('/api/v1/vaults/'+encodeURIComponent(vault)+'/status');if(!current())return;
@@ -129,7 +159,7 @@ EDITOR_SCRIPT = r"""
        try{
          const body=await api('/api/v1/vaults/'+encodeURIComponent(vault)+'/ontology/preview',payload);
          if(!current()||version!==draft.version)return;
-         draft.pending=null;draft.result=body;obsolete=false;drawResult(body,true);message.textContent='Preview pronta. Revisiona diff e impatto; applicazione non disponibile.';
+         draft.pending=null;draft.result=body;obsolete=false;drawResult(body,true);message.textContent=obsolete?'Preview scaduta. Genera una nuova preview.':'Preview pronta. Revisiona diff e impatto prima di qualsiasi applicazione manuale.';
        }catch(error){
          if(!current()||version!==draft.version)return;
          if(error.code)draft.pending=null;obsolete=true;if(draft.result)result.setAttribute('data-obsolete','true');
@@ -138,7 +168,7 @@ EDITOR_SCRIPT = r"""
        }finally{if(current()){busy=false;result.removeAttribute('aria-busy');drawQueue();}}
      });
      fields();baseLabel();drawQueue();
-     if(draft.result){drawResult(draft.result);obsolete=true;result.setAttribute('data-obsolete','true');message.textContent='Preview precedente conservata. Genera una nuova preview sulla base desiderata.';}
+     if(draft.result){drawResult(draft.result);invalidated('Preview precedente conservata. Genera una nuova preview sulla base desiderata.');}
    }
    return {mount,reset};
  }

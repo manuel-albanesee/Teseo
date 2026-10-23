@@ -1,6 +1,6 @@
 # 3 — Editor dell'ontologia e migrazioni
 
-Stato: parser/serializer e validazione (3.1), API preview con impatto (3.2) e form UI delle proposte con diff e capacità semantiche (3.3) implementati. Apply transazionale resta futuro (3.4). Dipendenze: [contratto 1](01-contratto-dati-operazioni.md), [dashboard 2](02-dashboard-consultazione.md); le migrazioni con mapping di pagine condivise richiedono anche il formato/eventi del [passo 5](05-stato-condiviso.md). Parser, preview e modifiche senza mapping possono precederlo. L'utente prepara modifiche a tipi e relazioni, vede le pagine interessate e potrà applicare soltanto una migrazione verificata. Le convenzioni libere conservano testo e struttura.
+Stato: parser/serializer e validazione (3.1), API preview con impatto (3.2) e form UI delle proposte con diff e capacità semantiche (3.3) implementati. Apply manuale locale e recovery disponibili (3.4); automatico e mapping eventi restano subordinati ai rispettivi gate. Dipendenze: [contratto 1](01-contratto-dati-operazioni.md), [dashboard 2](02-dashboard-consultazione.md); le migrazioni con mapping di pagine condivise richiedono anche il formato/eventi del [passo 5](05-stato-condiviso.md). Parser, preview e modifiche senza mapping possono precederlo. L'utente prepara modifiche a tipi e relazioni, vede le pagine interessate e potrà applicare soltanto una migrazione verificata. Le convenzioni libere conservano testo e struttura.
 
 ## Stato attuale e limiti da rispettare
 
@@ -12,7 +12,7 @@ Le euristiche vanno ispezionate in [recall.py](../kit/graph/recall.py), [candida
 
 `ontology.py` estrae un modello `{types,relations,source_spans,opaque_sections,digest}`. Una relazione contiene `name`, `from_types`, `to_types`, `meaning`, `example`, `direction: source_to_target`; direzione inversa visuale ha etichetta derivata e non una seconda proprietà salvata. Il serializer aggiorna solo le tabelle modificate, preserva sezioni libere, tabelle fonti, commenti e newline. Parser ambiguo, tabella duplicata o Markdown non riconosciuto porta a editing manuale, senza riscrittura totale. Il no-op restituisce sempre i byte originali, anche per documenti non modificabili.
 
-`propose_type_catalog(document, observed_types)` prepara in memoria la sezione canonica «Tipi ammessi», ricavata da convenzioni YAML univoche, tipi osservati e vincoli. Restituisce candidato, digest base e conferma richiesta; non scrive file. L'API preview espone questa proposta dal passo 3.2; UI di conferma e apply restano futuri. Il template e i vault legacy restano invariati. Con catalogo esplicito il builder verifica tipi delle pagine e delle fonti derivate, vincoli, nomi duplicati e riservati. Senza catalogo mantiene la lettura legacy. Il manifest non acquisisce un vocabolario parallelo.
+`propose_type_catalog(document, observed_types)` prepara in memoria la sezione canonica «Tipi ammessi», ricavata da convenzioni YAML univoche, tipi osservati e vincoli. Restituisce candidato, digest base e conferma richiesta; non scrive file. L'API preview espone questa proposta dal passo 3.2; la UI di conferma è disponibile dal 3.3 e l'apply manuale dal 3.4. Il template e i vault legacy restano invariati. Con catalogo esplicito il builder verifica tipi delle pagine e delle fonti derivate, vincoli, nomi duplicati e riservati. Senza catalogo mantiene la lettura legacy. Il manifest non acquisisce un vocabolario parallelo.
 
 Grammatica v1: UTF-8 fino a 2 MiB, titoli ATX h2 esatti, una tabella contigua per sezione, massimo 2048 righe. Tipi: `Tipo|Descrizione` (anche `Nome`); relazioni: tre colonne `Relazione|Da|A` oppure cinque con `Significato|Esempio`, con etichette legacy `Da (tipo)`/`A (tipo)` supportate. Nomi NFC fino a 64 caratteri, iniziale alfabetica, poi lettere/numeri/underscore/trattino; vincoli separati da virgola. Supportati BOM, LF/CRLF/CR e pipe/backslash escapati. Offset e digest si riferiscono ai byte originali; il cambio di una tabella ne normalizza solo le righe, conservando il suo newline. Fence, commenti, blocchi HTML riconosciuti e codice indentato sono opachi. Formati fuori grammatica e commenti dentro una tabella richiedono intervento manuale.
 
@@ -126,7 +126,90 @@ Label connesse, live status, focus sul risultato, form a due colonne desktop e
 impilato su mobile. Verifiche browser riproducibili in
 `tests/dashboard_ontology_smoke.js`; [evidenze ECC](evidence/step-3-3/report.json).
 
-## Apply e migrazione futuri
+## Apply manuale e recovery disponibili (3.4 locale)
+
+Il percorso verificato è Windows locale, in modalità `manual_paused`: l'utente
+deve sospendere editor e hook esterni e revisionare schema, diff delle note e
+significato prima di confermare. Il lock coordina soltanto il servizio e i client
+cooperanti. Il test con un processo esterno dimostra che non offre esclusione:
+`ontology_apply_automatic` ed `external_writer_exclusion` restano false. Nessun
+flag della richiesta abilita l'apply automatico. Non è una transazione atomica
+del namespace: è un protocollo con journal, sostituzioni per file e recovery.
+
+La preview aggiunge ID stabili e diff byte delle migrazioni selezionabili.
+Rinomine di proprietà o tipi aggiornano solo chiavi/scalari YAML semplici,
+preservando BOM, newline, commenti e corpo; duplicati, anchor e YAML ambiguo
+richiedono editing manuale. Prima di ogni apply il candidato completo viene
+rivalidato. Selezioni parziali che lasciano archi o tipi invalidi sono respinte;
+nessun arco viene eliminato per far passare la validazione.
+
+`POST /api/v1/vaults/{id}/ontology/apply` richiede `If-Match: "<digest-base>"`
+e il body seguente, oltre a sessione/Origin/CSRF:
+
+```json
+{"preview_id":"<uuid>","proposal_hash":"<sha256>","selected_migrations":[],"idempotency_key":"apply_request_001","mode":"manual_paused","external_writers_paused":true,"semantic_reviewed":true}
+```
+
+Le migrazioni sono gli ID della preview. Conferme mancanti: 422;
+If-Match mancante/invalido: 428; preview scaduta/hash diverso o contenuti cambiati:
+409 `preview_stale`. Il limite body resta 16 KiB. Stessa chiave e payload danno
+lo stesso operation_id anche dopo riavvio, stessa chiave con payload diverso dà
+409. Il replay di un'operazione già registrata non richiede la vecchia preview
+ancora in memoria. Risposta 202, due worker note per servizio, un writer per
+vault tramite il lock kernel condiviso con rebuild e journal.
+
+Base e candidato completi persistono nello storage ignorato locale con hash.
+Il grafo del candidato viene costruito e validato in isolamento prima delle
+scritture live. Il journal registra l'intento prima di ciascuna sostituzione.
+`ReplaceFileW` conserva in un percorso univoco il file realmente sostituito;
+hash inatteso del backup indica una race e blocca il proseguimento, conservando
+anche i byte estranei. Errori non provocano rollback impliciti. Il marker grafo
+resta quello precedente finché tutti i file e il digest finale non coincidono
+con il candidato, poi viene pubblicata una generazione valida. Anche un errore
+tra pubblicazione e checkpoint resta verificabile e recuperabile.
+
+`GET /api/v1/vaults/{id}/operations` legge le ultime 50 operazioni (con flag
+`truncated`), digest live per recovery e nessuna scrittura. Il dettaglio resta
+`GET /operations/{operation_id}`. Un'operazione non gestita dalla sessione viene
+mostrata come `recovery_required`, senza replay. Un recovery attivo è mostrato
+`running` fino all'esito effettivo. Si può ricollegare in sola lettura per recovery
+anche un vault con schema assente dopo un replace interrotto, solo con identità
+compatibile e record ontologia persistente; non è adozione di un vault legacy.
+
+`POST /api/v1/vaults/{id}/operations/{operation_id}/recover`, con If-Match sul
+digest corrente letto dall'elenco, richiede:
+
+```json
+{"action":"rollback","mode":"manual_paused","external_writers_paused":true,"semantic_reviewed":true}
+```
+
+`finish` completa il candidato, `rollback` ripristina la base e termina
+`rolled_back`. Nuova validazione prima di scrivere e prima della generazione.
+Entrambi richiedono che ciascun file sia ancora base/candidato; contenuti
+estranei, nuovi file o backup con hash inatteso producono `recovery_conflict`,
+senza sovrascriverli. La sparizione del nome schema dopo errore Windows rimane
+recuperabile da snapshot e intenti. Non si esegue rollback di un'operazione già
+riuscita: servirà una nuova proposta compensativa. Rebuild e altri apply sono
+bloccati mentre un'operazione note richiede recovery.
+
+La UI offre selezione delle migrazioni, diff delle note, due conferme separate,
+apply manuale e polling con elenco file cambiati. Esito incerto riusa la stessa
+richiesta; bozze obsolete non riabilitano il vecchio apply. Il registro persistente
+offre «Completa candidato» e «Ripristina base» dopo conferma esplicita. Nessun
+comando ingest, Git o modello viene eseguito. Fonti raw e DB personali non
+vengono modificati; base, candidati e backup restano conservati, GC futuro.
+
+Rinomine di pagine e mapping di riferimenti in eventi condivisi restano
+subordinati al passo 5: file condivisi presenti bloccano l'apply, non vengono
+ignorati o riscritti. Restano esclusi Windows network/altre piattaforme non
+verificate e garanzie di isolamento da editor non cooperanti. Il percorso
+automatico rimane chiuso finché il relativo gate non dimostra esclusione reale.
+
+Dettaglio dell'API di sostituzione e dei suoi errori parziali:
+[documentazione Microsoft ReplaceFileW](https://learn.microsoft.com/windows/win32/api/winbase/nf-winbase-replacefilew).
+Test: `python -m unittest discover -s tests -p test_dashboard_apply.py -v`.
+
+## Protocollo generale e mapping condivisi futuri
 
 - `POST /api/v1/vaults/{id}/ontology/apply` con `preview_id`, hash e migrazioni selezionate. Usa `If-Match` sul digest; `409 preview_stale` impone una nuova preview.
 - `GET /api/v1/vaults/{id}/operations/{operation_id}` segue l'applicazione. Errori seguono il contratto del passo 2.

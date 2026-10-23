@@ -1,0 +1,14 @@
+{
+  "checks": [
+    "Preview senza adozione su catalogo esistente",
+    "Interruzione dopo sostituzione prima nota mostrata come recovery_required",
+    "Polling continua durante recovery fino a rolled_back"
+  ],
+  "operation": "Applicazione ontologia f2870868-4426-449d-bf4a-f7c1bbf9a416 · rolled_back · Completato. File cambiati: Wiki reference.md, wiki/Anna.md. Premi Aggiorna vista per caricare la generazione pubblicata.",
+  "viewport": [
+    390,
+    844
+  ],
+  "overflow": false,
+  "labels": true
+}

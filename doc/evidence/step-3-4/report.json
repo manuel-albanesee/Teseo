@@ -1,0 +1,59 @@
+{
+  "contract": "contract.md; apply manuale Windows e recovery esplicito, automatico disabilitato",
+  "targetViewports": [
+    "1440x900",
+    "390x844"
+  ],
+  "accessibility": {
+    "status": "pass",
+    "evidence": "Conferme con label collegate, stato live e pulsanti espliciti; Enter sul pulsante apply ha avviato l'operazione reale. Controlli misurati almeno 44 px, nessuna animazione. Non audit screen reader."
+  },
+  "responsive": {
+    "status": "pass",
+    "evidence": "DOM renderizzato ECC a 1440x900 e 390x844: nessun overflow orizzontale. Diff e stato restano leggibili nel workbench installato."
+  },
+  "contentStates": {
+    "loading": {
+      "status": "pass",
+      "evidence": "Apply reale con polling e controlli disabilitati; recovery attivo continua a essere interrogato fino al termine. Regressione dedicata per evitare arresto prematuro su recovery_required."
+    },
+    "empty": {
+      "status": "pass",
+      "evidence": "Elenco operazioni inizialmente vuoto nella fixture; API senza journal restituisce lista vuota senza creare storage. Nessuna migrazione selezionata per l'adozione del catalogo."
+    },
+    "error": {
+      "status": "pass",
+      "evidence": "Fault controllato dopo la prima nota espone recovery_required nella UI. Hash obsoleto, conferme mancanti, scadenza, selezione invalida e race coperti dai test HTTP."
+    },
+    "partial": {
+      "status": "pass",
+      "evidence": "Dopo interruzione della migrazione multi-file viene conservata la generazione precedente e offerto il recovery esplicito; nessun successo parziale dichiarato. Browser ha ripristinato la nota senza restore manuale."
+    },
+    "success": {
+      "status": "pass",
+      "evidence": "Enter ha applicato il catalogo sul launcher installato fino a succeeded; successiva rinomina interrotta e rollback esplicito osservato fino a rolled_back. Note, raw e memoria personale verificati byte per byte."
+    },
+    "permission": {
+      "status": "pass",
+      "evidence": "Apply inizialmente disabilitato, abilitato soltanto dopo due conferme manuali. Avviso editor/hook sospesi presente; auth/CSRF verificati via HTTP, automatico ed esclusione esterna false."
+    }
+  },
+  "renderedEvidence": [
+    {
+      "viewport": "1440x900",
+      "artifact": "desktop.json",
+      "observation": "Osservazione DOM reale del launcher installato: apply disabilitato poi abilitato dalle conferme, warning presente, focus sul pulsante e nessun overflow."
+    },
+    {
+      "viewport": "390x844",
+      "artifact": "mobile.json",
+      "observation": "Osservazione DOM reale della rinomina interrotta e del rollback esplicito completato; label collegate e nessun overflow. Artefatto strutturato, non screenshot."
+    }
+  ],
+  "verification": {
+    "python": "189 test: 188 pass, 1 skip Windows noto; 386.396 s. Quattro test mirati finali pass in 11.238 s.",
+    "installer": "--prova --dashboard superato; launcher installato verificato nel browser",
+    "static": "compileall, node --check e git diff --check superati; nessuna nuova dipendenza"
+  },
+  "limits": "Apply manuale su Windows locale fisso, nessuna esclusione garantita per editor esterni e nessuna atomicità nativa multi-file. Mapping pagine/eventi al passo 5; record condivisi bloccanti. Nessun replay automatico. Fixture sintetiche e Chrome Windows; non audit screen reader/cross-browser. Coverage/type checker/linter dedicati non configurati."
+}

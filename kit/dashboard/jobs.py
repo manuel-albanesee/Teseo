@@ -24,12 +24,14 @@ class RebuildCoordinator:
         self._workers = {}  # one live job per vault, at most four vaults
         self._requests = {}
         self._stop = threading.Event()
+        self.note_activity = lambda vault_id: None
 
     def activity(self, vault_id):
         with self._mutex:
             job = self._workers.get(vault_id)
-            return {"busy": job is not None, "busy_known": True, "busy_scope": "service",
-                    "active_operation_id": job[0] if job else None}
+            note = self.note_activity(vault_id)
+            return {"busy": job is not None or note is not None, "busy_known": True, "busy_scope": "service",
+                    "active_operation_id": job[0] if job else note}
 
     def submit(self, vault_id, body):
         self.registry.status(vault_id)
@@ -57,6 +59,7 @@ class RebuildCoordinator:
                 raise ContractError("job_limit", "Quattro rebuild già attivi; riprovare al termine")
             root = self.registry.root(vault_id)
             with VaultLock(root) as lock, Journal(lock) as journal:
+                journal.assert_notes_idle()
                 journal.recover_rebuilds()
                 snapshot = capture_snapshot(root)
                 record = journal.create("rebuild", payload, body["idempotency_key"], snapshot)
@@ -128,7 +131,7 @@ class RebuildCoordinator:
                 raise ValueError
         except (ValueError, TypeError, AttributeError):
             raise ContractError("operation_missing", "Operazione non trovata") from None
-        root = self.registry.root(vault_id)
+        root = self.registry.operation_root(vault_id)
         for relative in (".teseo", ".teseo/local", ".teseo/local/operations.sqlite"):
             _no_link(root / relative)
         path = root / ".teseo/local/operations.sqlite"
@@ -145,11 +148,14 @@ class RebuildCoordinator:
                 db.close()
         except sqlite3.Error:
             raise ContractError("operation_unavailable", "Journal temporaneamente non leggibile") from None
-        if record["kind"] != "rebuild" or record["vault_id"] != vault_id:
+        if record["kind"] not in ("rebuild", "ontology_apply") or record["vault_id"] != vault_id:
             raise ContractError("operation_missing", "Operazione non trovata")
         with self._mutex:
             active = self._workers.get(vault_id)
-            if record["state"] not in TERMINAL and (not active or active[0] != identifier):
+            note = self.note_activity(vault_id)
+            if record['kind'] == 'ontology_apply' and record['state'] == 'recovery_required' and note == identifier:
+                record.update(state='running', error=None)
+            if record["state"] not in TERMINAL | {'rolled_back'} and (not active or active[0] != identifier) and note != identifier:
                 record.update(state="recovery_required", error={"code": "interrupted",
                     "message": "Job non gestito da questa sessione; verificare eventuali altri servizi e la generazione"})
         return _public(record)
@@ -157,6 +163,31 @@ class RebuildCoordinator:
     def request_stop(self):
         with self._mutex:
             self._stop.set()
+
+    def list(self, vault_id, parameters=None):
+        if parameters:
+            raise ContractError('invalid_query', 'Elenco operazioni senza parametri')
+        root = self.registry.operation_root(vault_id)
+        for relative in ('.teseo', '.teseo/local', '.teseo/local/operations.sqlite'):
+            _no_link(root / relative)
+        path = root / '.teseo/local/operations.sqlite'
+        if not path.exists():
+            return {'operations': [], 'truncated': False, 'content_revision': None, 'graph_generation': None}
+        try:
+            db = sqlite3.connect(path.as_uri() + '?mode=ro', uri=True, timeout=1)
+            try:
+                identifiers = [row[0] for row in db.execute('SELECT operation_id FROM operations ORDER BY rowid DESC LIMIT 51')]
+            finally:
+                db.close()
+        except sqlite3.Error:
+            raise ContractError('operation_unavailable', 'Journal non leggibile') from None
+        try:
+            digest = capture_snapshot(root, allow_missing_schema=True).digest
+        except (ContractError, OSError):
+            digest = None
+        return {'operations': [self.get(vault_id, identifier) for identifier in identifiers[:50]],
+                'truncated': len(identifiers) > 50, 'content_revision': None, 'graph_generation': None,
+                'live_content_revision': digest}
 
     def close(self):
         self.request_stop()

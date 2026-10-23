@@ -4,7 +4,7 @@ from pathlib import Path
 import threading
 from uuid import UUID, NAMESPACE_URL, uuid5
 
-from .contracts import ContractError, inspect_vault
+from .contracts import ContractError, inspect_vault, VaultCompatibility, parse_manifest, parse_json
 
 
 class VaultRegistry:
@@ -45,6 +45,27 @@ class VaultRegistry:
     @staticmethod
     def _description(root):
         compatibility = inspect_vault(root)
+        if compatibility.mode == 'incompatible' and not (root / 'Wiki reference.md').exists():
+            # Recovery-only attach: compatible identity plus a durable interrupted ontology record.
+            from .storage import _compatible_root, _no_link
+            import sqlite3
+            try:
+                _, identifier = _compatible_root(root, allow_missing_schema=True)
+                for relative in ('.teseo/local', '.teseo/local/operations.sqlite'):
+                    _no_link(root / relative)
+                db = sqlite3.connect((root / '.teseo/local/operations.sqlite').as_uri() + '?mode=ro', uri=True)
+                try:
+                    records = [parse_json(row[0]) for row in db.execute('SELECT record FROM operations WHERE length(record)<=5242880 ORDER BY rowid DESC LIMIT 128')]
+                finally:
+                    db.close()
+                if any(item.get('vault_id') == identifier and item.get('kind') == 'ontology_apply'
+                       and item.get('state') in ('prepared', 'applying', 'recovery_required') for item in records):
+                    with (root / '.teseo/project.json').open('rb') as stream:
+                        manifest = parse_manifest(stream.read(65537))
+                    compatibility = VaultCompatibility('recovery_required', manifest,
+                        ({'code':'recovery_required','message':'Schema assente dopo un’operazione interrotta: usare recovery esplicito'},))
+            except (ContractError, OSError, sqlite3.Error):
+                pass
         if compatibility.mode == "incompatible":
             message = compatibility.issues[0]["message"] if compatibility.issues else "Formato non supportato"
             raise ContractError("incompatible_vault", message)
@@ -54,7 +75,9 @@ class VaultRegistry:
                 "compatibility": compatibility.mode, "issues": list(compatibility.issues),
                 "schema_version": compatibility.manifest["schema_version"] if compatibility.manifest else None,
                 "capabilities": {"attach_readonly": True, "graph": False, "rebuild": False,
-                                 "ontology_preview": compatibility.mode == 'compatible', "ontology_apply": False,
+                                 "ontology_preview": compatibility.mode == 'compatible',
+                                 "ontology_apply": compatibility.mode == 'compatible' and os.name == 'nt',
+                                 "ontology_apply_automatic": False, "external_writer_exclusion": False,
                                  "write_notes": False, "sync": False},
                 "content_revision": None, "graph_generation": None}
 
@@ -107,3 +130,16 @@ class VaultRegistry:
         self.status(vault_id)
         with self._lock:
             return self._roots[vault_id]
+
+    def operation_root(self, vault_id):
+        """Polling/recovery restano leggibili durante un replace interrotto dello schema."""
+        from .storage import _compatible_root
+        with self._lock:
+            root = self._roots.get(vault_id)
+        if root is None:
+            raise ContractError('vault_missing', 'Vault non collegato')
+        if self._root(str(root)) != root:
+            raise ContractError('vault_path_changed', 'Percorso vault cambiato')
+        if _compatible_root(root, allow_missing_schema=True)[1] != vault_id:
+            raise ContractError('vault_identity_changed', 'Identità vault cambiata')
+        return root
