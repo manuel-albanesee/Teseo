@@ -131,8 +131,8 @@ class LegacyMigration:
                 if table not in ('risposte', 'aperte', 'scartate'):
                     exclusions[table] = backup.execute(f'SELECT COUNT(*) FROM {quoted}').fetchone()[0]
                     continue
-                values = backup.execute(f'SELECT rowid AS _row_id, * FROM {quoted} ORDER BY rowid').fetchall()
-                if len(values) > 10000:
+                values = backup.execute(f'SELECT rowid AS _row_id, * FROM {quoted} ORDER BY rowid LIMIT 1001').fetchall()
+                if len(values) > 1000:
                     raise ContractError('legacy_invalid', 'Troppe righe legacy per una preview')
                 for row in values:
                     fields = dict(row)
@@ -146,12 +146,17 @@ class LegacyMigration:
                     'base_digest': digest, 'rows': rows, 'exclusions': exclusions,
                     'personal_memory': 'excluded_without_opening', 'copied_source_warning': True,
                     'backup_manifest_path': (directory / 'manifest.json').relative_to(self.root).as_posix()}
-        (directory / 'manifest.json').write_bytes(canonical_json(manifest))
+        manifest_bytes=canonical_json(manifest)
+        if len(manifest_bytes)>2*1024*1024:
+            raise ContractError('legacy_preview_limit','Preview oltre 2 MiB: preparare una selezione legacy più piccola su copia')
+        (directory / 'manifest.json').write_bytes(manifest_bytes)
         with self._db() as db:
             db.execute('INSERT INTO previews VALUES(?, ?)', (preview_id, json.dumps(manifest)))
         return manifest
 
     def export(self, selection_ids: list[str], preview_id: str) -> list[dict]:
+        if not isinstance(preview_id,str):
+            raise ContractError('legacy_preview_stale','Identità preview non valida')
         if not isinstance(selection_ids, list) or any(not isinstance(i, str) for i in selection_ids) or len(set(selection_ids)) != len(selection_ids):
             raise ContractError('legacy_selection_invalid', 'Selezione legacy non valida')
         with self._db() as db:

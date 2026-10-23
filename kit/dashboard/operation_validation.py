@@ -5,19 +5,20 @@ from .storage import validate_raw_unchanged
 from .read_api import _parser
 
 
-def validate_candidate(base, candidate, *, kind, inputs, scope, processed_response_ids=()):
+def validate_candidate(base, candidate, *, kind, inputs, scope, processed_response_ids=(), authorized_event_paths=()):
     validate_raw_unchanged(base,candidate)
     before,after=base.hashes,candidate.hashes
     if before.get('.teseo/project.json')!=after.get('.teseo/project.json'):
         raise ContractError('manifest_changed','Identità o policy del vault non modificabili dal client')
-    if processed_response_ids or any(p.startswith('.teseo/shared/') for p in set(before)|set(after)):
-        raise ContractError('shared_mapping_unavailable','Record condivisi e risposte richiedono il passo 5')
+    from .consolidation import validate_added_events
+    validate_added_events(base,candidate,authorized_event_paths)
     if set(before)-set(after):
         raise ContractError('page_mapping_unavailable','Eliminazioni/rinomine richiedono mapping e revisione espliciti')
     changed=sorted(p for p in after if before.get(p)!=after[p])
     if any(p.startswith('raw/') for p in changed):
         raise ContractError('input_not_selected','Le fonti vanno predisposte prima del ciclo; nessun raw prodotto dal client')
     for path in changed:
+        if path in authorized_event_paths: continue
         if path not in scope and not (path.startswith('wiki/') and path.count('/')==1 and 'wiki/' in scope):
             raise ContractError('scope_violation','Modifica fuori dal perimetro dichiarato',path)
     documents={item.path:item.data.decode('utf-8') for item in candidate.files
@@ -30,7 +31,8 @@ def validate_candidate(base, candidate, *, kind, inputs, scope, processed_respon
               'inputs':{p:before[p] for p in inputs},'scope':scope,
               'lint_scope':'whole_wiki' if 'wiki/' in scope else 'partial',
               'semantic_assurance':'client_declared; human review required',
-              'checks':{'schema_links_aliases_sources':True,'raw_immutable':True,'scope':True,'shared_records_absent':True}}
+              'processed_response_ids':list(processed_response_ids),
+              'checks':{'schema_links_aliases_sources':True,'raw_immutable':True,'scope':True,'shared_events_valid':True}}
     originals={item.path:item.data for item in base.files}
     outputs={item.path:item.data for item in candidate.files}
     manifest['diffs']=[{'path':path,'diff':''.join(difflib.unified_diff(

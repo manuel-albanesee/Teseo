@@ -369,7 +369,7 @@ class Journal(AbstractContextManager):
             self.db.execute("UPDATE operations SET record=? WHERE operation_id=?",
                             (canonical_json(record), record["operation_id"]))
 
-    def prepare(self, operation_id, candidate):
+    def prepare(self, operation_id, candidate, *, checkpoint_id=None):
         """Persisti candidato e checkpoint solo se base live e raw sono invariati."""
         self._require_lock()
         record = self.get(operation_id)
@@ -389,7 +389,7 @@ class Journal(AbstractContextManager):
             self.transition(operation_id, "blocked_external_change", error=error.as_dict())
             raise
         validate_raw_unchanged(base, candidate)
-        checkpoint_id = str(uuid4())
+        checkpoint_id = checkpoint_id or str(uuid4())
         relative = f".teseo/local/snapshots/{operation_id}/candidates/{checkpoint_id}"
         self._persist_snapshot(relative, candidate)
         try:

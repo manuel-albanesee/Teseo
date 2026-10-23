@@ -138,7 +138,7 @@ def execute(journal, identifier, action='finish'):
     journal.save_ontology(record)
     desired_files = {entry.path: entry.data for entry in desired.files}
     changed = [path for path in base.hashes.keys() | candidate.hashes.keys() if base.hashes.get(path) != candidate.hashes.get(path)]
-    for path in sorted(changed, key=lambda path: (path == 'Wiki reference.md', path)):
+    for path in sorted(changed, key=lambda path: (path.startswith('.teseo/shared/events/'), path == 'Wiki reference.md', path)):
         if live.hashes.get(path) == desired.hashes.get(path):
             continue
         live = _check_live(root, record, base, candidate)
@@ -170,6 +170,14 @@ def execute(journal, identifier, action='finish'):
         journal.complete_skill(record)
     else:
         journal.save_ontology(record)
+    # Projection is a replayable cache after the logical file checkpoint, never its authority.
+    from .shared_state import rebuild_projection, snapshot_events
+    try:
+        projection=root/'.teseo/local/shared-state.sqlite'
+        for suffix in ('','-journal','-wal','-shm'): _no_link(Path(str(projection)+suffix))
+        rebuild_projection(projection,snapshot_events(desired,record['vault_id']),record['vault_id'])
+    except Exception:
+        pass  # Explicit shared-state/import can rebuild it; source events and checkpoint remain authoritative.
     return record
 
 

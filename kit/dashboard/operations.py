@@ -123,6 +123,11 @@ class SkillCoordinator:
                    'phase':record['phase'], 'token':token, 'workspace':str(workspace), 'scope':record['request']['scope'],
                    'inputs':record['request']['inputs'], 'receipt_path':str(parent / 'receipt.json')}
         request_path.write_bytes(canonical_json(request))
+        from .shared_state import validate_snapshot
+        shared=validate_snapshot(capture_snapshot(workspace),record['vault_id'])
+        answer_path=workspace/'SHARED_ANSWERS.json'
+        _no_link(answer_path)
+        answer_path.write_bytes(canonical_json(shared))
         adapter = self.adapters[record['request']['adapter']]
         record['handoff'] = adapter.prepare(workspace, request_path, record['request'], record['phase'])
         record.update(state='awaiting_client', error=None)
@@ -165,8 +170,11 @@ class SkillCoordinator:
                 candidate = capture_snapshot(workspace)
                 if receipt['files'] != candidate.hashes:
                     raise ContractError('receipt_manifest_mismatch', 'Manifest ricevuta diverso dai byte isolati')
+                if receipt['processed_response_ids'] and (record['phase']!='lint' or receipt['outcome']!='succeeded'):
+                    raise ContractError('invalid_response_ids','Solo il lint completato può dichiarare UUID processati')
                 if receipt['processed_response_ids']:
-                    raise ContractError('shared_mapping_unavailable', 'Consolidamento risposte richiede il passo 5')
+                    from .consolidation import selection
+                    selection(capture_snapshot(resolve_path(lock.root,record['snapshot_path'])),receipt['processed_response_ids'],vault_id)
                 record['receipts'][receipt['phase']] = {'digest':digest,'token_hash':token_hash,
                     'outcome':receipt['outcome'],'files':candidate.hashes,'checks':receipt['checks'],'reason':receipt['reason']}
                 record['phases'][record['phase']] = receipt['outcome']
@@ -178,11 +186,11 @@ class SkillCoordinator:
                     record['phase']='lint'
                     self._handoff(journal,record)
                 else:
-                    self._validate(journal, record, candidate)
+                    self._validate(journal, record, candidate, receipt['processed_response_ids'])
                 self._advance(journal)
                 return _public(journal.get(identifier))
 
-    def _validate(self, journal, record, candidate):
+    def _validate(self, journal, record, candidate, answer_ids=None):
         try:
             from .operation_validation import validate_candidate
         except ImportError:
@@ -193,10 +201,12 @@ class SkillCoordinator:
         record['state']='validating'
         self._save(journal,record)
         try:
-            base = capture_snapshot(resolve_path(journal.lock.root, record['snapshot_path']))
-            if base.digest != record['base_content_digest']:
-                raise ContractError('snapshot_corrupt','Snapshot base alterato')
-            result = validate_candidate(base,candidate,kind=record['kind'],inputs=record['request']['inputs'],scope=record['request']['scope'])
+            from .consolidation import prepare
+            client_candidate=candidate
+            base,candidate,checkpoint_id=prepare(journal,record,candidate,answer_ids or [])
+            result = validate_candidate(base,candidate,kind=record['kind'],inputs=record['request']['inputs'],scope=record['request']['scope'],
+                processed_response_ids=answer_ids or [],authorized_event_paths=record['authorized_event_paths'])
+            # Client copy is checked independently; service-authored events are built in the persisted candidate below.
             rebuild(resolve_path(journal.lock.root, record['workspace_path']))
             workspace=resolve_path(journal.lock.root,record['workspace_path'])
             runtime=Path(__file__).resolve().parents[1]
@@ -207,13 +217,13 @@ class SkillCoordinator:
                 shell=False,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
             if checked.returncode!=0:
                 raise ContractError('synthesis_invalid','Verifica deterministica delle sintesi fallita; nessun apply')
-            candidate.assert_unchanged(workspace)
+            client_candidate.assert_unchanged(workspace)
             result['checks']['synthesis']=True
             immutable={k:v for k,v in result.items() if k!='manifest_digest'}
             result['manifest_digest']=content_hash(immutable)
             record.update(validation=result)
             self._save(journal,record)
-            prepared = journal.prepare(record['operation_id'],candidate)
+            prepared = journal.prepare(record['operation_id'],candidate,checkpoint_id=checkpoint_id)
             prepared['checkpoint'].update(validation=result, publication_eligible=False)
             self._save(journal,prepared)
         except Exception as error:

@@ -29,7 +29,7 @@ Uso:
   python .graph/domande.py --da-decidere   le domande rinviate 3 volte, da portare all'autore nel lint
   python .graph/domande.py --json [--strutturali]   le domande aperte in JSON, per la skill delle lacune
   python .graph/domande.py --risposta CHIAVE --testo "..." [--pagine "A · B"]   archivia la risposta dell'autore
-  python .graph/domande.py --risposte      le risposte non ancora consolidate dal lint (--consolida le chiude)
+  python .graph/domande.py --risposte      risposte legacy pendenti; export selettivo prima del consolidamento UUID
 """
 import argparse
 import datetime
@@ -378,11 +378,24 @@ def main():
     ap.add_argument("--testo", dest="testo_risposta", help="il testo della risposta")
     ap.add_argument("--pagine", default="", help="dove è stata scritta la risposta, separate da ' · '")
     ap.add_argument("--risposte", action="store_true", help="le risposte non ancora consolidate dal lint")
-    ap.add_argument("--consolida", action="store_true", help="segna come consolidate le risposte (fine del lint)")
+    ap.add_argument("--consolida", action="store_true", help="deprecato: usare UUID e mandato del ciclo skill")
+    ap.add_argument('--consolida-id',action='append',default=[],help='UUID condiviso elaborato dal lint; ripetibile')
+    ap.add_argument('--operazione',help='UUID del ciclo skill')
+    ap.add_argument('--request',help='Mandato request.json del ciclo isolato')
     args = ap.parse_args()
     sys.stdout.reconfigure(encoding="utf-8")
+    if args.consolida:
+        sys.exit('--consolida massivo disabilitato: usare --consolida-id UUID --operazione UUID --request request.json')
+    if args.consolida_id:
+        if not args.operazione or not args.request:
+            ap.error('--consolida-id richiede --operazione e --request')
+        from dashboard.client_receipt import main as receipt_main
+        receipt_args=['--request',args.request,'--outcome','succeeded','--operazione',args.operazione]
+        for identity in args.consolida_id: receipt_args+=['--consolida-id',identity]
+        receipt_main(receipt_args)
+        return
     db = connect_graph(args.db)
-    if args.json or args.risposta or args.risposte or args.consolida:
+    if args.json or args.risposta or args.risposte:
         archivio = apri()
         if args.json:
             fuori = da_porre(db, QUI.parent, archivio) + (strutturali(db, QUI.parent) if args.strutturali else [])
@@ -397,10 +410,6 @@ def main():
             print(f"## risposte da consolidare ({len(righe)})")
             for quando, chiave, risposta, pagine in righe:
                 print(f"- {quando} · {chiave}\n  risposta: {risposta}\n  scritta in: {pagine or '-'}")
-        else:
-            n = archivio.execute("UPDATE risposte SET consolidata = 1 WHERE consolidata = 0").rowcount
-            archivio.commit()
-            print(f"{n} risposte segnate come consolidate")
         return
     if args.stato or args.rinvia or args.da_decidere:
         archivio = apri()

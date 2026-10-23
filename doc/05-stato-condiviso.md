@@ -1,6 +1,6 @@
 # 5 — Risposte e decisioni condivise
 
-Stato: formato/DAG/proiezione (5.1) e migrazione selettiva con API (5.2) implementati; consolidamento e UI in completamento. Il formato e l'import dipendono dal [contratto 1](01-contratto-dati-operazioni.md); API/UI richiedono [dashboard 2](02-dashboard-consultazione.md), il consolidamento completo richiede [coordinator 4](04-coordinamento-ingest-lint.md). Obiettivo: una risposta o decisione utile alla collaborazione attraversa i clone senza scambiare SQLite, sessioni o memoria personale.
+Stato: formato/DAG/proiezione (5.1), migrazione selettiva e API (5.2), consolidamento per UUID e checkpoint (5.3) implementati; verifica UI finale in corso. Dipendenze: [contratto 1](01-contratto-dati-operazioni.md), [dashboard 2](02-dashboard-consultazione.md) e [coordinator 4](04-coordinamento-ingest-lint.md). Obiettivo: una risposta o decisione utile alla collaborazione attraversa i clone senza scambiare SQLite, sessioni o memoria personale.
 
 ## Stato attuale e scope
 
@@ -89,5 +89,40 @@ Append esclusivo di nuovi UUID, richieste persistite prima dei file: interruzion
 fra eventi si riprende con la stessa chiave, senza sovrascrivere dati esistenti.
 Durante awaiting_client nuove risposte sono ammesse; apply/recovery parziale
 blocca lo stato condiviso. Pubblicazione resta unknown fino al passo 6.
+
+## Consolidamento disponibile (5.3)
+
+Il mandato contiene `SHARED_ANSWERS.json` della sola copia isolata. La ricevuta
+del lint dichiarata riuscita può indicare `--consolida-id UUID` ripetibili, con
+`--operazione UUID` corrispondente al mandato. Anche `domande.py` offre questi
+argomenti insieme a `--request`; `--consolida` massivo è disabilitato prima di
+qualsiasi apertura DB. Le risposte legacy restano negli originali: prima export
+selettivo, poi consolidamento degli UUID condivisi. Skill e template aggiornati.
+
+Il coordinator verifica UUID presenti e pendenti nello snapshot iniziale,
+assenza di conflitti irrisolti e presenza testuale della risposta nel corpo di
+almeno una nota modificata fra quelle indicate, con fonte `nota-utente`.
+Questa è una prova deterministica conservativa, non certificazione semantica:
+resta richiesta la revisione umana dell'apply. Eventi scritti dal client sono
+respinti; soltanto il servizio prepara `answer.consolidated` con UUID selezionati,
+hash delle note, ID operazione e checkpoint UUID identico a quello del journal.
+
+Una risposta nuova durante il lint può essere aggiunta alla base e al candidato
+senza entrare negli UUID processati. Il rebase accetta soltanto nuove registrazioni
+domanda/risposta, preservando ogni byte preesistente. Modifiche a note/raw/identità,
+nuove decisioni o consolidamenti rendono il ciclo obsoleto e lo bloccano.
+Le ricevute restano legate alla base iniziale; l'apply usa quella aggiornata.
+
+Note prima degli eventi, poi marker del checkpoint e cache locale ricostruibile.
+Crash prima del marker non attesta risposte applicate; finish/rollback espliciti
+gestiscono lo stesso candidato. Se manca solo la cache, `/shared-state/import`
+la ricostruisce idempotentemente. Hash storico diverso dopo un successivo edit
+non cancella una attestazione riuscita: la UI distingue storia e verifica corrente.
+Checkpoint concorrenti: decisione causale accepted su tutte le teste, poi nuovo
+lint sugli UUID interessati e nuovo checkpoint validato; nessuna scelta per clock.
+
+Verificati clone pulito con stesso digest/proiezione/grafo, DB personali assenti,
+risposta sopraggiunta pendente, guasto prima del marker e dopo il marker, rollback
+della cache, eventi client respinti e cancellazione della copia durante i controlli.
 
 Primo rilascio in shadow mode: export-preview senza push, confronto conteggi e campi con legacy; poi import su copia nuova e consolidamento per ID. Non attivare sync prima di completare questo gate. Rollback conserva eventi e DB originali; per tornare al vecchio kit occorre ripristinare un backup compatibile senza eliminare storia nuova. La riservatezza del testo risposte e la distribuzione dei raw sono decisioni del gruppo; la selezione non rimuove dati già presenti nella storia Git. Aperto: gestione redazioni di dati sensibili già condivisi, da trattare come procedura dedicata e non come normale delete di evento immutabile.
