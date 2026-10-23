@@ -23,8 +23,8 @@ a generazioni restano prerequisiti per attivare la dashboard e le automazioni.
 | Passo | Valutazione / lavoro restante |
 | --- | --- |
 | 1 | Contratti, journal, lock, snapshot, generazioni e backup disponibili; apply protetto note e recovery multi-file ancora da realizzare |
-| 2 | Bootstrap, launcher, attach e API grafo/nodi/ontologia/diagnostica disponibili; UI di consultazione ancora futura |
-| 3 | Parser conservativo necessario; nessuna riscrittura implicita del vocabolario |
+| 2 | Bootstrap, API e UI di consultazione, distribuzione e rebuild coordinato disponibili; adozione legacy ed export diagnostica futuri |
+| 3 | Parser/serializer conservativo, proposta pura catalogo tipi e validazione disponibili (3.1); preview API, UI editing e apply futuri |
 | 4 | Probe e ricevuta da provare su ogni client; Stop non certifica il successo |
 | 5 | Canonicalizzazione disponibile; schema eventi per tipo, DAG, proiezioni e migrazione ancora da sviluppare |
 | 6 | Staging Git isolato e attribuzione precisa obbligatori prima del push dati |
@@ -501,3 +501,54 @@ Solo fixture sintetiche, rimosse e servizi/schede di prova chiusi a fine lavoro.
 
 Prossimo punto: 3.1, parser/serializer dell'ontologia con preservazione byte delle
 sezioni non toccate, catalogo tipi e validazione; apply e migrazioni restano futuri.
+
+## Incremento 9 — Parser e catalogo ontologia (passo 3.1)
+
+`kit/graph/ontology.py` è condiviso da builder, API readonly e diagnostica,
+distribuito anche nel runtime `.graph`. Modello immutabile con digest SHA-256,
+span in byte UTF-8, catalogo tipi opzionale, relazioni orientate e intervalli
+opachi. No-op identico ai byte originali, inclusi BOM, CRLF/LF/CR, Unicode e
+assenza di newline finale. Le modifiche sostituiscono solo le tabelle interessate;
+fonti, introduzioni, commenti e sezioni personalizzate restano intatti.
+
+Grammatica conservativa documentata nel [passo 3](03-editor-ontologia.md): h2
+canonici, tabella tipi a due colonne, relazioni legacy a tre o cinque colonne,
+escape pipe/backslash, limiti 2 MiB/2048 righe. Documenti ambigui, titoli duplicati,
+commenti nelle tabelle e formati non riconosciuti restano manuali; no-op permesso,
+riscrittura bloccata. Fence, commenti, codice indentato e blocchi HTML riconosciuti
+sono dati inerti. La scansione dei confini delle sezioni è lineare nei titoli.
+
+`propose_type_catalog` produce soltanto una proposta deterministica con digest
+base e conferma richiesta. Unisce convenzioni YAML univoche, tipi osservati e
+vincoli, inserendo il catalogo prima della tabella relazioni senza alterare alcun
+byte preesistente. Nessuna lettura/scrittura filesystem nel modulo; nessuna
+adozione automatica, modifica del template o nuovo vocabolario nel manifest.
+Preview HTTP, scelta dei cambiamenti e applicazione restano ai passi successivi.
+
+Validazione di nomi NFC, duplicati case-insensitive, proprietà/archi riservati,
+tipi conosciuti, vincoli e direzione. Il builder con catalogo esplicito rifiuta
+anche pagine con tipo mancante/sconosciuto/non scalare e fonti derivate senza
+tipo `fonte` dichiarato. Le tabelle schema non vengono confuse con il censimento
+fonti. `qualsiasi` e `stesso tipo` conservano il significato; la nuova relazione
+`approva` valida gli archi senza introdurre inferenze. La coerenza del significato
+dei testi richiede revisione umana, senza eseguire schema, HTML o esempi.
+
+Builder v3 distingue le generazioni dalla validazione precedente. Lettura v2
+ancora disponibile con `graph_validation_upgrade`, senza scritture GET; il
+rebuild esplicito applica i nuovi controlli. Errori lasciano intatto il marker
+precedente. `/ontology` espone digest byte, span, modificabilità e problemi
+limitati; legge sempre lo schema della generazione pubblicata.
+
+Verifiche ECC verification-loop e security-review: 154 test totali, 153 pass,
+uno skip symlink Windows noto. Le 18 nuove regressioni coprono parser, serializer,
+proposte senza scritture, builder e HTTP; 14 regressioni query anche eseguite
+separatamente. Installer `--prova` e `--prova --dashboard` superati, con parser
+distribuito e CLI autonoma funzionante; fixture eliminate dagli strumenti di
+prova. Compilazione Python e controllo diff superati. Nessuna nuova dipendenza,
+nessun type checker/linter/coverage dedicato configurato; nessuna percentuale di
+coverage dichiarata. Nessun cambiamento di layout UI: verifica HTTP, senza nuovo
+smoke browser. [Evidenze e limiti](evidence/step-3-1/verification.md).
+
+Prossimo punto: 3.2, preview API con analisi impatto e suggerimenti di migrazione,
+con pagina, proprietà e motivo per ogni violazione. Apply e migrazioni restano
+futuri; nessun merge o aggiornamento dei branch principali.

@@ -17,7 +17,7 @@ except ImportError:
     import build_graph
     from graph_db import graph_reference
 
-BUILDER_VERSION = 2
+BUILDER_VERSION = 3
 
 
 def _atomic_marker(path, record):

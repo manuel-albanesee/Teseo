@@ -45,8 +45,10 @@ import yaml
 
 try:
     from .stemmer import stem
+    from .ontology import parse as parse_ontology
 except ImportError:
     from stemmer import stem
+    from ontology import parse as parse_ontology
 
 # Nomi che sono anche parole comuni: valgono solo scritti con la maiuscola (stessa lista di recall.PAROLE_COMUNI,
 # che non si può importare da qui: recall importa build_graph)
@@ -150,15 +152,15 @@ def leggi_testo(testo, nome):
 
 
 def leggi_vocabolario(ref):
-    m = re.search(r"^## Relazioni tipizzate\s*$(.*?)(?=^## |\Z)", ref, re.M | re.S)
-    if not m:
-        return None
-    lista = lambda s: {x.strip() for x in s.split(",") if x.strip()}
-    return {nome: (lista(da), lista(a)) for nome, da, a in RIGA_RELAZIONE.findall(m.group(1))}
+    document = parse_ontology(ref)
+    errors = [issue for issue in document.issues if issue.severity == 'error']
+    if errors:
+        raise ValueError('Wiki reference.md: ' + errors[0].code + ': ' + errors[0].message)
+    return document.vocabulary
 
 
 def tipo_ammesso(ammessi, tipo, tipo_altro):
-    return "qualsiasi" in ammessi or tipo in ammessi or ("stesso tipo" in ammessi and tipo == tipo_altro)
+    return isinstance(tipo, str) and ("qualsiasi" in ammessi or tipo in ammessi or ("stesso tipo" in ammessi and tipo == tipo_altro))
 
 
 def parse_snapshot(vault):
@@ -171,7 +173,7 @@ def parse_snapshot(vault):
         raise ValueError("vault non valido: directory wiki/ assente")
     files = [*(vault / "wiki").glob("*.md"),
              *(vault / name for name in ("Wiki reference.md", "index.md", "log.md") if (vault / name).exists())]
-    return parse_documents({path.relative_to(vault).as_posix(): path.read_text(encoding="utf-8") for path in files})
+    return parse_documents({path.relative_to(vault).as_posix(): path.read_bytes().decode("utf-8") for path in files})
 
 
 def parse_documents(documents):
@@ -181,15 +183,18 @@ def parse_documents(documents):
     if "index.md" in documents:
         for link, riga in RIGA_INDICE.findall(documents["index.md"]):
             descrizioni[bersaglio(link)] = riga
-    fonti_censite = {k: f.strip().strip("`").strip() for k, f in RIGA_FONTE.findall(ref)}
-    vocabolario = leggi_vocabolario(ref)
+    ontology = parse_ontology(ref)
+    declared_types = {item.name for item in ontology.types} if ontology.types is not None else None
+    fonti_censite = {k: f.strip().strip("`").strip() for k, f in RIGA_FONTE.findall(ontology.opaque_bytes().decode('utf-8'))}
+    vocabolario = ontology.vocabulary
 
     files = sorted(Path(path) for path in documents if path.startswith("wiki/") and path.count("/") == 1 and path.endswith(".md"))
     if len({p.stem.casefold() for p in files}) != len(files):
         raise ValueError("wiki/: nomi pagina con collisione di maiuscole/minuscole")
     pagine = {p.stem: leggi_testo(documents[p.as_posix()], p.name) for p in files}
     nomi = {p.lower(): p for p in pagine}
-    problemi = []
+    problemi = ['Wiki reference.md: ' + issue.code + ': ' + issue.message
+                for issue in ontology.issues if issue.severity == 'error']
     entita, relazioni, alias = [], set(), []
 
     def risolvi(pagina, raw, dove):
@@ -202,6 +207,11 @@ def parse_documents(documents):
 
     fonti_usate = set()
     for nome, (fm, corpo) in pagine.items():
+        if fm.get('tipo') is not None and not isinstance(fm['tipo'], str):
+            problemi.append(f"{nome}: tipo deve essere una stringa singola")
+        if declared_types is not None and (not isinstance(fm.get('tipo'), str)
+                or fm['tipo'] not in declared_types):
+            problemi.append(f"{nome}: tipo {fm.get('tipo')!r} non dichiarato nel catalogo Tipi ammessi")
         entita.append((nome, fm.get("tipo"), descrizioni.get(nome), f"wiki/{nome}.md",
                        ", ".join(valori(fm.get("tags"))), str(fm.get("aggiornato") or "")))
         for a in valori(fm.get("aliases")):
@@ -230,6 +240,8 @@ def parse_documents(documents):
         if chiave not in fonti_censite:
             problemi.append(f"fonte '{chiave}' usata ma non censita in Wiki reference")
         entita.append((chiave, "fonte", fonti_censite.get(chiave), None, "", ""))
+        if declared_types is not None and 'fonte' not in declared_types:
+            problemi.append(f"fonte '{chiave}': tipo 'fonte' non dichiarato nel catalogo Tipi ammessi")
 
     # Controlli su relazioni tipizzate e alias
     tipi = {e[0]: e[1] for e in entita}
@@ -251,7 +263,7 @@ def parse_documents(documents):
 
     return {"pagine": pagine, "entita": entita, "relazioni": relazioni,
             "alias": alias, "problemi": tuple(problemi), "fonti_usate": fonti_usate,
-            "tipizzate": tipizzate, "vocabolario": vocabolario}
+            "tipizzate": tipizzate, "vocabolario": vocabolario, "ontology": ontology}
 
 
 class GraphValidationError(ValueError):

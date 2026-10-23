@@ -18,7 +18,10 @@ Il punto di partenza era un kit di strumenti CLI e integrazioni per client; il b
 
 ## Contratto API di consultazione e rebuild
 
-Le GET sotto sono disponibili su generazioni builder v2. POST rebuild e GET
+Le GET sotto sono disponibili su generazioni builder v2 e v3. Dal passo 3.1 il
+rebuild esplicito produce v3 con validazione del catalogo tipi; le generazioni v2
+restano leggibili con avviso `graph_validation_upgrade`, senza rebuild implicito.
+POST rebuild e GET
 operations sono disponibili dal 2.4, con sessione/Origin/CSRF sulle POST. Passare `generation=<id>` alle GET successive per
 fissare una lettura; cambio della generazione corrente produce `409 revision_changed`.
 Un vecchio grafo richiede rebuild esplicito con il kit aggiornato e manifest compatibile, mai una GET.

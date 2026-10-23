@@ -71,7 +71,7 @@ class ReadAPI:
                 raise ContractError("graph_corrupt", "Hash del grafo non valido")
             db = connect_graph(reference.path, reference=reference)
             metadata = dict(db.execute("SELECT key, value FROM graph_metadata"))
-            if metadata.get("builder_version") != "2":
+            if metadata.get("builder_version") not in {"2", "3"}:
                 raise ContractError("graph_upgrade_required", "Ricostruire esplicitamente il grafo con il kit aggiornato")
             deadline = time.monotonic() + 5
             db.set_progress_handler(lambda: time.monotonic() > deadline, 10000)
@@ -100,6 +100,10 @@ class ReadAPI:
         try:
             with self._open(root, parameters.get("generation")) as (db, reference):
                 result.update(_revision(reference))
+                result['validation_version'] = int(dict(db.execute('SELECT key,value FROM graph_metadata'))['builder_version'])
+                if result['validation_version'] == 2:
+                    result['issues'].append(_issue('graph_validation_upgrade', 'warning',
+                        'Grafo precedente alla validazione del catalogo tipi: rebuild esplicito consigliato', reference.content_revision))
                 result["capabilities"]["graph"] = True
                 result["stale"] = (result["live_content_revision"] != reference.content_revision
                                    if result["live_content_revision"] else None)
@@ -226,27 +230,27 @@ class ReadAPI:
     @staticmethod
     def _ontology(db, reference):
         source = ReadAPI._document(db, "Wiki reference.md")
-        vocabulary = _parser().leggi_vocabolario(source)
-        relations = [{"name": name, "from_types": sorted(types[0]), "to_types": sorted(types[1]),
-                      "direction": "source_to_target"} for name, types in sorted((vocabulary or {}).items())]
-        descriptions = {name: (meaning.strip(), example.strip()) for name, meaning, example in re.findall(
-            r"^\|\s*`(\w+)`\s*\|[^|]*\|[^|]*\|([^|]*)\|([^|]*)\|", source, re.M)}
-        for relation in relations:
-            relation["meaning"], relation["example"] = descriptions.get(relation["name"], ("", ""))
-        declared = re.search(r"^## Tipi ammessi\s*$(.*?)(?=^## |\Z)", source, re.M | re.S)
-        if declared:
-            types = sorted(set(re.findall(r"^\|\s*`(\w+)`\s*\|", declared.group(1), re.M)))
+        document = _parser().parse_ontology(source)
+        relations = [{"name": item.name, "from_types": list(item.from_types), "to_types": list(item.to_types),
+                      "direction": item.direction, "meaning": item.meaning, "example": item.example}
+                     for item in sorted(document.relations, key=lambda item: item.name)]
+        if document.types is not None:
+            types = [item.name for item in document.types]
         else:
             types = {row[0] for row in db.execute("SELECT DISTINCT tipo FROM entities WHERE tipo IS NOT NULL")}
             for item in relations:
                 types.update(item["from_types"] + item["to_types"])
             types = sorted(types - {"qualsiasi", "stesso tipo"})
-        sections = re.split(r"(?=^## )", source, flags=re.M)
-        opaque = [html.escape(section, quote=False) for section in sections
-                  if not section.startswith(("## Relazioni tipizzate", "## Tipi ammessi"))]
-        return {**_revision(reference), "types": types, "types_source": "declared" if declared else "observed_and_constraints",
+        opaque = [html.escape(document.source[span.start:span.end].decode('utf-8'), quote=False)
+                  for span in document.opaque_sections]
+        return {**_revision(reference), "types": types, "types_source": "declared" if document.types is not None else "observed_and_constraints",
                 "relations": relations, "opaque_sections": opaque,
-                "schema_digest": hashlib.sha256(source.encode("utf-8")).hexdigest(),
+                "schema_digest": document.digest,
+                "source_spans": {key: {"start": span.start, "end": span.end} for key, span in document.source_spans.items()},
+                "editable": document.editable, "catalog_adoption_required": not document.catalog_present,
+                "schema_issues": [{"code": issue.code, "message": issue.message, "line": issue.line,
+                                   "severity": issue.severity} for issue in document.issues[:200]],
+                "schema_issues_truncated": len(document.issues) > 200,
                 "text": html.escape(source, quote=False), "text_format": "escaped_markdown"}
 
     def ontology(self, vault_id, parameters):
@@ -269,6 +273,9 @@ class ReadAPI:
                     try:
                         parser = _parser()
                         parsed = parser.parse_documents(documents)
+                        for issue in parsed['ontology'].issues:
+                            issues.append(_issue('ontology_' + issue.code, issue.severity, issue.message,
+                                                 reference.content_revision, 'Wiki reference.md'))
                         for message in parser.validate_snapshot(parsed):
                             page = "wiki/" + message.split(":", 1)[0] + ".md"
                             issues.append(_issue("semantic_issue", "error", message, reference.content_revision,
