@@ -393,6 +393,11 @@ def installa(vault, skill="vault", aggiorna=False, esempio=False, client="tutti"
             if copia_file(f, vault / ".graph/dashboard" / f.name, aggiorna,
                           backup / "dashboard", rapporto, nome) == "diverso":
                 diversi.append(nome)
+        for skill_name in ('obsidian-wiki-ingest', 'obsidian-wiki-lint'):
+            source = KIT / 'skills' / skill_name / 'SKILL.md'
+            name = f'.graph/dashboard_skill_docs/{skill_name}.md'
+            if copia_file(source, vault / name, aggiorna, backup / 'dashboard_skill_docs', rapporto, name) == 'diverso':
+                diversi.append(name)
     if aggiorna and backup.exists() and not solo_integrazione:
         rapporto.avviso(f"script sostituiti: riportare a mano i dati di dominio dal backup "
                         f"({backup.relative_to(vault).as_posix()}): {DOMINIO}")

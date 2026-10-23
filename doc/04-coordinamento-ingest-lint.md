@@ -55,4 +55,44 @@ Comandi **esistenti** dalla root `python installa.py --prova`, `python -m unitte
 
 ## Rollout, rollback e questioni aperte
 
+## Handoff locale disponibile (4.1–4.2)
+
+`POST /operations` accetta il corpo sopra; `scope` è una lista esplicita di
+`wiki/`, singole note `wiki/Nome.md`, schema, indice o log. Solo `ingest_lint`
+richiede fonti `raw/` esistenti; lint/fill_gaps non selezionano nuovi URL.
+Massimo otto cicli pendenti per vault. Un solo ciclo viene preparato alla volta;
+gli altri restano queued e una base cambiata li blocca, senza riattribuire output.
+
+La risposta espone il percorso della copia, un prompt e il comando del launcher
+fidato `teseo_receipt.py --request <request.json> --outcome succeeded|failed|awaiting_user`.
+Il mandato contiene UUID, fase, base e capacità locale; il token resta nello storage
+locale ignorato e non viene restituito dalle GET. `receipt.json` contiene i byte
+hashati della copia: inviarlo a `POST /operations/{id}/complete` come `{receipt: ...}`.
+Sessione, Origin e CSRF restano richiesti. Ricevuta identica è idempotente;
+riuso con contenuti diversi o hash non corrispondenti viene respinto.
+Ingest e lint consumano capacità distinte. Exit 0 del client non completa nulla.
+
+`awaiting_user` richiede `POST /operations/{id}/resume {decision: continue|refuse}`;
+solo continue esplicito emette un nuovo mandato. Cancel non arresta una sessione
+esterna: l'utente deve fermarla, l'output isolato resta conservato.
+`POST /dispatch {}` ricontrolla la coda sotto lock dopo impedimenti esterni.
+Timeout di 24 ore viene verificato al completamento; nessun watcher modifica
+lo stato durante una GET e nessun replay automatico al riavvio.
+
+`POST /probe-adapters {}` interroga soltanto `--version`, con timeout e senza
+shell, per Codex/Claude/Copilot. Non effettua login o richieste a modelli.
+Ogni adapter dichiara manual_handoff, automatic_launch=false,
+verified_isolation=false, native_callback=false. La presenza del binario o della
+versione non prova avvio affidabile, isolamento o callback. Gli hook Stop dei
+tre client non generano ricevute. HANDOFF.md include la skill ingest/lint fidata
+del runtime e i limiti del mandato; non copia hook o script dal vault collegato.
+I consensi della sessione e quelli richiesti dalla skill restano effettivi.
+
+Il launcher ricevute viene installato con le copie fidate delle due skill anche
+quando le integrazioni client opzionali non sono selezionate. Le ricevute possono
+contenere dati sensibili: non committarle né incollarle in chat pubbliche.
+
+Tre test adapter verificano versioni simulate, assenza/wrapper/timeout e handoff;
+sei test HTTP verificano registry, duplicati, token errati, coda, rifiuto e stop.
+
 Attivare prima handoff manuale con ricevuta, poi automazione per client provati. Conservare la possibilità di eseguire skill nella chat; le operazioni esterne non diventano automaticamente pubblicabili. Rollback disabilita nuovi job e adapter, lascia i job esistenti in recovery e conserva manifest/backup. Non annullare file modificati dall'utente. Da verificare: avvio e isolamento reali dei tre client e disponibilità di un segnale esplicito supportato; se manca, usare protocollo manuale locale anziché dipendere da eventi generici.
