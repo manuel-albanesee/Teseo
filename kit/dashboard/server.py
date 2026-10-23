@@ -18,6 +18,8 @@ from .read_api import ReadAPI
 from .jobs import RebuildCoordinator
 from .ontology_preview import PreviewService
 from .ontology_apply import ApplyService
+from .operations import SkillCoordinator
+from .adapters import default_adapters
 
 MAX_BODY_BYTES = 16 * 1024
 
@@ -31,6 +33,7 @@ class DashboardServer(ThreadingHTTPServer):
         self.read_api = ReadAPI(self.registry, self.operations)
         self.previews = PreviewService(self.registry)
         self.applies = ApplyService(self.registry, self.previews)
+        self.skills = SkillCoordinator(self.registry, default_adapters())
         self.operations.note_activity = self.applies.active
         self.session_token = secrets.token_urlsafe(32)
         self.csrf_token = secrets.token_urlsafe(32)
@@ -43,13 +46,16 @@ class DashboardServer(ThreadingHTTPServer):
     def server_close(self):
         self.operations.request_stop()
         self.applies.request_stop()
+        self.skills.request_stop()
         super().server_close()
         self.operations.close()
         self.applies.close()
+        self.skills.close()
 
     def request_stop(self):
         self.operations.request_stop()
         self.applies.request_stop()
+        self.skills.request_stop()
         threading.Thread(target=self.shutdown, name="teseo-stop", daemon=True).start()
 
     @property
@@ -226,6 +232,24 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self.server.request_stop()
                 return
             parts = target.path.split("/")
+            if len(parts)==6 and parts[1:4]==['api','v1','vaults'] and parts[5]=='operations':
+                self._reply(202,self.server.skills.submit(parts[4],body))
+                return
+            if len(parts)==6 and parts[1:4]==['api','v1','vaults'] and parts[5]=='dispatch':
+                self._reply(200,self.server.skills.dispatch(parts[4],body))
+                return
+            if len(parts)==6 and parts[1:4]==['api','v1','vaults'] and parts[5]=='probe-adapters':
+                if body!={}: raise ContractError('invalid_payload','Probe senza parametri')
+                self.server.registry.root(parts[4])
+                self._reply(200,{'adapters':[a.probe() for a in self.server.skills.adapters.values()]})
+                return
+            if len(parts)==8 and parts[1:4]==['api','v1','vaults'] and parts[5]=='operations' and parts[7] in ('complete','cancel','resume'):
+                if parts[7]=='complete':
+                    result=self.server.skills.complete(parts[4],parts[6],body)
+                else:
+                    result=self.server.skills.action(parts[4],parts[6],body,parts[7])
+                self._reply(200,result)
+                return
             if len(parts) == 7 and parts[1:4] == ['api', 'v1', 'vaults'] and parts[5:] == ['ontology', 'apply']:
                 self._reply(202, self.server.applies.submit(parts[4], body, self._header('If-Match')))
                 return
@@ -296,6 +320,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                       'precondition_required': 428, 'migration_manual': 422, 'migration_collision': 409,
                       'migration_invalid': 422, 'invalid_migrations': 400, 'shared_mapping_unavailable': 422,
                       'recovery_required': 409, 'recovery_conflict': 409}.get(error.code, status)
+            status = {'invalid_receipt':403,'receipt_conflict':409,'receipt_manifest_mismatch':409}.get(error.code,status)
             self._error(status, error.code, str(error), getattr(error, 'details', None))
         except (ConnectionError, TimeoutError):
             self.close_connection = True

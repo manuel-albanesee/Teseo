@@ -314,7 +314,8 @@ class Journal(AbstractContextManager):
         self._require_lock()
         for (identifier,) in self.db.execute('SELECT operation_id FROM operations').fetchall():
             record = self.get(identifier)
-            if (identifier != allowed and record['kind'] == 'ontology_apply'
+            if (identifier != allowed and record['kind'] in ('ontology_apply','ingest_lint','lint','fill_gaps')
+                    and record['state'] != 'queued'
                     and record['state'] not in ('succeeded', 'rolled_back', 'failed', 'blocked_external_change', 'cancelled')):
                 raise ContractError('recovery_required', 'Operazione note da completare o ripristinare prima di altre scritture')
 

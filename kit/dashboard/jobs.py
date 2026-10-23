@@ -12,7 +12,7 @@ TERMINAL = {"succeeded", "failed", "cancelled", "blocked_external_change", "reco
 
 def _public(record):
     return {key: record.get(key) for key in ("operation_id", "vault_id", "kind", "state", "error",
-            "base_content_digest", "checkpoint")} | {
+            "base_content_digest", "checkpoint", "phases", "phase", "handoff", "validation", "publication_eligible", "expires_at")} | {
                 "content_revision": (record.get("checkpoint") or {}).get("content_revision"),
                 "graph_generation": (record.get("checkpoint") or {}).get("graph_generation")}
 
@@ -148,8 +148,13 @@ class RebuildCoordinator:
                 db.close()
         except sqlite3.Error:
             raise ContractError("operation_unavailable", "Journal temporaneamente non leggibile") from None
-        if record["kind"] not in ("rebuild", "ontology_apply") or record["vault_id"] != vault_id:
+        skill = record['kind'] in ('ingest_lint','lint','fill_gaps')
+        if record["kind"] not in ("rebuild", "ontology_apply", 'ingest_lint','lint','fill_gaps') or record["vault_id"] != vault_id:
             raise ContractError("operation_missing", "Operazione non trovata")
+        if skill:
+            if record['state'] in ('preparing','validating','applying'):
+                record.update(state='recovery_required',error={'code':'interrupted','message':'Verificare output e snapshot; nessun replay automatico'})
+            return _public(record)
         with self._mutex:
             active = self._workers.get(vault_id)
             note = self.note_activity(vault_id)

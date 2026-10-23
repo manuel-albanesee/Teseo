@@ -1,6 +1,6 @@
 # 4 — Coordinamento delle skill ingest e lint
 
-Stato: progetto futuro; richiede [1](01-contratto-dati-operazioni.md) e [2](02-dashboard-consultazione.md). Obiettivo: avviare dal servizio un lavoro riconoscibile, ricevere un esito verificabile e rendere pubblicabile soltanto il checkpoint attribuibile al ciclo concluso ingest+lint.
+Stato: registry, coda persistente, API e ricevute locali disponibili (4.1); adapter manuali iniziali, pipeline e UI in completamento. Richiede [1](01-contratto-dati-operazioni.md) e [2](02-dashboard-consultazione.md). Obiettivo: avviare dal servizio un lavoro riconoscibile, ricevere un esito verificabile e rendere pubblicabile soltanto il checkpoint attribuibile al ciclo concluso ingest+lint.
 
 ## Contesto attuale e scope
 
