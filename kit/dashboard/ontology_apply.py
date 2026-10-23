@@ -15,6 +15,7 @@ from .read_api import _parser
 from .jobs import _public
 
 FINAL = {'succeeded', 'rolled_back', 'failed', 'blocked_external_change', 'cancelled'}
+NOTE_KINDS = {'ontology_apply','ingest_lint','lint','fill_gaps'}
 
 
 def _confirmed(body):
@@ -103,12 +104,12 @@ def _write_stage(root, relative, data):
 def _check_live(root, record, base, candidate):
     live = capture_snapshot(root, allow_missing_schema=True)
     before, after = base.hashes, candidate.hashes
-    changes = {path for path in before if before[path] != after[path]}
-    if set(live.hashes) - set(before):
+    changes = {path for path in before.keys() | after.keys() if before.get(path) != after.get(path)}
+    if set(live.hashes) - (set(before) | set(after)):
         raise ContractError('recovery_conflict', 'Nuovi file estranei: nessuna sovrascrittura')
-    for path in before:
+    for path in before.keys() | after.keys():
         digest = live.hashes.get(path)
-        allowed = {before[path], after[path]} if path in changes else {before[path]}
+        allowed = {before.get(path), after.get(path)} if path in changes else {before[path]}
         # A missing owned file is recoverable only when a durable replace intent exists.
         if digest is None and path in changes and any(item['path'] == path for item in record.get('attempts', [])):
             continue
@@ -136,21 +137,24 @@ def execute(journal, identifier, action='finish'):
     record.update(state='applying', error=None, recovery_action=action)
     journal.save_ontology(record)
     desired_files = {entry.path: entry.data for entry in desired.files}
-    changed = [path for path in base.hashes if base.hashes[path] != candidate.hashes[path]]
+    changed = [path for path in base.hashes.keys() | candidate.hashes.keys() if base.hashes.get(path) != candidate.hashes.get(path)]
     for path in sorted(changed, key=lambda path: (path == 'Wiki reference.md', path)):
-        if live.hashes.get(path) == desired.hashes[path]:
+        if live.hashes.get(path) == desired.hashes.get(path):
             continue
         live = _check_live(root, record, base, candidate)
         target = _path(root, path)
         attempt_id = str(uuid4())
         prefix = '.teseo/local/transactions/' + identifier + '/' + attempt_id
-        staged = _write_stage(root, prefix + '/candidate', desired_files[path])
+        removing = path not in desired_files
+        staged = _write_stage(root, prefix + '/candidate', desired_files.get(path,b''))
         backup = prefix + '/displaced'
-        attempt = {'path': path, 'backup': backup, 'expected': live.hashes.get(path), 'after': desired.hashes[path]}
+        attempt = {'path': path, 'backup': backup, 'expected': live.hashes.get(path), 'after': desired.hashes.get(path)}
         record.setdefault('attempts', []).append(attempt)
         journal.save_ontology(record)  # Durable intent before replacement; crash can infer state from hashes.
         _check_live(root, record, base, candidate)
-        if target.exists():
+        if removing:
+            os.rename(target, _path(root, backup))  # Preserve actual removed bytes; verify below before continuing.
+        elif target.exists():
             _replace(target, staged, _path(root, backup))
         else:
             os.rename(staged, target)  # Windows rename fails if an external writer recreated the target.
@@ -162,7 +166,10 @@ def execute(journal, identifier, action='finish'):
     record.update(state='succeeded' if action == 'finish' else 'rolled_back', error=None)
     record['checkpoint'].update(content_revision=reference.content_revision, graph_generation=reference.generation,
                                 changed_files=changed, mode='manual_paused', external_exclusion=False)
-    journal.save_ontology(record)
+    if record['kind'] != 'ontology_apply' and action=='finish':
+        journal.complete_skill(record)
+    else:
+        journal.save_ontology(record)
     return record
 
 
@@ -257,7 +264,7 @@ class ApplyService:
             _local_volume(root)
             with VaultLock(root, recovery=True) as lock, Journal(lock) as journal:
                 record = journal.get(identifier)
-                if record['kind'] != 'ontology_apply':
+                if record['kind'] not in NOTE_KINDS:
                     raise ContractError('operation_missing', 'Operazione ontologia non trovata')
                 terminal = 'succeeded' if body['action'] == 'finish' else 'rolled_back'
                 if record['state'] == terminal:
@@ -270,6 +277,29 @@ class ApplyService:
                 record.update(state='recovery_required')
                 journal.save_ontology(record)
             self._launch(vault_id, identifier, body['action'])
+            return _public(record)
+
+    def apply_skill(self, vault_id, identifier, body, if_match):
+        from .operations import KINDS
+        from .operations import _fields
+        _fields(body,('mode','external_writers_paused','semantic_reviewed'))
+        _confirmed(body)
+        with self._mutex:
+            self._available(vault_id)
+            root=self.registry.operation_root(vault_id)
+            _local_volume(root)
+            with VaultLock(root) as lock,Journal(lock) as journal:
+                record=journal.get(identifier)
+                if record['kind'] not in KINDS:
+                    raise ContractError('operation_missing','Ciclo skill non trovato')
+                if record['state']=='succeeded':
+                    return _public(record)
+                if record['state']!='prepared' or not record.get('validation'):
+                    raise ContractError('recovery_conflict','Richiesto candidato preparato e validato')
+                if if_match!='"'+record['base_content_digest']+'"' or capture_snapshot(root).digest!=record['base_content_digest']:
+                    raise ContractError('blocked_external_change','Base modificata dopo il ciclo; nessuna sovrascrittura')
+                journal.assert_notes_idle(identifier)
+            self._launch(vault_id,identifier,'finish')
             return _public(record)
 
     def _run(self, vault_id, identifier, action):

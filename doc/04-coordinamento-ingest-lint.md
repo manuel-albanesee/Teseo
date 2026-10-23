@@ -1,6 +1,6 @@
 # 4 — Coordinamento delle skill ingest e lint
 
-Stato: registry, coda persistente, API e ricevute locali disponibili (4.1); adapter manuali iniziali, pipeline e UI in completamento. Richiede [1](01-contratto-dati-operazioni.md) e [2](02-dashboard-consultazione.md). Obiettivo: avviare dal servizio un lavoro riconoscibile, ricevere un esito verificabile e rendere pubblicabile soltanto il checkpoint attribuibile al ciclo concluso ingest+lint.
+Stato: registry/API/ricevute (4.1), handoff client (4.2) e pipeline con apply manuale (4.3) disponibili; UI in completamento. Richiede [1](01-contratto-dati-operazioni.md) e [2](02-dashboard-consultazione.md). Obiettivo: avviare dal servizio un lavoro riconoscibile, ricevere un esito verificabile e rendere pubblicabile soltanto il checkpoint attribuibile al ciclo concluso ingest+lint.
 
 ## Contesto attuale e scope
 
@@ -94,5 +94,50 @@ contenere dati sensibili: non committarle né incollarle in chat pubbliche.
 
 Tre test adapter verificano versioni simulate, assenza/wrapper/timeout e handoff;
 sei test HTTP verificano registry, duplicati, token errati, coda, rifiuto e stop.
+
+## Pipeline e checkpoint disponibili (4.3)
+
+Il completamento del lint confronta il manifest della ricevuta con l'intera
+copia isolata, non con git diff. Verifica raw preesistenti immutabili, manifest
+di identità invariato, assenza di eventi condivisi, perimetro e assenza di
+eliminazioni/rinomine. Le nuove fonti vanno predisposte prima del ciclo; nuovi
+raw del client vengono respinti. Validazione integrale di schema, tipi, alias,
+fonti e link tramite il parser fidato e build su copia. Il launcher fidato
+`teseo_validate.py` esegue anche il verificatore reale delle sintesi su una nuova
+copia sacrificabile: non apre memoria o domande personali del vault.
+
+Il candidato valido diventa prepared; live Markdown e generazione pubblicata
+restano invariati. Il manifest contiene file attribuiti con hash prima/dopo,
+fonti selezionate, perimetro, controlli e diff completi (limite 256 KiB, oltre
+il quale ridurre il perimetro). Lint parziale è dichiarato nel manifest, non
+certifica semanticamente l'intero vault. L'esito semantico rimane dichiarazione
+del client sottoposta a revisione umana; i controlli del servizio sono deterministici.
+
+`POST /operations/{id}/apply` richiede `{mode: manual_paused,
+external_writers_paused: true, semantic_reviewed: true}` e If-Match della base.
+Usa il protocollo Windows locale e i backup nativi del 3.4, con supporto a nuove
+note e rollback esplicito che conserva i byte rimossi nei backup. Nuovi file o
+modifiche estranee nella base impediscono l'applicazione; nessuna esclusione
+garantita degli editor e nessun apply automatico. `recover` mantiene le stesse
+conferme, senza rieseguire ingest o lint.
+
+Solo dopo verifica finale dei byte e generazione valida, una transazione SQLite
+registra succeeded e un solo evento locale `operation.validated` nella tabella
+`validated_events` del journal. Evento e manifest sono immutabili, con
+publication_eligible=true. Ricevuta, Stop, commit, cancellazione o fallimento
+non emettono eventi. Non viene eseguito Git; il consumer è il passo 6.
+I job in coda si ricontrollano esplicitamente con dispatch; se il primo ha
+cambiato i contenuti, il secondo resta bloccato sulla sua base originale.
+
+Diciassette test HTTP esercitano il ciclo completo e replay, evento unico,
+raw/scope/manifest/link/alias/sintesi, stop/timeout/dialogo, nuova nota e rollback,
+modifiche esterne e script ostili mai eseguiti. Mapping/consolidamento di risposte
+rimane bloccato dal passo 5, anche se il client dichiara ID già processati.
+
+La creazione del record e della configurazione iniziale queued è atomica. Un
+errore tra pubblicazione del grafo ed evento lascia recovery_required, senza
+publication_eligible; finish esplicito può completare la stessa transazione
+logica. L'endpoint complete accetta fino a 256 KiB; gli altri corpi restano
+limitati a 16 KiB. Nessun aumento globale del limite delle richieste.
 
 Attivare prima handoff manuale con ricevuta, poi automazione per client provati. Conservare la possibilità di eseguire skill nella chat; le operazioni esterne non diventano automaticamente pubblicabili. Rollback disabilita nuovi job e adapter, lascia i job esistenti in recovery e conserva manifest/backup. Non annullare file modificati dall'utente. Da verificare: avvio e isolamento reali dei tre client e disponibilità di un segnale esplicito supportato; se manca, usare protocollo manuale locale anziché dipendere da eventi generici.

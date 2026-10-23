@@ -5,6 +5,8 @@ import re
 import secrets
 import threading
 import time
+import subprocess
+import sys
 
 from .contracts import ContractError, canonical_json, content_hash, resolve_path, portable_path
 from .storage import Journal, VaultLock, capture_snapshot, _no_link
@@ -72,10 +74,9 @@ class SkillCoordinator:
                     raise ContractError('invalid_operation', 'Fonte selezionata non presente')
                 if sum(r['state'] not in FINAL for r in self._records(journal)) >= 8:
                     raise ContractError('job_limit', 'Otto cicli già pendenti nel vault')
-                record = journal.create(body['kind'], body, body['idempotency_key'], snapshot)
-                record.update(state='queued', request=body, phases={'ingest': 'pending' if body['kind']=='ingest_lint' else 'skipped', 'lint':'pending'},
-                              receipts={}, publication_eligible=False, expires_at=int(time.time())+86400)
-                self._save(journal, record)
+                record = journal.create(body['kind'], body, body['idempotency_key'], snapshot,initial={
+                    'state':'queued', 'request':body, 'phases':{'ingest': 'pending' if body['kind']=='ingest_lint' else 'skipped', 'lint':'pending'},
+                    'receipts':{}, 'publication_eligible':False, 'expires_at':int(time.time())+86400})
                 self._advance(journal)
                 return _public(journal.get(record['operation_id']))
 
@@ -197,6 +198,19 @@ class SkillCoordinator:
                 raise ContractError('snapshot_corrupt','Snapshot base alterato')
             result = validate_candidate(base,candidate,kind=record['kind'],inputs=record['request']['inputs'],scope=record['request']['scope'])
             rebuild(resolve_path(journal.lock.root, record['workspace_path']))
+            workspace=resolve_path(journal.lock.root,record['workspace_path'])
+            runtime=Path(__file__).resolve().parents[1]
+            helper=runtime/'teseo_validate.py'
+            if not helper.is_file(): helper=runtime/'graph/teseo_validate.py'
+            checked=subprocess.run([sys.executable,str(helper),str(workspace)],cwd=helper.parent,
+                stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=60,
+                shell=False,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+            if checked.returncode!=0:
+                raise ContractError('synthesis_invalid','Verifica deterministica delle sintesi fallita; nessun apply')
+            candidate.assert_unchanged(workspace)
+            result['checks']['synthesis']=True
+            immutable={k:v for k,v in result.items() if k!='manifest_digest'}
+            result['manifest_digest']=content_hash(immutable)
             record.update(validation=result)
             self._save(journal,record)
             prepared = journal.prepare(record['operation_id'],candidate)

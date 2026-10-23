@@ -152,7 +152,9 @@ class RebuildCoordinator:
         if record["kind"] not in ("rebuild", "ontology_apply", 'ingest_lint','lint','fill_gaps') or record["vault_id"] != vault_id:
             raise ContractError("operation_missing", "Operazione non trovata")
         if skill:
-            if record['state'] in ('preparing','validating','applying'):
+            if record['state']=='recovery_required' and self.note_activity(vault_id)==identifier:
+                record.update(state='running',error=None)
+            if record['state'] in ('preparing','validating','applying') and self.note_activity(vault_id)!=identifier:
                 record.update(state='recovery_required',error={'code':'interrupted','message':'Verificare output e snapshot; nessun replay automatico'})
             return _public(record)
         with self._mutex:

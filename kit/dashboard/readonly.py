@@ -58,7 +58,7 @@ class VaultRegistry:
                     records = [parse_json(row[0]) for row in db.execute('SELECT record FROM operations WHERE length(record)<=5242880 ORDER BY rowid DESC LIMIT 128')]
                 finally:
                     db.close()
-                if any(item.get('vault_id') == identifier and item.get('kind') == 'ontology_apply'
+                if any(item.get('vault_id') == identifier and item.get('kind') in ('ontology_apply','ingest_lint','lint','fill_gaps')
                        and item.get('state') in ('prepared', 'applying', 'recovery_required') for item in records):
                     with (root / '.teseo/project.json').open('rb') as stream:
                         manifest = parse_manifest(stream.read(65537))

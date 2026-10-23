@@ -183,13 +183,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return False
         return True
 
-    def _body(self):
+    def _body(self, max_bytes=MAX_BODY_BYTES):
         if self.headers.get_all("Transfer-Encoding") or self._header("Content-Type") != "application/json":
             raise ContractError("invalid_request", "Richiesto JSON senza Transfer-Encoding")
         length = self._header("Content-Length")
-        if (not length or len(length) > 5 or not length.isascii() or not length.isdecimal()
-                or not 0 < int(length) <= MAX_BODY_BYTES):
-            raise ContractError("invalid_body_size", "Corpo JSON assente o oltre 16 KiB")
+        if (not length or len(length) > 6 or not length.isascii() or not length.isdecimal()
+                or not 0 < int(length) <= max_bytes):
+            raise ContractError("invalid_body_size", "Corpo JSON assente o oltre il limite dell'endpoint")
         self._body_read = True
         data = self.rfile.read(int(length))
         if len(data) != int(length):
@@ -217,7 +217,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 if not token.isascii() or not secrets.compare_digest(token, self.server.csrf_token):
                     self._error(403, "invalid_csrf", "Token CSRF non valido")
                     return
-            body = self._body()
+            receipt_route = re.fullmatch(r'/api/v1/vaults/[^/]+/operations/[^/]+/complete', target.path)
+            body = self._body(256*1024 if receipt_route else MAX_BODY_BYTES)
             if target.path == "/api/v1/session" and body == {}:
                 self._reply(200, {"csrf_token": self.server.csrf_token, "content_revision": None,
                                   "graph_generation": None})
@@ -232,6 +233,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self.server.request_stop()
                 return
             parts = target.path.split("/")
+            if len(parts)==8 and parts[1:4]==['api','v1','vaults'] and parts[5]=='operations' and parts[7]=='apply':
+                self._reply(202,self.server.applies.apply_skill(parts[4],parts[6],body,self._header('If-Match')))
+                return
             if len(parts)==6 and parts[1:4]==['api','v1','vaults'] and parts[5]=='operations':
                 self._reply(202,self.server.skills.submit(parts[4],body))
                 return

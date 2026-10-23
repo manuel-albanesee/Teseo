@@ -275,7 +275,7 @@ class Journal(AbstractContextManager):
             raise ContractError("operation_missing", "Operazione non trovata")
         return parse_json(row[0])
 
-    def create(self, kind, payload, idempotency_key, snapshot, base_git_revision=None):
+    def create(self, kind, payload, idempotency_key, snapshot, base_git_revision=None, *, initial=None):
         self._require_lock()
         if not kind or not isinstance(kind, str) or not isinstance(idempotency_key, str) or not idempotency_key:
             raise ContractError("invalid_operation", "Richiesti kind e chiave idempotente")
@@ -296,6 +296,7 @@ class Journal(AbstractContextManager):
                   "schema_digest": snapshot.schema_digest, "reads": sorted(snapshot.hashes),
                   "before": snapshot.hashes, "after": {}, "state": "created", "error": None,
                   "checkpoint": None, "snapshot_path": relative}
+        record.update(initial or {})
         with self.db:
             self.db.execute("INSERT INTO operations VALUES (?,?,?,?)",
                             (operation_id, idempotency_key, request, canonical_json(record)))
@@ -322,9 +323,30 @@ class Journal(AbstractContextManager):
     def save_ontology(self, record):
         """Solo il coordinator specifico può avanzare il protocollo note."""
         self._require_lock()
-        if record['kind'] != 'ontology_apply' or self.get(record['operation_id'])['kind'] != 'ontology_apply':
+        if record['kind'] not in ('ontology_apply','ingest_lint','lint','fill_gaps') or self.get(record['operation_id'])['kind'] != record['kind']:
             raise ContractError('invalid_transition', 'Richiesta operazione ontologia')
         self._save(record)
+
+    def complete_skill(self, record):
+        """Un solo evento locale per checkpoint applicato; nessun evento da Stop/callback."""
+        self._require_lock()
+        stored=self.get(record['operation_id'])
+        if (stored['kind'] not in ('ingest_lint','lint','fill_gaps') or stored['state']!='applying' or record['state']!='succeeded'
+                or not stored.get('validation') or stored['phases']['lint']!='succeeded'
+                or (stored['kind']=='ingest_lint' and stored['phases']['ingest']!='succeeded')):
+            raise ContractError('invalid_transition','Checkpoint skill non completato')
+        stored.update(state='succeeded',checkpoint=record['checkpoint'],error=None)
+        event={'type':'operation.validated','operation_id':stored['operation_id'],'vault_id':stored['vault_id'],
+               'publication_eligible':True,'manifest':stored['validation'],'checkpoint':stored['checkpoint']}
+        with self.db:
+            self.db.execute('CREATE TABLE IF NOT EXISTS validated_events (operation_id TEXT PRIMARY KEY,event BLOB NOT NULL)')
+            previous=self.db.execute('SELECT event FROM validated_events WHERE operation_id=?',(stored['operation_id'],)).fetchone()
+            data=canonical_json(event)
+            if previous and previous[0]!=data:
+                raise ContractError('receipt_conflict','Manifest validato già pubblicato con altri byte')
+            self.db.execute('INSERT OR IGNORE INTO validated_events VALUES (?,?)',(stored['operation_id'],data))
+            stored['publication_eligible']=True
+            self.db.execute('UPDATE operations SET record=? WHERE operation_id=?',(canonical_json(stored),stored['operation_id']))
 
     def _persist_snapshot(self, relative, snapshot):
         destination = resolve_path(self.lock.root, relative)
