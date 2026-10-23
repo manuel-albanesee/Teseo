@@ -1,6 +1,6 @@
 # 5 — Risposte e decisioni condivise
 
-Stato: progetto futuro. Il formato e l'import dipendono dal [contratto 1](01-contratto-dati-operazioni.md) e possono avanzare insieme alla UI; API/UI richiedono [dashboard 2](02-dashboard-consultazione.md), il consolidamento completo richiede [coordinator 4](04-coordinamento-ingest-lint.md). Obiettivo: una risposta o decisione utile alla collaborazione attraversa i clone senza scambiare SQLite, sessioni o memoria personale.
+Stato: formato, DAG e proiezione idempotente implementati (5.1); migrazione, consolidamento e UI in completamento. Il formato e l'import dipendono dal [contratto 1](01-contratto-dati-operazioni.md); API/UI richiedono [dashboard 2](02-dashboard-consultazione.md), il consolidamento completo richiede [coordinator 4](04-coordinamento-ingest-lint.md). Obiettivo: una risposta o decisione utile alla collaborazione attraversa i clone senza scambiare SQLite, sessioni o memoria personale.
 
 ## Stato attuale e scope
 
