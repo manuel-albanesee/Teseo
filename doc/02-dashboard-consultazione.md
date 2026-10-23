@@ -171,3 +171,20 @@ sullo stesso file. Nessun token, password o codice ricevuto viene salvato/esegui
 UUID cambiato, cartella assente o incompatibile al restore sono saltati con avviso;
 un registro malformato blocca il launcher senza sovrascriverlo. La scelta del file
 è esplicita e distinta dall'attach; le GET restano prive di scritture nei vault.
+
+## Risposte condivise (passo 5)
+
+Endpoint relativi a `/api/v1/vaults/{id}`, disponibili sui vault compatibili:
+
+| Metodo / percorso | Risultato |
+| --- | --- |
+| GET `/answers` | Proiezione readonly dei JSON, senza DB personali |
+| POST `/answers` | Nuova risposta UUID, consenso e chiave idempotente |
+| POST `/shared-state/decision` | Decisione o rinvio con motivo e teste correnti |
+| POST `/shared-state/export-preview` | Backup consistente domande e selezione privacy |
+| POST `/shared-state/export` | Solo righe scelte, consenso e chiave idempotente |
+| POST `/shared-state/import` | Ricostruzione locale della cache dagli eventi |
+
+Le POST richiedono sessione, Origin e CSRF. Stato archiviato, applicazione alle
+note e pubblicazione hanno indicatori distinti. La preview non seleziona righe
+implicitamente e non apre memoria personale. Contratti e limiti nel [passo 5](05-stato-condiviso.md).

@@ -37,7 +37,8 @@ class SharedService:
         # Awaiting a client may legitimately collect new answers. Only partially
         # applied note candidates make current shared state unsafe to read.
         path = root / '.teseo/local/operations.sqlite'
-        for part in (root / '.teseo/local', path): _no_link(part)
+        _no_link(root / '.teseo/local')
+        for suffix in ('','-journal','-wal','-shm'): _no_link(Path(str(path)+suffix))
         if not path.exists(): return
         with _connection(path.as_uri() + '?mode=ro', uri=True) as db:
             for (raw,) in db.execute('SELECT record FROM operations'):
@@ -200,8 +201,9 @@ class SharedService:
                 if conflict['entity_id'] == body['question_id']: required.update(conflict['heads'])
             if not isinstance(body['heads'], list) or set(body['heads']) != required:
                 raise ContractError('shared_heads_stale', 'Rileggere tutti gli head correnti prima della decisione')
-            return [self._event(vault_id, author, operation, 'question.decided', body['question_id'], body['question_id'],
-                               {'decision':body['decision'], 'reason':body['reason']}, sorted(required))]
+            kind='question.deferred' if body['decision']=='defer' else 'question.decided'
+            payload={'reason':body['reason']} if kind=='question.deferred' else {'decision':body['decision'],'reason':body['reason']}
+            return [self._event(vault_id, author, operation, kind, body['question_id'], body['question_id'], payload, sorted(required))]
         return self._mutate(vault_id, body, 'decision', factory)
 
     def preview(self, vault_id, body=None):

@@ -405,6 +405,7 @@ def main():
                 sys.exit("--risposta richiede --testo")
             print(registra(archivio, args.risposta, args.testo_risposta, args.pagine))
         elif args.risposte:
+            print('Archivio locale legacy: lo stato condiviso è nella dashboard; il consolidamento UUID conserva questo DB originale.')
             righe = archivio.execute("SELECT quando, chiave, risposta, pagine FROM risposte WHERE consolidata = 0 "
                                      "ORDER BY id").fetchall()
             print(f"## risposte da consolidare ({len(righe)})")

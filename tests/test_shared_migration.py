@@ -103,3 +103,12 @@ class Migration(unittest.TestCase):
             self.service.export([selected], preview['preview_id'])
         with _connection(self.service.mapping) as db:
             self.assertEqual(db.execute('SELECT COUNT(*) FROM exports').fetchone()[0], 0)
+
+    def test_selected_deferral_history_preserves_count_and_replay(self):
+        from kit.dashboard.shared_state import project
+        preview=self.service.preview()
+        selected=[row['selection_id'] for row in preview['rows'] if row['table']=='aperte']
+        events=self.service.export(selected,preview['preview_id'])
+        self.assertEqual(project(events,self.vault)['questions'][0]['defer_count'],2)
+        self.assertEqual(events,self.service.export(selected,preview['preview_id']))
+        self.assertEqual(project(events+events,self.vault)['questions'][0]['defer_count'],2)

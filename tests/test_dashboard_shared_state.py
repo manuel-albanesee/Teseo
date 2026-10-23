@@ -23,6 +23,17 @@ def registration():
     return event('question.registered', {'text':'Chi?', 'anchors':[{'page':'Anna','signal':'manca_referente','legacy_key':'q1'}]})
 
 class SharedState(unittest.TestCase):
+    def test_causal_answer_resolution_survives_deferral_but_not_a_new_answer(self):
+        q=registration()
+        a=event('answer.recorded',{'text':'Anna','pages':['Anna'],'source':'nota-utente'},entity=str(uuid4()),parents=[q['event_id']])
+        b=event('answer.recorded',{'text':'Bruno','pages':['Anna'],'source':'nota-utente'},entity=str(uuid4()),parents=[q['event_id']])
+        decision=event('question.decided',{'decision':'accepted','reason':'Revisione umana'},parents=[a['event_id'],b['event_id']])
+        deferred=event('question.deferred',{'reason':'Servono altri dati'},parents=[decision['event_id']])
+        state=project([q,a,b,decision,deferred],V)
+        self.assertEqual(state['questions'][0]['state'],'deferred')
+        self.assertFalse(state['conflicts'])
+        newer=event('answer.recorded',{'text':'Cristina','pages':['Anna'],'source':'nota-utente'},entity=str(uuid4()),parents=[deferred['event_id']])
+        self.assertEqual(project([q,a,b,decision,deferred,newer],V)['questions'][0]['state'],'needs_decision')
     def test_order_independent_and_distinct_answers(self):
         q=registration(); a=event('answer.recorded', {'text':'Anna','pages':['Anna'],'source':'nota-utente'}, entity=str(uuid4()), parents=[q['event_id']]); b=copy.deepcopy(a); b['event_id']=str(uuid4()); b['entity_id']=str(uuid4()); b['payload']['text']='Bruno'
         expected=project([q,a,b],V)
@@ -109,6 +120,7 @@ class SharedState(unittest.TestCase):
     def test_discard_and_defer_have_no_implicit_answer(self):
         q=registration(); d=event('synthesis.discarded',{'question':'Chi?','reason':'non utile','pages':['Anna']},entity=str(uuid4()),parents=[q['event_id']]); p=project([q,d],V)
         self.assertEqual(p['answers'],[]); self.assertEqual(p['event_count'],2)
+        self.assertEqual(p['questions'][0]['history'][0]['payload']['reason'],'non utile')
 
     def test_complete_snapshot_validation_and_cache_rollback(self):
         from kit.dashboard.shared_state import validate_snapshot, rebuild_projection

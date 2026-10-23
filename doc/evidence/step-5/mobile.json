@@ -1,0 +1,11 @@
+{
+  "viewport": [
+    390,
+    844
+  ],
+  "overflow": false,
+  "labels": true,
+  "minControlHeight": 44,
+  "animations": 0,
+  "states": "Risposte registrate\n1a7fb3b1-a8e1-47bb-a07d-785c1be8df72 · archived\n\nRegistrata: sì · Applicata alle note: non attestata · Pubblicata: non verificato (publisher del passo 6).\n\n{\n  \"entity_id\": \"1a7fb3b1-a8e1-47bb-a07d-785c1be8df72\",\n  \"question_id\": \"7a039689-abf5-4765-9acd-fae0cd75749e\",\n  \"text\": \"Bruno verifica il rilascio.\",\n  \"pages\": [\n    \"Anna Rossi\"\n  ],\n  \"source\": \"nota-utente\",\n  \"state\": \"archived\",\n  \"h"
+}

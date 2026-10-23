@@ -1,0 +1,24 @@
+{
+  "operation": "Operazione note f68628c8-24a0-401d-aecf-4e1e35aa3c0f · succeeded · Completato. File cambiati: .teseo/shared/events/f1621751-0bc0-45ae-a7d0-705a1522e964.json, wiki/Anna Rossi.md. Premi Aggiorna vista per caricare la generazione pubblicata.",
+  "answers": [
+    {
+      "id": "1a7fb3b1-a8e1-47bb-a07d-785c1be8df72",
+      "state": "archived",
+      "applied": false,
+      "publication": "unknown"
+    },
+    {
+      "id": "6deb8ba3-d2c4-4520-aa29-74b9c6efcce8",
+      "state": "consolidated",
+      "applied": true,
+      "publication": "unknown"
+    },
+    {
+      "id": "9e019ba4-7f11-5500-b91f-460bef853f15",
+      "state": "archived",
+      "applied": false,
+      "publication": "unknown"
+    }
+  ],
+  "overflow": false
+}

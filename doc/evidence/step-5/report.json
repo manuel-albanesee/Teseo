@@ -1,0 +1,60 @@
+{
+  "contract": "contract.md; risposte UUID, causalità, selezione privacy e checkpoint",
+  "targetViewports": [
+    "1440x900",
+    "390x844"
+  ],
+  "accessibility": {
+    "status": "pass",
+    "evidence": "Label collegate; creazione e apply effettivi con Enter; controlli mobile almeno 44 px. Nessun audit screen reader."
+  },
+  "responsive": {
+    "status": "pass",
+    "evidence": "DOM renderizzato a 1440x900 e 390x844 senza overflow; nessuna animazione."
+  },
+  "contentStates": {
+    "loading": {
+      "status": "pass",
+      "evidence": "Messaggi durante lettura e preview e pulsanti disabilitati osservati nel runtime installato."
+    },
+    "empty": {
+      "status": "pass",
+      "evidence": "Vault sintetico iniziale privo di risposte: pannello vuoto e form disponibile."
+    },
+    "error": {
+      "status": "pass",
+      "evidence": "Job con digest precedente bloccato come blocked_external_change; aggiornamento esplicito necessario."
+    },
+    "partial": {
+      "status": "pass",
+      "evidence": "Evento con parent mancante mostrato pending; nessuna pubblicazione automatica (pending.json)."
+    },
+    "success": {
+      "status": "pass",
+      "evidence": "Risposta A applicata con checkpoint nota/evento; B e legacy ancora archiviate (desktop.json). Rinvio conserva risoluzione (deferral.json)."
+    },
+    "permission": {
+      "status": "pass",
+      "evidence": "Consenso richiesto; preview con zero selezioni ed export disabilitato (privacy.json); legacy senza form (legacy.json)."
+    }
+  },
+  "renderedEvidence": [
+    {
+      "viewport": "1440x900",
+      "artifact": "desktop.json",
+      "observation": "Operazione succeeded; A consolidata/applicata, altre archiviate, pubblicazione unknown."
+    },
+    {
+      "viewport": "390x844",
+      "artifact": "mobile.json",
+      "observation": "Label, dimensioni controlli e assenza overflow misurate nel runtime installato."
+    }
+  ],
+  "verification": {
+    "tests": "Suite 252: 251 pass, 1 skip; ultimi rinforzi: 18 core e 9 servizio pass; pipeline 11 pass e clone finale ripetuto pass.",
+    "installer": "--prova --dashboard pass; runtime installato e aggiornato.",
+    "static": "Compilazione Python, sintassi JS assemblato, diff e controlli sicurezza.",
+    "details": "verification.md"
+  },
+  "limits": "Fixture sintetiche; nessun AI avviato; DataTransfer sul vero JSON ricevuta, picker nativo non verificato. Nessun audit screen reader o cross-browser. Coverage nucleo 89% prima degli ultimi rinforzi, non globale. Publisher al passo 6; automatico disabilitato."
+}

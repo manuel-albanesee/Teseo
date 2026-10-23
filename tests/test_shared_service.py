@@ -42,6 +42,17 @@ class Service(unittest.TestCase):
         body = self.body(); body['share_confirmed'] = False
         with self.assertRaises(ContractError): self.service.record(self.vault, body)
 
+    def test_explicit_deferral_is_causal_and_duplicate_does_not_increment(self):
+        self.service.record(self.vault,self.body())
+        question=self.service.answers(self.vault)['questions'][0]
+        body={'question_id':question['question_id'],'heads':question['heads'],'decision':'defer',
+              'reason':'Servono dati dall’autore','idempotency_key':'defer-explicit-001','share_confirmed':True}
+        first=self.service.decision(self.vault,body)
+        self.assertEqual(first,self.service.decision(self.vault,body))
+        state=self.service.answers(self.vault)['questions'][0]
+        self.assertEqual(state['state'],'deferred')
+        self.assertEqual(state['defer_count'],1)
+
     def test_record_replays_same_events_and_conflicting_key_is_rejected(self):
         first = self.service.record(self.vault, self.body())
         again = SharedService(Registry(self.root)).record(self.vault, self.body())

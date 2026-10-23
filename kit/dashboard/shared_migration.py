@@ -242,5 +242,14 @@ class LegacyMigration:
         else:
             kind, payload = 'question.deferred', {'reason': 'Rinvio legacy selezionato; fino al ' + str(fields.get('fino_al') or '')}
             entity = question
+            count=fields.get('rinvii',1)
+            if type(count) is not int or not 1<=count<=128:
+                raise ContractError('legacy_invalid','Conteggio rinvii legacy non valido; revisionare la copia')
+            generated=[registered];parent=question_event
+            for index in range(1,count+1):
+                identifier=str(uuid5(namespace,'event:'+table+':'+row['row_id'])) if index==count else str(uuid5(namespace,'event:'+table+':'+row['row_id']+':history:'+str(index)))
+                generated.append(event(identifier,kind,entity,{'reason':payload['reason']+'; import storico '+str(index)+'/'+str(count)},[parent]))
+                parent=identifier
+            return generated
         record = event(str(uuid5(namespace, 'event:' + table + ':' + row['row_id'])), kind, entity, payload, [question_event])
         return [registered, record]

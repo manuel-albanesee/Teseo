@@ -1,8 +1,10 @@
 """Checkpoint note/eventi: UUID espliciti, risposte sopraggiunte e recovery."""
 import json
+from contextlib import closing
 import os
 from pathlib import Path
 import subprocess
+import sqlite3
 import sys
 import time
 import tempfile
@@ -201,6 +203,11 @@ class SharedPipeline(unittest.TestCase):
                 path=clone/item.path;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(item.data)
             rebuilt=rebuild(clone)
             self.assertEqual(rebuilt.content_revision,source.digest)
+            from kit.dashboard.graph_service import graph_reference
+            reference=graph_reference(self.root/'.graph/graph.sqlite')
+            with closing(sqlite3.connect(reference.path)) as left,closing(sqlite3.connect(rebuilt.path)) as right:
+                for table in ('entities','relations','aliases'):
+                    self.assertCountEqual(left.execute('SELECT * FROM '+table).fetchall(),right.execute('SELECT * FROM '+table).fetchall())
             self.assertEqual(validate_snapshot(source),validate_snapshot(capture_snapshot(clone)))
             self.assertFalse((clone/'.graph/memoria.sqlite').exists())
             self.assertFalse((clone/'.graph/domande.sqlite').exists())

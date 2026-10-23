@@ -267,7 +267,8 @@ def project(events, vault_id, allow_pending=True):
         current_answers = [a for a in result_answers if a['question_id']==identity and a['state']!='superseded']
         if len({a['text'] for a in current_answers}) > 1:
             ids = sorted(a['event_id'] for a in current_answers)
-            resolved = any(e['kind']=='question.decided' and set(ids) <= ancestors[e['event_id']] for e in actions if e['event_id'] in latest)
+            resolved = bool(latest) and all(any(e['kind']=='question.decided' and set(ids)<=ancestors[e['event_id']]
+                and (e['event_id']==head or e['event_id'] in ancestors[head]) for e in actions) for head in latest)
             if not resolved:
                 conflict('question.answers', identity, ids)
                 state='needs_decision'
@@ -276,7 +277,9 @@ def project(events, vault_id, allow_pending=True):
         for e in actions:
             if e['kind']=='question.deferred':
                 depths[e['event_id']] = 1 + max((n for k,n in depths.items() if k in ancestors[e['event_id']]), default=0)
-        result_questions.append({'question_id':identity,'entity_id':identity,'text':original['payload']['text'],'anchors':[{**a,'page':mapped(a['page'])} for a in original['payload']['anchors']], 'state':state,'heads':heads([e for e in active if e['question_id']==identity and e['kind']!='page.renamed']), 'defer_count':max(depths.values(),default=0)})
+        history=[{key:e[key] for key in ('event_id','kind','author_id','created_at','payload')} for e in active
+                 if e['question_id']==identity and e['kind'] in ('question.deferred','question.decided','synthesis.discarded')]
+        result_questions.append({'question_id':identity,'entity_id':identity,'text':original['payload']['text'],'anchors':[{**a,'page':mapped(a['page'])} for a in original['payload']['anchors']], 'state':state,'heads':heads([e for e in active if e['question_id']==identity and e['kind']!='page.renamed']), 'defer_count':max(depths.values(),default=0),'history':history})
     return {'format_version':1,'vault_id':vault_id,'answers':result_answers,'questions':result_questions,'conflicts':sorted(conflicts,key=lambda c:(c['kind'],c['entity_id'])),'pending':sorted(pending),'renames':renames,'heads':heads(active),'event_count':len(by_id),'digest':content_hash({'events':[by_id[k] for k in sorted(by_id)]})}
 
 

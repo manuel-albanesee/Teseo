@@ -26,9 +26,29 @@ a generazioni restano prerequisiti per attivare la dashboard e le automazioni.
 | 2 | Bootstrap, API e UI di consultazione, distribuzione e rebuild coordinato disponibili; adozione legacy ed export diagnostica futuri |
 | 3 | Parser/serializer (3.1), preview (3.2), form UI (3.3), apply manuale locale e recovery (3.4) disponibili; automatico disabilitato, mapping pagine/eventi al passo 5 |
 | 4 | Registry/coda/ricevute (4.1), handoff (4.2), pipeline/manifest/apply manuale (4.3), adapter e UI (4.4) disponibili; automazione nativa non verificata, fallback manuale per tre client |
-| 5 | Canonicalizzazione disponibile; schema eventi per tipo, DAG, proiezioni e migrazione ancora da sviluppare |
+| 5 | 5.1–5.4 disponibili: eventi immutabili/DAG, migrazione selettiva, consolidamento UUID e checkpoint, UI conflitti/rinvii e ripristino documentato; publisher al passo 6 |
 | 6 | Staging Git isolato e attribuzione precisa obbligatori prima del push dati |
 | 7 | Apply automatico subordinato a recovery e gate Windows; rilevamento può precederlo |
+
+## Incrementi 17–20 — stato condiviso completo
+
+Passo 5.1 pushato in `10cf257`: otto tipi di evento, DAG, validazione stretta,
+conflitti causali e proiezione rigenerabile. Passo 5.2 in `eab5d19`: backup
+consistente, preview ed export selettivo legacy, UUID persistenti e API protette.
+Passo 5.3 in `d1e8918`: UUID espliciti nelle ricevute, nota ed evento nello stesso
+checkpoint, risposta sopraggiunta esclusa dal consolidamento e recovery.
+
+Passo 5.4: pannello risposte, decisioni/rinvii, privacy e ricostruzione locale;
+procedure backup/ripristino documentate. Rinviando una domanda resta valida la
+risoluzione causale precedente; nuove risposte divergenti riaprono il conflitto.
+Conteggio storico dei rinvii conservato nella migrazione selezionata.
+
+Verifica: suite 252 test (251 pass, un salto Windows noto); dopo gli ultimi
+rinforzi, 18 test proiettore e 9 servizio superati. Pipeline 11 test superati,
+clone finale ripetuto con confronto del grafo completo e senza DB personali.
+Installer e UI reale desktop/mobile verificati. Dettagli e limiti nelle
+[evidenze ECC](evidence/step-5/verification.md). Prossimo: 6.1, repository dati e
+publisher; nessun push dati o applicazione automatica attivati dalla dashboard.
 
 ## Incremento 1 — contratti puri
 
