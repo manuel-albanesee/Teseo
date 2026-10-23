@@ -77,8 +77,8 @@ def rebuild(root, *, lock=None, cancelled=None, validating=None, operation_id=No
             with Journal(lock) as journal:
                 journal.assert_notes_idle(operation_id)
         snapshot = capture_snapshot(root)
-        if any(entry.path.startswith(".teseo/shared/events/") for entry in snapshot.files):
-            raise ContractError("event_validation_unavailable", "Validazione eventi non ancora disponibile")
+        from .shared_state import validate_snapshot
+        validate_snapshot(snapshot)
         generation = content_hash({"content_revision": snapshot.digest, "builder_version": BUILDER_VERSION})
         legacy = root / ".graph/graph.sqlite"
         _no_link(root / ".teseo/local/graphs")

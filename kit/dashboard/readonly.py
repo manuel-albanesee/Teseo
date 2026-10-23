@@ -76,6 +76,7 @@ class VaultRegistry:
                 "schema_version": compatibility.manifest["schema_version"] if compatibility.manifest else None,
                 "capabilities": {"attach_readonly": True, "graph": False, "rebuild": False,
                                  "ontology_preview": compatibility.mode == 'compatible',
+                                 "shared_state": compatibility.mode == 'compatible',
                                  "ontology_apply": compatibility.mode == 'compatible' and os.name == 'nt',
                                  "ontology_apply_automatic": False, "external_writer_exclusion": False,
                                  "write_notes": False, "sync": False},

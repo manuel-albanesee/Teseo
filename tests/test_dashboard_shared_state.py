@@ -130,3 +130,10 @@ class SharedState(unittest.TestCase):
     def test_question_heads_include_answers_for_explicit_resolution(self):
         q=registration(); a=event('answer.recorded',{'text':'A','pages':[],'source':'nota-utente'},entity=str(uuid4()),parents=[q['event_id']]); b=event('answer.recorded',{'text':'B','pages':[],'source':'nota-utente'},entity=str(uuid4()),parents=[q['event_id']]); p=project([q,a,b],V)
         self.assertEqual(p['questions'][0]['heads'],sorted([a['event_id'],b['event_id']]))
+
+    def test_answer_identity_cannot_reuse_question_uuid(self):
+        q=registration(); another=event('question.registered',{'text':'Altro?','anchors':[]},question=str(uuid4()))
+        for identity in (q['question_id'],another['question_id']):
+            a=event('answer.recorded',{'text':'A','pages':[],'source':'nota-utente'},entity=identity,parents=[q['event_id']])
+            with self.assertRaises(ContractError) as error: project([q,a,another],V)
+            self.assertEqual(error.exception.code,'entity_collision')

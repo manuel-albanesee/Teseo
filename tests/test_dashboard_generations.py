@@ -164,7 +164,7 @@ class Generations(unittest.TestCase):
         events = self.root / ".teseo/shared/events"
         events.mkdir(parents=True)
         (events / "a.json").write_text("{}", encoding="utf-8")
-        self.assert_code("event_validation_unavailable", service.rebuild, self.root)
+        self.assert_code("invalid_event", service.rebuild, self.root)
         self.assertEqual(graph_reference(self.legacy), first)
 
     def test_pointer_traversal_unknown_version_and_missing_generation_rejected(self):

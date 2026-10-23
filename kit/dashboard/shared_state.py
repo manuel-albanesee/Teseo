@@ -201,6 +201,8 @@ def project(events, vault_id, allow_pending=True):
             if a in answers:
                 _fail('Registrazione risposta duplicata', 'entity_collision')
             answers[a] = e
+    if registrations.keys() & answers.keys():
+        _fail('UUID globale riutilizzato tra domanda e risposta', 'entity_collision')
     def causal(e, reference):
         if reference is None or reference['event_id'] not in ancestors[e['event_id']]:
             _fail('Riferimento senza antenato causale', 'event_reference')

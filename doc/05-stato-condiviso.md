@@ -1,6 +1,6 @@
 # 5 — Risposte e decisioni condivise
 
-Stato: formato, DAG e proiezione idempotente implementati (5.1); migrazione, consolidamento e UI in completamento. Il formato e l'import dipendono dal [contratto 1](01-contratto-dati-operazioni.md); API/UI richiedono [dashboard 2](02-dashboard-consultazione.md), il consolidamento completo richiede [coordinator 4](04-coordinamento-ingest-lint.md). Obiettivo: una risposta o decisione utile alla collaborazione attraversa i clone senza scambiare SQLite, sessioni o memoria personale.
+Stato: formato/DAG/proiezione (5.1) e migrazione selettiva con API (5.2) implementati; consolidamento e UI in completamento. Il formato e l'import dipendono dal [contratto 1](01-contratto-dati-operazioni.md); API/UI richiedono [dashboard 2](02-dashboard-consultazione.md), il consolidamento completo richiede [coordinator 4](04-coordinamento-ingest-lint.md). Obiettivo: una risposta o decisione utile alla collaborazione attraversa i clone senza scambiare SQLite, sessioni o memoria personale.
 
 ## Stato attuale e scope
 
@@ -58,5 +58,36 @@ Due clone registrano risposte diverse e importano in ordine inverso: nessuna per
 Comandi **esistenti** nel vault: `python .graph/domande.py --risposte` legge le pendenti; `python .graph/domande.py --stato` può sincronizzare stato locale e non è audit readonly; `--consolida` attuale è mutante e non va usato per simulare il nuovo contratto. Regressioni root: `python -m unittest discover -s tests -v`. Test **da creare** `tests/test_dashboard_shared_state.py`, comando futuro `python -m unittest discover -s tests -p 'test_dashboard_shared_state.py' -v`. Nessuna migrazione o prova runtime è stata eseguita per questi documenti.
 
 ## Rollout, rollback e rischi
+
+## Funzionalità disponibili (5.1–5.2)
+
+`shared_state.py`: otto tipi iniziali, campi comuni obbligatori, UUID canonici,
+timestamp UTC informativo, payload stretti e byte canonici. Limiti: 2048 eventi,
+64 KiB per evento, 128 parent. DAG deterministico; missing parent pending,
+cicli/collisioni/versioni incompatibili bloccanti. La proiezione mantiene risposte
+distinte e conflitti causali; mapping page.renamed senza riscrivere eventi.
+`import_events` accumula idempotentemente; `rebuild_projection` rigenera la cache
+esatta dopo rollback. File JSON restano l'autorità, SQLite locale è rigenerabile.
+
+`GET /answers` legge soltanto eventi, senza aprire DB personali. `POST /answers`
+richiede question_id (o null con question_text), pages, text, idempotency_key e
+share_confirmed=true. Decisioni: `/shared-state/decision` con question_id, tutti
+gli heads correnti, decision open/reopen/closed/accepted/rejected, reason,
+chiave e consenso. Versioni concorrenti richiedono un nuovo evento causale;
+nessun last-write-wins. `/shared-state/import {}` ricostruisce la cache locale.
+
+`/shared-state/export-preview {}` crea un backup SQLite consistente di domande,
+confronto delle righe e censimento delle esclusioni. Memoria personale non aperta;
+originali conservati. `/shared-state/export` richiede preview_id, selection_ids,
+idempotency_key e share_confirmed=true. Nessuna selezione implicita; UUID e
+provenienza locale persistono, un secondo export è no-op sui file. DB copiati
+senza storia affidabile producono un avviso e identità distinte, mai deduplica
+automatica per uguaglianza del testo. Fonte modificata/WAL cambiato impone nuova
+preview. Backup, mapping e ricevute restano `.teseo/local/` ignorata da Git.
+
+Append esclusivo di nuovi UUID, richieste persistite prima dei file: interruzione
+fra eventi si riprende con la stessa chiave, senza sovrascrivere dati esistenti.
+Durante awaiting_client nuove risposte sono ammesse; apply/recovery parziale
+blocca lo stato condiviso. Pubblicazione resta unknown fino al passo 6.
 
 Primo rilascio in shadow mode: export-preview senza push, confronto conteggi e campi con legacy; poi import su copia nuova e consolidamento per ID. Non attivare sync prima di completare questo gate. Rollback conserva eventi e DB originali; per tornare al vecchio kit occorre ripristinare un backup compatibile senza eliminare storia nuova. La riservatezza del testo risposte e la distribuzione dei raw sono decisioni del gruppo; la selezione non rimuove dati già presenti nella storia Git. Aperto: gestione redazioni di dati sensibili già condivisi, da trattare come procedura dedicata e non come normale delete di evento immutabile.

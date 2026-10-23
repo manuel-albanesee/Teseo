@@ -20,6 +20,7 @@ from .ontology_preview import PreviewService
 from .ontology_apply import ApplyService
 from .operations import SkillCoordinator
 from .adapters import default_adapters
+from .shared_service import SharedService
 
 MAX_BODY_BYTES = 16 * 1024
 
@@ -34,6 +35,7 @@ class DashboardServer(ThreadingHTTPServer):
         self.previews = PreviewService(self.registry)
         self.applies = ApplyService(self.registry, self.previews)
         self.skills = SkillCoordinator(self.registry, default_adapters())
+        self.shared = SharedService(self.registry)
         self.operations.note_activity = self.applies.active
         self.session_token = secrets.token_urlsafe(32)
         self.csrf_token = secrets.token_urlsafe(32)
@@ -233,6 +235,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self.server.request_stop()
                 return
             parts = target.path.split("/")
+            if len(parts)==6 and parts[1:4]==['api','v1','vaults'] and parts[5]=='answers':
+                self._reply(201,self.server.shared.record(parts[4],body))
+                return
+            if len(parts)==7 and parts[1:4]==['api','v1','vaults'] and parts[5]=='shared-state':
+                method={'decision':self.server.shared.decision,'export-preview':self.server.shared.preview,
+                        'export':self.server.shared.export,'import':self.server.shared.import_state}.get(parts[6])
+                if method:
+                    self._reply(200,method(parts[4],body))
+                    return
             if len(parts)==8 and parts[1:4]==['api','v1','vaults'] and parts[5]=='operations' and parts[7]=='apply':
                 self._reply(202,self.server.applies.apply_skill(parts[4],parts[6],body,self._header('If-Match')))
                 return
@@ -283,6 +294,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                         reader = {"status": self.server.read_api.status, "graph": self.server.read_api.graph,
                                   "ontology": self.server.read_api.ontology,
                                   "operations": self.server.operations.list,
+                                  "answers": self.server.shared.answers,
                                   "diagnostics": self.server.read_api.diagnostics}.get(parts[5])
                         if reader:
                             self._data_reply(reader(parts[4], parameters))
@@ -325,6 +337,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
                       'migration_invalid': 422, 'invalid_migrations': 400, 'shared_mapping_unavailable': 422,
                       'recovery_required': 409, 'recovery_conflict': 409}.get(error.code, status)
             status = {'invalid_receipt':403,'receipt_conflict':409,'receipt_manifest_mismatch':409}.get(error.code,status)
+            status = {'invalid_response_ids':422,'answer_conflict':409,'answer_not_supported':422,'event_write_forbidden':422,
+                'event_pending':409,'event_collision':409,'shared_heads_stale':409,'legacy_preview_stale':409,
+                'shared_confirmation_required':422,'legacy_missing':404,'legacy_invalid':422,'invalid_event':422,
+                'event_version':422,'event_reference':422,'event_cycle':422,'event_canonical':422,'event_filename':422,
+                'event_vault':422,'entity_collision':409,'question_missing':404}.get(error.code,status)
             self._error(status, error.code, str(error), getattr(error, 'details', None))
         except (ConnectionError, TimeoutError):
             self.close_connection = True
