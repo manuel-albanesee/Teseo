@@ -36,6 +36,7 @@ Tutti i percorsi sotto `/api/v1/vaults/{id}`. GET non lancia modelli, Git o muta
 | `GET /ontology` | tipi, relazioni, direzione, sezioni non interpretate e digest |
 | `GET /diagnostics` | lista `{code,severity,path,message,revision}` |
 | `POST /rebuild` | job derivato con `operation_id`; nessuna modifica delle note |
+| `POST /ontology/preview` | dal 3.2: candidato e impatto sullo snapshot corrente, nessuna scrittura; [contratto](03-editor-ontologia.md#api-preview-disponibile-32) |
 | `GET /operations/{operation_id}` | stato e risultato strutturato |
 
 Ogni risposta contiene `content_revision` e `graph_generation`; usare ETag e `If-None-Match` per cache. La paginazione di una generazione scaduta restituisce `409 revision_changed`, non combina revisioni. Errori: `400` input invalido, `403` sessione/path non autorizzato, `404` vault/nodo assente, `409` stato o revisione incompatibile, `422` formato non supportato, `503` capacità temporaneamente indisponibile. Gli errori contengono `code`, messaggio utile e possibilità di retry senza traceback o segreti.

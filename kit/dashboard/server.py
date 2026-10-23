@@ -16,6 +16,7 @@ from .contracts import ContractError, parse_json
 from .readonly import VaultRegistry
 from .read_api import ReadAPI
 from .jobs import RebuildCoordinator
+from .ontology_preview import PreviewService
 
 MAX_BODY_BYTES = 16 * 1024
 
@@ -27,6 +28,7 @@ class DashboardServer(ThreadingHTTPServer):
         self.registry = registry or VaultRegistry()
         self.operations = RebuildCoordinator(self.registry)
         self.read_api = ReadAPI(self.registry, self.operations)
+        self.previews = PreviewService(self.registry)
         self.session_token = secrets.token_urlsafe(32)
         self.csrf_token = secrets.token_urlsafe(32)
         self.rate_limit, self._requests = rate_limit, deque()
@@ -121,7 +123,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         else:
             self._reply(200, data, etag=etag)
 
-    def _error(self, status, code, message):
+    def _error(self, status, code, message, details=None):
         # Consume a bounded, unambiguous POST body before closing: on Windows
         # unread bytes can reset TCP and hide the structured rejection from clients.
         length = self._header("Content-Length") if hasattr(self, "headers") else None
@@ -133,7 +135,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self.rfile.read(int(length))
             except (ConnectionError, TimeoutError, OSError):
                 pass
-        self._reply(status, {"error": {"code": code, "message": message, "retryable": status in (429, 503)},
+        error = {"code": code, "message": message, "retryable": status in (429, 503)}
+        if details is not None:
+            error['details'] = details
+        self._reply(status, {"error": error,
                              "content_revision": None, "graph_generation": None})
 
     def send_error(self, code, message=None, explain=None):
@@ -215,6 +220,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self.server.request_stop()
                 return
             parts = target.path.split("/")
+            if len(parts) == 7 and parts[1:4] == ["api", "v1", "vaults"] and parts[5:] == ['ontology', 'preview']:
+                self._reply(200, self.server.previews.preview(parts[4], body))
+                return
             if len(parts) == 6 and parts[1:4] == ["api", "v1", "vaults"] and parts[5] == "rebuild":
                 self._reply(202, self.server.operations.submit(parts[4], body))
                 return
@@ -267,7 +275,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
             status = {"operation_missing": 404, "operation_unavailable": 503, "vault_readonly": 422,
                       "vault_busy": 409, "job_limit": 409, "idempotency_conflict": 409,
                       "service_stopping": 503, "registry_unavailable": 503}.get(error.code, status)
-            self._error(status, error.code, str(error))
+            status = {'preview_stale': 409, 'blocked_external_change': 409, 'preview_busy': 429,
+                      'preview_limit': 422, 'preview_parse_failed': 422, 'preview_encoding': 422,
+                      'ontology_manual': 422, 'catalog_adoption_required': 422,
+                      'invalid_schema': 422}.get(error.code, status)
+            self._error(status, error.code, str(error), getattr(error, 'details', None))
         except (ConnectionError, TimeoutError):
             self.close_connection = True
         except Exception:

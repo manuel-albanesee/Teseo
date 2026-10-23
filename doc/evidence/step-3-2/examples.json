@@ -1,0 +1,411 @@
+{
+  "fixture": {
+    "Wiki reference.md": "# Schema di prova\r\n<!-- preservare -->\r\n## Tipi ammessi\r\n| Tipo | Descrizione |\r\n| --- | --- |\r\n| `persona` | Persone |\r\n\r\n## Relazioni tipizzate\r\n| Relazione | Da | A |\r\n| --- | --- | --- |\r\n| `usa` | persona | persona |\r\n",
+    "wiki/Anna.md": "---\ntipo: persona\nusa: \"[[Bruno]]\"\n---\nAnna usa il servizio. [[Bruno]]",
+    "wiki/Bruno.md": "---\ntipo: persona\n---\nBruno",
+    "index.md": "[[Anna]]"
+  },
+  "scenarios": {
+    "aggiunta": {
+      "base_content_digest": "f174502fe200a1c1f4785d756db67b99c05ac9ef1e5dab2ccd3ba7d0932cffd9",
+      "content_revision": "f174502fe200a1c1f4785d756db67b99c05ac9ef1e5dab2ccd3ba7d0932cffd9",
+      "graph_generation": null,
+      "base_schema_digest": "4085ea7e7a85343406aab27214612de7102ec87468d2961eb6119f4609f214c2",
+      "candidate_schema_digest": "82d52db066926af030522e472e4f71993b6289f0d88020e218aad9ffe4447d79",
+      "proposal_hash": "7bd893053573e2b0b91b8f1f8949f01c736403470523d5ca6b09790fab7cc24b",
+      "candidate_schema": "# Schema di prova\r\n&lt;!-- preservare --&gt;\r\n## Tipi ammessi\r\n| Tipo | Descrizione |\r\n| --- | --- |\r\n| `persona` | Persone |\r\n\r\n## Relazioni tipizzate\r\n| Relazione | Da (tipo) | A (tipo) | Significato | Esempio |\r\n| --- | --- | --- | --- | --- |\r\n| `usa` | persona | persona |  |  |\r\n| `approva` | persona | persona |  |  |\r\n",
+      "schema_diff": "--- Wiki reference.md (base)\n+++ Wiki reference.md (proposta)\n@@ -6,6 +6,7 @@\n | `persona` | Persone |\r\n \r\n ## Relazioni tipizzate\r\n-| Relazione | Da | A |\r\n-| --- | --- | --- |\r\n-| `usa` | persona | persona |\r\n+| Relazione | Da (tipo) | A (tipo) | Significato | Esempio |\r\n+| --- | --- | --- | --- | --- |\r\n+| `usa` | persona | persona |  |  |\r\n+| `approva` | persona | persona |  |  |\r\n",
+      "text_format": "escaped_markdown",
+      "changes": [
+        {
+          "op": "add_relation",
+          "name": "approva",
+          "value": {
+            "from_types": [
+              "persona"
+            ],
+            "to_types": [
+              "persona"
+            ]
+          }
+        }
+      ],
+      "model": {
+        "types": [
+          {
+            "name": "persona",
+            "description": "Persone"
+          }
+        ],
+        "relations": [
+          {
+            "name": "usa",
+            "from_types": [
+              "persona"
+            ],
+            "to_types": [
+              "persona"
+            ],
+            "meaning": "",
+            "example": "",
+            "direction": "source_to_target"
+          },
+          {
+            "name": "approva",
+            "from_types": [
+              "persona"
+            ],
+            "to_types": [
+              "persona"
+            ],
+            "meaning": "",
+            "example": "",
+            "direction": "source_to_target"
+          }
+        ]
+      },
+      "usage": {
+        "types": {
+          "persona": 2
+        },
+        "properties": {
+          "tipo": 2,
+          "usa": 1
+        },
+        "derived_types": {},
+        "pages": [
+          {
+            "page": "wiki/Anna.md",
+            "type": "persona",
+            "properties": [
+              "tipo",
+              "usa"
+            ],
+            "aliases": [],
+            "sources": []
+          },
+          {
+            "page": "wiki/Bruno.md",
+            "type": "persona",
+            "properties": [
+              "tipo"
+            ],
+            "aliases": [],
+            "sources": []
+          }
+        ]
+      },
+      "impacted_pages": [],
+      "impacted_edges": [],
+      "references": [
+        {
+          "page": "wiki/Anna.md",
+          "property": "usa",
+          "target": "Bruno",
+          "kind": "frontmatter"
+        },
+        {
+          "page": "wiki/Anna.md",
+          "property": "body",
+          "target": "Bruno",
+          "kind": "body"
+        },
+        {
+          "page": "index.md",
+          "property": "body",
+          "target": "Anna",
+          "kind": "document"
+        }
+      ],
+      "shared_records": [],
+      "violations": [],
+      "migration_suggestions": [],
+      "manual_review": [],
+      "schema_only_valid": true,
+      "requires_migration": false,
+      "requires_confirmation": true,
+      "apply_available": false,
+      "semantic_capabilities": {
+        "automatic_inference": false,
+        "new_relations": [
+          "approva"
+        ],
+        "requires_review": [
+          "approva"
+        ],
+        "message": "Nessuna nuova inferenza automatica. Le euristiche di sintesi/domande sono codice del kit; rinomine, rimozioni e cambi di significato richiedono revisione."
+      },
+      "analysis_complete": true
+    },
+    "rimozione_usata": {
+      "base_content_digest": "f174502fe200a1c1f4785d756db67b99c05ac9ef1e5dab2ccd3ba7d0932cffd9",
+      "content_revision": "f174502fe200a1c1f4785d756db67b99c05ac9ef1e5dab2ccd3ba7d0932cffd9",
+      "graph_generation": null,
+      "base_schema_digest": "4085ea7e7a85343406aab27214612de7102ec87468d2961eb6119f4609f214c2",
+      "candidate_schema_digest": "597e4f9af30db8afe8853d662f2e97176838eb6f725ead389e8d539b1aec3572",
+      "proposal_hash": "b307b21187317a87a65d91982991a28c73b0b97340b2678d4681178a1f91a127",
+      "candidate_schema": "# Schema di prova\r\n&lt;!-- preservare --&gt;\r\n## Tipi ammessi\r\n| Tipo | Descrizione |\r\n| --- | --- |\r\n| `persona` | Persone |\r\n\r\n## Relazioni tipizzate\r\n| Relazione | Da (tipo) | A (tipo) | Significato | Esempio |\r\n| --- | --- | --- | --- | --- |\r\n",
+      "schema_diff": "--- Wiki reference.md (base)\n+++ Wiki reference.md (proposta)\n@@ -6,6 +6,5 @@\n | `persona` | Persone |\r\n \r\n ## Relazioni tipizzate\r\n-| Relazione | Da | A |\r\n-| --- | --- | --- |\r\n-| `usa` | persona | persona |\r\n+| Relazione | Da (tipo) | A (tipo) | Significato | Esempio |\r\n+| --- | --- | --- | --- | --- |\r\n",
+      "text_format": "escaped_markdown",
+      "changes": [
+        {
+          "op": "remove_relation",
+          "name": "usa"
+        }
+      ],
+      "model": {
+        "types": [
+          {
+            "name": "persona",
+            "description": "Persone"
+          }
+        ],
+        "relations": []
+      },
+      "usage": {
+        "types": {
+          "persona": 2
+        },
+        "properties": {
+          "tipo": 2,
+          "usa": 1
+        },
+        "derived_types": {},
+        "pages": [
+          {
+            "page": "wiki/Anna.md",
+            "type": "persona",
+            "properties": [
+              "tipo",
+              "usa"
+            ],
+            "aliases": [],
+            "sources": []
+          },
+          {
+            "page": "wiki/Bruno.md",
+            "type": "persona",
+            "properties": [
+              "tipo"
+            ],
+            "aliases": [],
+            "sources": []
+          }
+        ]
+      },
+      "impacted_pages": [
+        "wiki/Anna.md"
+      ],
+      "impacted_edges": [
+        {
+          "page": "wiki/Anna.md",
+          "property": "usa",
+          "target": "Bruno"
+        }
+      ],
+      "references": [
+        {
+          "page": "wiki/Anna.md",
+          "property": "usa",
+          "target": "Bruno",
+          "kind": "frontmatter"
+        },
+        {
+          "page": "wiki/Anna.md",
+          "property": "body",
+          "target": "Bruno",
+          "kind": "body"
+        },
+        {
+          "page": "index.md",
+          "property": "body",
+          "target": "Anna",
+          "kind": "document"
+        }
+      ],
+      "shared_records": [],
+      "violations": [
+        {
+          "code": "unknown_relation",
+          "page": "wiki/Anna.md",
+          "property": "usa",
+          "reason": "Anna: relazione 'usa' fuori vocabolario",
+          "target": "Bruno"
+        }
+      ],
+      "migration_suggestions": [],
+      "manual_review": [
+        {
+          "page": "wiki/Anna.md",
+          "property": "body",
+          "names": [
+            "usa"
+          ],
+          "reason": "Occorrenze letterali nel testo libero: significato e sostituzioni da revisionare, nessuna riscrittura automatica"
+        }
+      ],
+      "schema_only_valid": false,
+      "requires_migration": true,
+      "requires_confirmation": true,
+      "apply_available": false,
+      "semantic_capabilities": {
+        "automatic_inference": false,
+        "new_relations": [],
+        "requires_review": [
+          "usa"
+        ],
+        "message": "Nessuna nuova inferenza automatica. Le euristiche di sintesi/domande sono codice del kit; rinomine, rimozioni e cambi di significato richiedono revisione."
+      },
+      "analysis_complete": true
+    },
+    "rinomina": {
+      "base_content_digest": "f174502fe200a1c1f4785d756db67b99c05ac9ef1e5dab2ccd3ba7d0932cffd9",
+      "content_revision": "f174502fe200a1c1f4785d756db67b99c05ac9ef1e5dab2ccd3ba7d0932cffd9",
+      "graph_generation": null,
+      "base_schema_digest": "4085ea7e7a85343406aab27214612de7102ec87468d2961eb6119f4609f214c2",
+      "candidate_schema_digest": "bbbfb1ec026575de98aa6f8dc34de5d30420b02a9374aef518ee19163696a8dc",
+      "proposal_hash": "587ae32b1a0ceb4804e314a11c495a678931b4b205d15609ef0b8b4507e1ee3b",
+      "candidate_schema": "# Schema di prova\r\n&lt;!-- preservare --&gt;\r\n## Tipi ammessi\r\n| Tipo | Descrizione |\r\n| --- | --- |\r\n| `persona` | Persone |\r\n\r\n## Relazioni tipizzate\r\n| Relazione | Da (tipo) | A (tipo) | Significato | Esempio |\r\n| --- | --- | --- | --- | --- |\r\n| `utilizza` | persona | persona |  |  |\r\n",
+      "schema_diff": "--- Wiki reference.md (base)\n+++ Wiki reference.md (proposta)\n@@ -6,6 +6,6 @@\n | `persona` | Persone |\r\n \r\n ## Relazioni tipizzate\r\n-| Relazione | Da | A |\r\n-| --- | --- | --- |\r\n-| `usa` | persona | persona |\r\n+| Relazione | Da (tipo) | A (tipo) | Significato | Esempio |\r\n+| --- | --- | --- | --- | --- |\r\n+| `utilizza` | persona | persona |  |  |\r\n",
+      "text_format": "escaped_markdown",
+      "changes": [
+        {
+          "op": "rename_relation",
+          "name": "usa",
+          "to": "utilizza"
+        }
+      ],
+      "model": {
+        "types": [
+          {
+            "name": "persona",
+            "description": "Persone"
+          }
+        ],
+        "relations": [
+          {
+            "name": "utilizza",
+            "from_types": [
+              "persona"
+            ],
+            "to_types": [
+              "persona"
+            ],
+            "meaning": "",
+            "example": "",
+            "direction": "source_to_target"
+          }
+        ]
+      },
+      "usage": {
+        "types": {
+          "persona": 2
+        },
+        "properties": {
+          "tipo": 2,
+          "usa": 1
+        },
+        "derived_types": {},
+        "pages": [
+          {
+            "page": "wiki/Anna.md",
+            "type": "persona",
+            "properties": [
+              "tipo",
+              "usa"
+            ],
+            "aliases": [],
+            "sources": []
+          },
+          {
+            "page": "wiki/Bruno.md",
+            "type": "persona",
+            "properties": [
+              "tipo"
+            ],
+            "aliases": [],
+            "sources": []
+          }
+        ]
+      },
+      "impacted_pages": [
+        "wiki/Anna.md"
+      ],
+      "impacted_edges": [
+        {
+          "page": "wiki/Anna.md",
+          "property": "usa",
+          "target": "Bruno"
+        }
+      ],
+      "references": [
+        {
+          "page": "wiki/Anna.md",
+          "property": "usa",
+          "target": "Bruno",
+          "kind": "frontmatter"
+        },
+        {
+          "page": "wiki/Anna.md",
+          "property": "body",
+          "target": "Bruno",
+          "kind": "body"
+        },
+        {
+          "page": "index.md",
+          "property": "body",
+          "target": "Anna",
+          "kind": "document"
+        }
+      ],
+      "shared_records": [],
+      "violations": [
+        {
+          "code": "unknown_relation",
+          "page": "wiki/Anna.md",
+          "property": "usa",
+          "reason": "Anna: relazione 'usa' fuori vocabolario",
+          "target": "Bruno"
+        }
+      ],
+      "migration_suggestions": [
+        {
+          "page": "wiki/Anna.md",
+          "property": "usa",
+          "kind": "rename_relation",
+          "from": "usa",
+          "to": "utilizza",
+          "deterministic": true,
+          "reason": "Rinomina esatta da confermare; testo libero da revisionare",
+          "requires_confirmation": true
+        }
+      ],
+      "manual_review": [
+        {
+          "page": "wiki/Anna.md",
+          "property": "body",
+          "names": [
+            "usa"
+          ],
+          "reason": "Occorrenze letterali nel testo libero: significato e sostituzioni da revisionare, nessuna riscrittura automatica"
+        }
+      ],
+      "schema_only_valid": false,
+      "requires_migration": true,
+      "requires_confirmation": true,
+      "apply_available": false,
+      "semantic_capabilities": {
+        "automatic_inference": false,
+        "new_relations": [
+          "utilizza"
+        ],
+        "requires_review": [
+          "usa",
+          "utilizza"
+        ],
+        "message": "Nessuna nuova inferenza automatica. Le euristiche di sintesi/domande sono codice del kit; rinomine, rimozioni e cambi di significato richiedono revisione."
+      },
+      "analysis_complete": true
+    }
+  }
+}

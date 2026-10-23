@@ -195,6 +195,15 @@ def parse_documents(documents):
     nomi = {p.lower(): p for p in pagine}
     problemi = ['Wiki reference.md: ' + issue.code + ': ' + issue.message
                 for issue in ontology.issues if issue.severity == 'error']
+    problem_details = [{'code': issue.code, 'page': 'Wiki reference.md', 'property': 'ontology',
+                        'reason': issue.message, 'target': None}
+                       for issue in ontology.issues if issue.severity == 'error']
+
+    def problem(message, page, prop, code, target=None):
+        problemi.append(message)
+        problem_details.append({'code': code, 'page': page, 'property': prop,
+                                'reason': message, 'target': target})
+
     entita, relazioni, alias = [], set(), []
 
     def risolvi(pagina, raw, dove):
@@ -202,16 +211,18 @@ def parse_documents(documents):
         if t.lower() in nomi:
             return nomi[t.lower()]
         if t.lower() not in PAGINE_SCHEMA:
-            problemi.append(f"{pagina}: link non risolto [[{t}]] ({dove})")
+            problem(f"{pagina}: link non risolto [[{t}]] ({dove})", f'wiki/{pagina}.md',
+                    dove.removeprefix('proprietà '), 'unresolved_link', t)
         return None
 
     fonti_usate = set()
     for nome, (fm, corpo) in pagine.items():
         if fm.get('tipo') is not None and not isinstance(fm['tipo'], str):
-            problemi.append(f"{nome}: tipo deve essere una stringa singola")
+            problem(f"{nome}: tipo deve essere una stringa singola", f'wiki/{nome}.md', 'tipo', 'invalid_page_type')
         if declared_types is not None and (not isinstance(fm.get('tipo'), str)
                 or fm['tipo'] not in declared_types):
-            problemi.append(f"{nome}: tipo {fm.get('tipo')!r} non dichiarato nel catalogo Tipi ammessi")
+            problem(f"{nome}: tipo {fm.get('tipo')!r} non dichiarato nel catalogo Tipi ammessi",
+                    f'wiki/{nome}.md', 'tipo', 'unknown_page_type')
         entita.append((nome, fm.get("tipo"), descrizioni.get(nome), f"wiki/{nome}.md",
                        ", ".join(valori(fm.get("tags"))), str(fm.get("aggiornato") or "")))
         for a in valori(fm.get("aliases")):
@@ -224,7 +235,8 @@ def parse_documents(documents):
                 continue
             links = [l for s in valori(v) for l in LINK.findall(s)]
             if not links:
-                problemi.append(f"{nome}: proprietà '{prop}' senza link (nel frontmatter i link vanno tra virgolette)")
+                problem(f"{nome}: proprietà '{prop}' senza link (nel frontmatter i link vanno tra virgolette)",
+                        f'wiki/{nome}.md', str(prop), 'property_without_link')
             for l in links:
                 t = risolvi(nome, l, f"proprietà {prop}")
                 if t and t != nome:
@@ -238,10 +250,12 @@ def parse_documents(documents):
         if chiave in nomi:
             raise ValueError(f"la fonte '{chiave}' ha lo stesso nome di una pagina")
         if chiave not in fonti_censite:
-            problemi.append(f"fonte '{chiave}' usata ma non censita in Wiki reference")
+            problem(f"fonte '{chiave}' usata ma non censita in Wiki reference", 'Wiki reference.md',
+                    'fonti', 'source_missing', chiave)
         entita.append((chiave, "fonte", fonti_censite.get(chiave), None, "", ""))
         if declared_types is not None and 'fonte' not in declared_types:
-            problemi.append(f"fonte '{chiave}': tipo 'fonte' non dichiarato nel catalogo Tipi ammessi")
+            problem(f"fonte '{chiave}': tipo 'fonte' non dichiarato nel catalogo Tipi ammessi",
+                    'Wiki reference.md', 'tipo', 'source_type_missing', chiave)
 
     # Controlli su relazioni tipizzate e alias
     tipi = {e[0]: e[1] for e in entita}
@@ -250,20 +264,22 @@ def parse_documents(documents):
         if vocabolario is None:
             continue
         if rel not in vocabolario:
-            problemi.append(f"{s}: relazione '{rel}' fuori vocabolario")
+            problem(f"{s}: relazione '{rel}' fuori vocabolario", f'wiki/{s}.md', rel, 'unknown_relation', t)
             continue
         da, a = vocabolario[rel]
         if not tipo_ammesso(da, tipi[s], tipi[t]) or not tipo_ammesso(a, tipi[t], tipi[s]):
-            problemi.append(f"{s} ({tipi[s]}) —{rel}→ {t} ({tipi[t]}): tipi non ammessi dal vocabolario")
+            problem(f"{s} ({tipi[s]}) —{rel}→ {t} ({tipi[t]}): tipi non ammessi dal vocabolario",
+                    f'wiki/{s}.md', rel, 'relation_types', t)
     visti = {norm(p): p for p in pagine}
     for nome, a in alias:
         altro = visti.setdefault(norm(a), nome)
         if altro != nome:
-            problemi.append(f"alias '{a}' di {nome} coincide con {altro}")
+            problem(f"alias '{a}' di {nome} coincide con {altro}", f'wiki/{nome}.md', 'aliases', 'alias_collision', altro)
 
     return {"pagine": pagine, "entita": entita, "relazioni": relazioni,
             "alias": alias, "problemi": tuple(problemi), "fonti_usate": fonti_usate,
-            "tipizzate": tipizzate, "vocabolario": vocabolario, "ontology": ontology}
+            "tipizzate": tipizzate, "vocabolario": vocabolario, "ontology": ontology,
+            "problem_details": tuple(problem_details)}
 
 
 class GraphValidationError(ValueError):

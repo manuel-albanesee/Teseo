@@ -54,6 +54,7 @@ class VaultRegistry:
                 "compatibility": compatibility.mode, "issues": list(compatibility.issues),
                 "schema_version": compatibility.manifest["schema_version"] if compatibility.manifest else None,
                 "capabilities": {"attach_readonly": True, "graph": False, "rebuild": False,
+                                 "ontology_preview": compatibility.mode == 'compatible', "ontology_apply": False,
                                  "write_notes": False, "sync": False},
                 "content_revision": None, "graph_generation": None}
 

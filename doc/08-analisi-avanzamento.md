@@ -24,7 +24,7 @@ a generazioni restano prerequisiti per attivare la dashboard e le automazioni.
 | --- | --- |
 | 1 | Contratti, journal, lock, snapshot, generazioni e backup disponibili; apply protetto note e recovery multi-file ancora da realizzare |
 | 2 | Bootstrap, API e UI di consultazione, distribuzione e rebuild coordinato disponibili; adozione legacy ed export diagnostica futuri |
-| 3 | Parser/serializer conservativo, proposta pura catalogo tipi e validazione disponibili (3.1); preview API, UI editing e apply futuri |
+| 3 | Parser/serializer, catalogo tipi e validazione (3.1), API preview con impatto e suggerimenti (3.2) disponibili; UI editing e apply futuri |
 | 4 | Probe e ricevuta da provare su ogni client; Stop non certifica il successo |
 | 5 | Canonicalizzazione disponibile; schema eventi per tipo, DAG, proiezioni e migrazione ancora da sviluppare |
 | 6 | Staging Git isolato e attribuzione precisa obbligatori prima del push dati |
@@ -552,3 +552,46 @@ smoke browser. [Evidenze e limiti](evidence/step-3-1/verification.md).
 Prossimo punto: 3.2, preview API con analisi impatto e suggerimenti di migrazione,
 con pagina, proprietà e motivo per ogni violazione. Apply e migrazioni restano
 futuri; nessun merge o aggiornamento dei branch principali.
+
+## Incremento 10 — Preview ontologia e impatto (passo 3.2)
+
+POST `/api/v1/vaults/{id}/ontology/preview` protetta da sessione/Origin/CSRF,
+su manifest compatibile e snapshot corrente, anche senza grafo. Patch dichiarativa
+con adozione esplicita, aggiunta/modifica/rimozione/rinomina di tipi e relazioni;
+campi allowlist e nessun codice o percorso ricevuto eseguito. Schema candidato
+prodotto dal serializer conservativo, diff escaped, hash proposta legato alla base.
+Note, schema, raw, manifest, marker e DB personali rimangono invariati.
+
+Il builder espone `problem_details` insieme ai messaggi precedenti, con stessa
+validazione e senza cambiare la versione delle generazioni. Preview riusa questi
+dettagli per pagina/proprietà/motivo/target, anche per difetti preesistenti. Espone
+conteggi tipi delle pagine e delle fonti derivate, proprietà, archi impattati,
+alias/fonti e riferimenti frontmatter/corpo/index/log/schema. Una rimozione usata
+o restrizione incompatibile resta visibile come violazione; nessun arco cancellato.
+
+Suggerimenti di rinomina senza collisioni su chiavi YAML semplici; vincoli/link
+incompatibili o YAML ambiguo richiedono intervento manuale. Nessuna riscrittura
+delle pagine. Rinomine di tipo aggiornano solo vincoli nello schema candidato;
+le note rimangono tra le migrazioni suggerite. Catene di rinomina e page rename
+non supportati. Testo libero segnalato per occorrenze letterali e revisione umana,
+senza interpretazione semantica o sostituzioni automatiche. File condivisi presenti
+segnalati bloccanti finché non esiste il mapping del passo 5. Capacità esplicite:
+nessuna nuova inferenza per nuove relazioni, nessun apply disponibile.
+
+Digest verificato prima/dopo analisi e al replay; modifica esterna produce 409
+senza cache di un risultato incompleto. Idempotenza concorrente in memoria per
+sessione, non journal persistente: 16 record, TTL 900 secondi, conflitto su payload
+diverso, nuovo ID dopo scadenza/riavvio. Due richieste ammesse, analisi serializzate,
+limiti documentati per Markdown, numero risultati e byte risposta. Nessuna
+troncatura dichiarata completa; casi troppo grandi danno 422. Nessun lock o
+directory locale creati dalla preview. `/status` dichiara preview compatibile e
+apply disabilitato. Contratto completo nel [passo 3](03-editor-ontologia.md).
+
+Verifiche ECC api-design, security-review e verification-loop: 18 nuove prove
+HTTP reali, suite completa e prove installer descritte nelle
+[evidenze](evidence/step-3-2/verification.md). Compilazione Python e revisione diff;
+nessuna nuova dipendenza, type checker/linter/coverage dedicati non configurati.
+Nessuna UI modificata, nessuno smoke browser nuovo. Solo fixture sintetiche.
+
+Prossimo punto: 3.3, form UI con verso visibile, diff e capacità semantiche;
+apply transazionale e recovery restano al 3.4. Nessun merge dei branch principali.
