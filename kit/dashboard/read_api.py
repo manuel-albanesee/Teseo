@@ -34,8 +34,9 @@ def _issue(code, severity, message, revision, path=None):
 
 
 class ReadAPI:
-    def __init__(self, registry):
+    def __init__(self, registry, operations=None):
         self.registry = registry
+        self.operations = operations
         self._cursor_key = secrets.token_bytes(32)
 
     @staticmethod
@@ -87,6 +88,9 @@ class ReadAPI:
         root = self.registry.root(vault_id)
         result = self.registry.status(vault_id)
         result.update(live_content_revision=None, stale=None, busy=None, busy_known=False)
+        if self.operations is not None:
+            result.update(self.operations.activity(vault_id))
+            result["capabilities"]["rebuild"] = result["compatibility"] == "compatible"
         try:
             live = capture_snapshot(root)
             result["live_content_revision"] = live.digest

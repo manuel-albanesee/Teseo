@@ -77,6 +77,30 @@ class Generations(unittest.TestCase):
             self.assertEqual(service.rebuild(self.root), first)
         self.assertEqual(self.marker.read_bytes(), marker)
         self.assertEqual(self.marker.stat().st_mtime_ns, stamp)
+        db = sqlite3.connect(first.path)
+        try:
+            db.execute("UPDATE graph_metadata SET value='999' WHERE key='builder_version'")
+            db.commit()
+        finally:
+            db.close()
+        record = json.loads(self.marker.read_bytes())
+        record["sqlite_sha256"] = service.file_hash(first.path)
+        self.marker.write_text(json.dumps(record), encoding="utf-8")
+        self.assert_code("graph_corrupt", service.rebuild, self.root)
+        if os.name == "nt":
+            graphs = self.root / ".teseo/local/graphs"
+            saved = graphs.with_name("graphs-original")
+            self.assertTrue(graphs.resolve().is_relative_to(self.root))
+            self.assertTrue(saved.parent.resolve().is_relative_to(self.root))
+            graphs.rename(saved)
+            result = subprocess.run(["cmd", "/c", "mklink", "/J", str(graphs), str(saved)],
+                                    capture_output=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            try:
+                self.assert_code("linked_path", service.rebuild, self.root)
+            finally:
+                graphs.rmdir()
+                saved.rename(graphs)
 
     def test_failed_validation_keeps_current_generation(self):
         first = service.rebuild(self.root)

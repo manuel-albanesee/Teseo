@@ -12,6 +12,8 @@ SCRIPT = r"""
  // counters additionally protect independent selections within that view.
  let csrf = '', epoch = 0, graphRequest = 0, detailRequest = 0, state = null;
  let nodes = [], edges = [], cursor = null, filters = {}, invalid = false, loadingGraph = false;
+ let stopping = false, operationPoll = 0;
+ const pendingRebuild = new Map();
  async function api(path, data) {
    const headers = {'X-Teseo-Session':token}, options = {headers,cache:'no-store'};
    if(data !== undefined) {options.method='POST';headers['Content-Type']='application/json';if(csrf) headers['X-Teseo-CSRF']=csrf;options.body=JSON.stringify(data);}
@@ -27,6 +29,48 @@ SCRIPT = r"""
      $('notice').textContent='È disponibile una nuova generazione. La vista conserva i dati precedenti. Premi Aggiorna vista per caricare una revisione coerente.';
    } else $('notice').textContent=(error.code ? error.code + ': ' : 'Connessione non disponibile: ') + error.message + '. Riprova con Aggiorna vista.';
  }
+
+ async function watchOperation(vaultId, identifier) {
+   const run=epoch, poll=++operationPoll;
+   $('rebuild').disabled=true;
+   while(run===epoch && poll===operationPoll && !stopping) {
+     try {
+       const job=await api('/api/v1/vaults/'+encodeURIComponent(vaultId)+'/operations/'+encodeURIComponent(identifier));
+       if(run!==epoch || poll!==operationPoll || stopping)return;
+       const terminal=['succeeded','failed','cancelled','blocked_external_change','recovery_required'].includes(job.state);
+       $('operation').textContent='Rebuild '+identifier+' · '+job.state;
+       if(job.state==='succeeded')$('operation').textContent+=' · Completato. Premi Aggiorna vista per caricare la generazione pubblicata.';
+       if(job.error)$('operation').textContent+=' · '+job.error.code+': '+job.error.message+' '+(job.error.details||[]).join(' · ')+' · Correggi il problema e aggiorna la vista prima di riprovare.';
+       if(terminal){$('rebuild').disabled=!state?.capabilities.rebuild;return;}
+     } catch(error) {
+       if(run===epoch && poll===operationPoll && !stopping)$('operation').textContent='Stato rebuild '+identifier+' non disponibile: '+error.message+'. Premi Aggiorna vista per riprendere il controllo.';
+       return;
+     }
+     await new Promise(resolve=>setTimeout(resolve,1200));
+   }
+ }
+ $('rebuild').addEventListener('click',async()=>{
+   if(!state?.capabilities.rebuild || stopping)return;
+   const run=epoch, vaultId=state.vault_id;
+   let payload=pendingRebuild.get(vaultId);
+   if(!payload){payload={idempotency_key:crypto.randomUUID(),expected_content_revision:state.live_content_revision};pendingRebuild.set(vaultId,payload);}
+   $('rebuild').disabled=true;$('operation').textContent='Richiesta rebuild… Le note e i DB personali restano invariati.';
+   try {
+     const job=await api('/api/v1/vaults/'+encodeURIComponent(vaultId)+'/rebuild',payload);pendingRebuild.delete(vaultId);
+     if(run===epoch && !stopping)watchOperation(vaultId,job.operation_id);
+   } catch(error) {
+     if(error.code)pendingRebuild.delete(vaultId);
+     if(run===epoch && !stopping){$('operation').textContent=(error.code?'Richiesta rebuild rifiutata: ':'Esito della richiesta non confermato: ')+error.message+'. Riprova per recuperare il job oppure aggiorna la vista.';$('rebuild').disabled=false;}
+   }
+ });
+ $('shutdown').addEventListener('click',async()=>{
+   $('shutdown').disabled=true;
+   try {
+     await api('/api/v1/shutdown',{});stopping=true;++epoch;++operationPoll;
+     document.querySelectorAll('button,input,select').forEach(control=>control.disabled=true);
+     $('message').textContent='Arresto richiesto. Il processo attende la chiusura dei rebuild; controlla il terminale prima di chiuderlo.';
+   } catch(error){$('message').textContent='Arresto non confermato: '+error.message+'. Riprova oppure usa Ctrl+C nel terminale.';$('shutdown').disabled=false;}
+ });
  function nodeButton(parent, id) {const button=element('button',id,parent);button.type='button';button.addEventListener('click',()=>openNode(id));return button;}
  function relationList(parent, list) {
    for(const edge of list) {const li=element('li',undefined,parent);nodeButton(li,edge.source_id);element('span',' → '+edge.type+' → ',li);nodeButton(li,edge.target_id);}
@@ -100,6 +144,8 @@ SCRIPT = r"""
    if(body.truncated)element('p','Elenco parziale: limite di diagnostica raggiunto.',container);
  }
  async function selectVault() {
+   if(stopping)return;
+   ++operationPoll;$('rebuild').disabled=true;$('operation').textContent='';
    const run=++epoch;++graphRequest;++detailRequest;state=null;invalid=false;loadingGraph=false;nodes=[];edges=[];cursor=null;filters={};
    for(const id of ['type','relation','search','apply'])$(id).disabled=true;
    $('type').replaceChildren(new Option('Tutti i tipi',''));$('relation').replaceChildren(new Option('Tutte le relazioni',''));$('search').value='';
@@ -110,7 +156,10 @@ SCRIPT = r"""
    $('root').textContent='Caricamento dello stato…';
    try {
      const status=await api('/api/v1/vaults/'+encodeURIComponent(id)+'/status');if(run!==epoch)return;state=status;
-     $('root').textContent=status.path;$('revision').textContent='Contenuti: '+(status.content_revision||'non disponibili')+' · Generazione: '+(status.graph_generation||'non disponibile')+' · Stato operazioni: non disponibile';
+     $('root').textContent=status.path;$('revision').textContent='Contenuti: '+(status.content_revision||'non disponibili')+' · Generazione: '+(status.graph_generation||'non disponibile')+' · Job di questo servizio: '+(status.busy?'rebuild attivo':'nessuno');
+     $('rebuild').disabled=!status.capabilities.rebuild || !!status.busy;
+     if(status.active_operation_id)watchOperation(id,status.active_operation_id);
+     else if(!status.capabilities.rebuild)$('operation').textContent='Rebuild non disponibile per questo formato. I vault legacy restano in sola lettura.';
      $('notice').textContent=(status.issues||[]).map(issue=>issue.code+': '+issue.message).join(' · ');
      if(!status.capabilities.graph){$('counts').textContent='Grafo non disponibile. È necessario un rebuild esplicito con il kit aggiornato; questa vista non modifica il vault.';element('p','Ontologia non disponibile senza una generazione del grafo.',$('ontology'));renderDiagnostics({issues:status.issues});return;}
      if(status.stale)$('notice').textContent+=' · Stai consultando la revisione pubblicata; le modifiche del vault non sono ancora nel grafo.';
@@ -131,6 +180,7 @@ SCRIPT = r"""
    $('vault').replaceChildren();for(const vault of body.vaults)$('vault').append(new Option(vault.path,vault.vault_id));
    if(!body.vaults.length)$('vault').append(new Option('Nessun vault collegato',''));
    if(body.vaults.some(v=>v.vault_id===current))$('vault').value=current;
+   if(body.registry_issues?.length)$('message').textContent=body.registry_issues.map(issue=>issue.message).join(' · ');
    $('vault').disabled=!body.vaults.length;await selectVault();
  }
  $('vault').addEventListener('change',selectVault);$('refresh').addEventListener('click',selectVault);
@@ -139,10 +189,10 @@ SCRIPT = r"""
  document.querySelectorAll('[data-view]').forEach(button=>button.addEventListener('click',()=>{for(const view of ['graph','ontology','diagnostics'])$(view).hidden=view!==button.dataset.view;document.querySelectorAll('[data-view]').forEach(item=>item.setAttribute('aria-pressed',String(item===button)));}));
  $('attach').addEventListener('submit',async event=>{event.preventDefault();$('connect').disabled=true;
    try {const vault=await api('/api/v1/vaults/attach',{path:$('path').value});await refreshVaults(vault.vault_id);$('message').textContent='Vault collegato. Nessun file modificato.';}
-   catch(error){$('message').textContent=error.message;}finally{$('connect').disabled=false;}
+   catch(error){$('message').textContent=error.message;}finally{$('connect').disabled=stopping;}
  });
  (async()=>{if(!token){$('message').textContent='Sessione assente. Apri il collegamento completo stampato dal launcher.';return;}
-   try {csrf=(await api('/api/v1/session',{})).csrf_token;await refreshVaults();$('connect').disabled=false;$('message').textContent='Servizio pronto · Sola lettura.';}
+   try {csrf=(await api('/api/v1/session',{})).csrf_token;$('shutdown').disabled=false;await refreshVaults();$('connect').disabled=stopping;if(!stopping && !$('message').textContent.includes('Un vault salvato'))$('message').textContent='Servizio pronto · Note in sola lettura.';}
    catch(error){$('message').textContent=error.message;}
  })();
 })();

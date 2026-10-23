@@ -6,7 +6,7 @@
 
 Una wiki Obsidian costruita dai tuoi documenti, con fonti verificabili, grafo delle relazioni e memoria delle domande.
 
-[![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-3776AB?logo=python&logoColor=white)](#requisiti)
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](#requisiti)
 [![Markdown + SQLite](https://img.shields.io/badge/Markdown%20%2B%20SQLite-file%20locali-0F766E)](#dentro-il-vault)
 [![Claude · Codex · Copilot](https://img.shields.io/badge/AI-Claude%20%C2%B7%20Codex%20%C2%B7%20Copilot-7C3AED)](#client-supportati)
 
@@ -50,7 +50,7 @@ flowchart LR
 
 ### Requisiti
 
-- **Git** e **Python 3.9+**, con SQLite FTS5 disponibile nella distribuzione Python.
+- **Git** e **Python 3.10+**, con SQLite FTS5 disponibile nella distribuzione Python.
 - **Un client AI installato e autenticato**: Claude Code, Codex oppure GitHub Copilot CLI.
 - **Obsidian**, se vuoi navigare la wiki dalla sua interfaccia.
 
@@ -347,8 +347,46 @@ Se un file di istruzioni era già personalizzato, integra le indicazioni del rel
 | `--skill no` | Non installa le skill. |
 | `--solo-integrazione` | Aggiunge un client a un vault con Teseo già installato. |
 | `--aggiorna` | Sostituisce script e skill diversi, con backup. |
+| `--dashboard` | Inizializza un vault nuovo nel formato v1 per la dashboard; non converte vault legacy. |
 | `--esempio` | Aggiunge il vault d'esempio, se `wiki/` non contiene pagine Markdown al primo livello. |
 | `--prova` | Esegue la prova completa in una cartella temporanea, poi la elimina. |
+
+## Dashboard locale
+
+Per un **vault nuovo in una cartella vuota**, abilita esplicitamente il formato
+con generazioni del grafo e journal locale:
+
+```powershell
+python installa.py "C:/Obsidian/NuovoVault" --dashboard
+python "C:/Obsidian/NuovoVault/.graph/teseo_dashboard.py" --vault "C:/Obsidian/NuovoVault"
+```
+
+Apri il collegamento completo stampato dal launcher. La UI offre grafo e lista,
+filtri, dettaglio, ontologia e diagnostica. **Ricostruisci grafo** avvia un job
+esplicito: note, fonti e DB personali restano invariati. L'esito indica quando
+premere **Aggiorna vista**. **Arresta servizio** o Ctrl+C chiudono il listener e
+attendono i worker; chiudere solo la scheda lascia il processo attivo.
+
+Il launcher viene distribuito anche dall'installazione ordinaria. Nei vault
+legacy l'attach verifica cartella e compatibilità, ma consultazione del grafo
+versionato e rebuild via servizio richiedono un manifest compatibile: non esiste
+ancora una procedura di adozione automatica. `--dashboard` rifiuta un legacy
+non vuoto. Per aggiornare il runtime di un vault già compatibile usare
+`python installa.py "PERCORSO_DEL_VAULT" --aggiorna`, con servizio arrestato;
+i file sostituiti sono conservati in `.graph_backup/`.
+
+Per ricordare i collegamenti, scegli un file locale nel perimetro ignorato da Git:
+
+```powershell
+python "C:/Obsidian/NuovoVault/.graph/teseo_dashboard.py" --vault "C:/Obsidian/NuovoVault" --registry "C:/Obsidian/NuovoVault/.teseo/local/dashboard-vaults.json"
+```
+
+La directory del registro deve già esistere. Nei riavvii con lo stesso `--registry`
+puoi omettere `--vault`. Il file conserva solo percorsi e identità; sessione e
+CSRF restano effimeri. Senza opzione, l'elenco termina col processo. Un secondo
+servizio sullo stesso registro viene rifiutato. I job restano nel journal del
+vault; dopo un'interruzione richiedono verifica e una nuova richiesta esplicita,
+senza replay automatico. Dettagli e limiti nel [piano dashboard](doc/02-dashboard-consultazione.md).
 
 ## Domande frequenti
 
@@ -403,7 +441,7 @@ memoria e conservazione dei dati. Per esplorare il codice:
 | --- | --- |
 | `python .graph/build_graph.py --check` | Valida e ricostruisce solo se valido; in caso di errore conserva il grafo precedente. |
 | `python .graph/backup_personal.py` | Backup consistente di memoria/domande in `.teseo/local/backups/`, per vault con manifest compatibile. |
-| `python .graph/teseo_dashboard.py --vault "C:/Obsidian/MioVault"` | Avvia il collegamento del vault in sola lettura su loopback; `--no-browser` stampa il collegamento senza aprire il browser. |
+| `python .graph/teseo_dashboard.py --vault "C:/Obsidian/MioVault"` | Avvia consultazione e rebuild derivati espliciti su loopback; `--no-browser` stampa il collegamento senza aprire il browser. |
 | `python .graph/recall.py "domanda"` | Mostra i fatti collegati dal grafo. |
 | `python .graph/misura.py` | Misura il recupero sulle domande configurate per il vault. |
 | `python .graph/domande.py` | Elenca le domande aperte per l'autore. |

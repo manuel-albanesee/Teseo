@@ -1,0 +1,20 @@
+{
+  "status": "pass",
+  "checks": [
+    "installed launcher and managed vault loaded",
+    "missing graph leaves explicit rebuild available",
+    "keyboard Enter submits explicit rebuild with disabled duplicate button",
+    "real rebuild succeeds from missing graph with explicit refresh",
+    "live edit shows stale state; rebuild retains 10 old nodes until explicit refresh",
+    "real invalid YAML fails with page name and retry guidance, previous 10 nodes retained",
+    "legacy attach leaves rebuild disabled and explains readonly format",
+    "lost POST response retry reuses same key and recovers succeeded job",
+    "restart restores managed and legacy vaults without --vault",
+    "lost response reports uncertainty, preserves retry key",
+    "retry reuses identical idempotency key",
+    "success requests explicit refresh",
+    "session fragment removed after restart",
+    "shutdown UI exits installed process with code 0 twice, including after registry-only restart",
+    "protected notes, raw, schema, manifest and personal DB hashes match baseline after restoring synthetic edits"
+  ]
+}

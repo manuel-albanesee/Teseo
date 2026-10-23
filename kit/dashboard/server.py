@@ -1,4 +1,4 @@
-"""Bootstrap HTTP locale: sessione effimera e attach readonly, nessun rebuild."""
+"""Dashboard loopback: consultazione e rebuild derivati espliciti coordinati."""
 import argparse
 from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -15,16 +15,18 @@ from .bootstrap_ui import PAGE
 from .contracts import ContractError, parse_json
 from .readonly import VaultRegistry
 from .read_api import ReadAPI
+from .jobs import RebuildCoordinator
 
 MAX_BODY_BYTES = 16 * 1024
 
 
 class DashboardServer(ThreadingHTTPServer):
-    daemon_threads = True
+    daemon_threads = False
 
     def __init__(self, port=0, registry=None, rate_limit=120):
         self.registry = registry or VaultRegistry()
-        self.read_api = ReadAPI(self.registry)
+        self.operations = RebuildCoordinator(self.registry)
+        self.read_api = ReadAPI(self.registry, self.operations)
         self.session_token = secrets.token_urlsafe(32)
         self.csrf_token = secrets.token_urlsafe(32)
         self.rate_limit, self._requests = rate_limit, deque()
@@ -32,6 +34,15 @@ class DashboardServer(ThreadingHTTPServer):
         self._slots = threading.BoundedSemaphore(8)
         super().__init__(("127.0.0.1", port), DashboardHandler)
         self.origin = f"http://127.0.0.1:{self.server_port}"
+
+    def server_close(self):
+        self.operations.request_stop()
+        super().server_close()
+        self.operations.close()
+
+    def request_stop(self):
+        self.operations.request_stop()
+        threading.Thread(target=self.shutdown, name="teseo-stop", daemon=True).start()
 
     @property
     def launch_url(self):
@@ -75,6 +86,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def setup(self):
         super().setup()
         self.connection.settimeout(5)
+        self._body_read = False
 
     def log_message(self, *args):
         # Non registrare URL, header di sessione o contenuto del vault.
@@ -110,6 +122,17 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._reply(200, data, etag=etag)
 
     def _error(self, status, code, message):
+        # Consume a bounded, unambiguous POST body before closing: on Windows
+        # unread bytes can reset TCP and hide the structured rejection from clients.
+        length = self._header("Content-Length") if hasattr(self, "headers") else None
+        if (self.command == "POST" and not self._body_read and length and len(length) <= 5
+                and length.isascii() and length.isdecimal() and not self.headers.get_all("Transfer-Encoding")
+                and 0 < int(length) <= MAX_BODY_BYTES + 1):
+            self._body_read = True
+            try:
+                self.rfile.read(int(length))
+            except (ConnectionError, TimeoutError, OSError):
+                pass
         self._reply(status, {"error": {"code": code, "message": message, "retryable": status in (429, 503)},
                              "content_revision": None, "graph_generation": None})
 
@@ -150,6 +173,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if (not length or len(length) > 5 or not length.isascii() or not length.isdecimal()
                 or not 0 < int(length) <= MAX_BODY_BYTES):
             raise ContractError("invalid_body_size", "Corpo JSON assente o oltre 16 KiB")
+        self._body_read = True
         data = self.rfile.read(int(length))
         if len(data) != int(length):
             raise ContractError("invalid_request", "Corpo richiesta incompleto")
@@ -186,10 +210,18 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     raise ContractError("invalid_payload", "Richiesto il solo campo path")
                 self._reply(200, self.server.registry.attach(body["path"]))
                 return
+            if target.path == "/api/v1/shutdown" and body == {}:
+                self._reply(202, {"state": "stopping", "content_revision": None, "graph_generation": None})
+                self.server.request_stop()
+                return
+            parts = target.path.split("/")
+            if len(parts) == 6 and parts[1:4] == ["api", "v1", "vaults"] and parts[5] == "rebuild":
+                self._reply(202, self.server.operations.submit(parts[4], body))
+                return
         elif self.command == "GET":
             if target.path == "/api/v1/vaults":
                 self._reply(200, {"vaults": self.server.registry.list(), "content_revision": None,
-                                  "graph_generation": None})
+                                  "graph_generation": None, "registry_issues": self.server.registry.restore_issues})
                 return
             parts = target.path.split("/")
             try:
@@ -210,6 +242,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
                         node_id = unquote(parts[6], encoding="utf-8", errors="strict")
                         self._data_reply(self.server.read_api.node(parts[4], node_id, parameters))
                         return
+                    if len(parts) == 7 and parts[5] == "operations":
+                        if parameters:
+                            raise ContractError("invalid_query", "Le operazioni non accettano parametri")
+                        self._data_reply(self.server.operations.get(parts[4], parts[6]))
+                        return
             except ContractError:
                 raise
             except (ValueError, UnicodeError):
@@ -227,6 +264,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
                       "graph_corrupt": 503, "graph_too_large": 503, "document_unavailable": 503,
                       "document_too_large": 422, "invalid_node_data": 422, "invalid_node": 403,
                       "unsafe_path": 403, "linked_path": 403, "path_escape": 403}.get(error.code, 400)
+            status = {"operation_missing": 404, "operation_unavailable": 503, "vault_readonly": 422,
+                      "vault_busy": 409, "job_limit": 409, "idempotency_conflict": 409,
+                      "service_stopping": 503, "registry_unavailable": 503}.get(error.code, status)
             self._error(status, error.code, str(error))
         except (ConnectionError, TimeoutError):
             self.close_connection = True
@@ -245,24 +285,30 @@ def main(argv=None):
     parser.add_argument("--vault", action="append", default=[], help="Cartella locale da collegare, ripetibile")
     parser.add_argument("--port", type=int, default=0, help="Porta loopback; 0 sceglie una porta libera")
     parser.add_argument("--no-browser", action="store_true")
+    parser.add_argument("--registry", help="File JSON locale assoluto per ricordare i vault (directory esistente)")
     args = parser.parse_args(argv)
     if not 0 <= args.port <= 65535:
         parser.error("porta attesa fra 0 e 65535")
-    registry = VaultRegistry()
     try:
+        registry = VaultRegistry(args.registry)
         for path in args.vault:
             registry.attach(path)
-    except ContractError as error:
+    except (ContractError, OSError) as error:
+        if "registry" in locals():
+            registry.close()
         parser.error(str(error))
-    with DashboardServer(args.port, registry) as server:
-        print(f"Teseo locale: {server.launch_url}", flush=True)
-        print("Arresto: Ctrl+C nel terminale.", flush=True)
-        if not args.no_browser:
-            webbrowser.open(server.launch_url)
-        try:
-            server.serve_forever(poll_interval=0.2)
-        except KeyboardInterrupt:
-            pass
+    try:
+        with DashboardServer(args.port, registry) as server:
+            print(f"Teseo locale: {server.launch_url}", flush=True)
+            print("Arresto: pulsante nella UI o Ctrl+C; attesa dei rebuild in chiusura.", flush=True)
+            if not args.no_browser:
+                webbrowser.open(server.launch_url)
+            try:
+                server.serve_forever(poll_interval=0.2)
+            except KeyboardInterrupt:
+                pass
+    finally:
+        registry.close()
 
 
 if __name__ == "__main__":

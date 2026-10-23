@@ -33,6 +33,7 @@ import sys
 import tempfile
 from datetime import datetime
 from pathlib import Path
+from uuid import uuid4
 
 KIT = Path(__file__).resolve().parent / "kit"
 SCHEMA = ["Wiki reference.md", "index.md", "log.md", "CLAUDE.md"]
@@ -46,7 +47,7 @@ DOMINIO = ("misura.py (DOMANDE, ATTESE, ROUTING, NEGATIVI, TESTO, ATTESI_FALLITI
 
 
 def adesso():
-    return datetime.now().strftime("%Y%m%d-%H%M%S")
+    return datetime.now().strftime("%Y%m%d-%H%M%S-%f")
 
 
 class Rapporto:
@@ -347,8 +348,15 @@ def esegui(vault, *argomenti):
     return p.returncode, p.stdout.decode("utf-8", "replace") + p.stderr.decode("utf-8", "replace")
 
 
-def installa(vault, skill="vault", aggiorna=False, esempio=False, client="tutti", solo_integrazione=False):
+def installa(vault, skill="vault", aggiorna=False, esempio=False, client="tutti", solo_integrazione=False,
+             dashboard=False):
     vault = vault.resolve()
+    if dashboard:
+        from kit.dashboard.contracts import inspect_vault
+        if solo_integrazione:
+            raise ValueError("--dashboard richiede installazione completa")
+        if vault.exists() and any(vault.iterdir()) and inspect_vault(vault).mode != "compatible":
+            raise ValueError("--dashboard inizializza solo cartelle vuote; nessuna adozione automatica dei legacy")
     if solo_integrazione and not (vault / ".graph" / "recall_hook.py").is_file():
         raise ValueError("--solo-integrazione richiede un vault con Teseo già installato")
     gia_in_uso = vault.exists() and any(vault.rglob("*.md"))
@@ -422,6 +430,15 @@ def installa(vault, skill="vault", aggiorna=False, esempio=False, client="tutti"
         installa_skill(skill, vault, aggiorna, rapporto, selezionato)
     if esempio:
         copia_esempio(vault, rapporto)
+    if dashboard and not (vault / ".teseo/project.json").exists():
+        from kit.dashboard.contracts import canonical_json, DEFAULT_SHARED_PATHS, KIT_VERSION
+        directory = vault / ".teseo"
+        directory.mkdir(exist_ok=True)
+        with (directory / "project.json").open("xb") as stream:
+            stream.write(canonical_json({"format_version": 1, "schema_version": 1,
+                "event_version": 1, "minimum_kit_version": KIT_VERSION,
+                "vault_id": str(uuid4()), "shared_paths": list(DEFAULT_SHARED_PATHS)}))
+        rapporto(".teseo/project.json", "nuovo vault dashboard v1; nessuna migrazione")
     controlla_ambiente(rapporto, client)
     if gia_in_uso and not solo_integrazione:
         controlla_vault(vault, rapporto)
@@ -448,6 +465,9 @@ def installa(vault, skill="vault", aggiorna=False, esempio=False, client="tutti"
     if len(problemi) > 15:
         print(f"  … e altri {len(problemi) - 15}")
     print(f"  {righe[-1].strip() if righe else 'nessun output'}")
+    print('\nDashboard locale: python .graph/teseo_dashboard.py --vault "' + str(vault) + '"')
+    if not (vault / ".teseo/project.json").exists():
+        print("Vault legacy: dashboard in sola lettura, rebuild via servizio disabilitato.")
     if diversi:
         print(f"\nScript diversi dal kit, lasciati come sono: {', '.join(diversi)}. "
               "Per aggiornarli: python installa.py <vault> --aggiorna")
@@ -458,11 +478,11 @@ def installa(vault, skill="vault", aggiorna=False, esempio=False, client="tutti"
     return codice
 
 
-def prova(client="tutti"):
+def prova(client="tutti", dashboard=False):
     """Installazione di prova con il vault d'esempio in una cartella temporanea: niente esce da lì."""
     cartella = Path(tempfile.mkdtemp(prefix="teseo-prova-"))
     try:
-        if installa(cartella, skill="vault", esempio=True, client=client):
+        if installa(cartella, skill="vault", esempio=True, client=client, dashboard=dashboard):
             return 1
         print("\n=== verifica")
         controlli = [
@@ -507,16 +527,24 @@ def main():
     ap.add_argument("--solo-integrazione", action="store_true",
                     help="aggiunge il supporto client a Teseo già installato, senza aggiornare grafo o pagine")
     ap.add_argument("--aggiorna", action="store_true", help="sostituisce script e skill diversi dal kit, con copia di sicurezza")
+    ap.add_argument("--dashboard", action="store_true", help="inizializza formato dashboard solo per un vault nuovo; non adotta legacy")
     ap.add_argument("--esempio", action="store_true", help="aggiunge il vault d'esempio (solo se wiki/ è vuota)")
     ap.add_argument("--prova", action="store_true", help="prova completa in una cartella temporanea, poi la cancella")
     args = ap.parse_args()
+    if sys.version_info < (3, 10):
+        ap.error("Teseo richiede Python 3.10 o successivo")
     if args.prova:
-        sys.exit(prova(args.client))
+        sys.exit(prova(args.client, args.dashboard))
     if not args.vault:
         ap.error("indicare la cartella del vault, oppure --prova")
     if args.solo_integrazione and args.esempio:
         ap.error("--solo-integrazione non è compatibile con --esempio")
-    sys.exit(installa(args.vault, args.skill, args.aggiorna, args.esempio, args.client, args.solo_integrazione))
+    try:
+        result = installa(args.vault, args.skill, args.aggiorna, args.esempio, args.client, args.solo_integrazione,
+                         args.dashboard)
+    except ValueError as error:
+        ap.error(str(error))
+    sys.exit(result)
 
 
 if __name__ == "__main__":

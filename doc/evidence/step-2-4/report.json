@@ -1,0 +1,20 @@
+{
+  "contract":"contract.md; workbench locale 2.3, rebuild derivato esplicito e arresto coordinato",
+  "targetViewports":["1440x900","390x844"],
+  "accessibility":{"status":"pass","evidence":"ECC Chrome: focus sul pulsante Ricostruisci grafo e attivazione con Enter; arresto servizio con Enter e uscita processo 0. Screenshot mobile mostra focus arancio visibile. Pulsante rebuild misurato 154x44px; label e live status presenti. Colori invariati dal 2.3 (verde/carta contrasto 7.09, bianco/verde 7.73); nessuna animazione, getAnimations()=0."},
+  "responsive":{"status":"pass","evidence":"Viewport misurati innerWidth/innerHeight 1440x900 e 390x844. Nessun overflow documento; azioni su righe separate su schermo stretto, hash/UUID/messaggi lunghi a capo. Screenshot mobile è viewport stretto CSS, senza emulazione touch; prova desktop con stesso Chrome."},
+  "contentStates":{
+    "loading":{"status":"pass","evidence":"POST reale del rebuild con risposta trattenuta solo nel browser: richiesta visibile, pulsante disabilitato, nessuna seconda submission. Rilascio risposta e polling fino a succeeded."},
+    "empty":{"status":"pass","evidence":"Rimosso marker soltanto nella fixture sacrificabile: UI Grafo non disponibile, rebuild ancora attivo per manifest compatibile; primo rebuild reale riuscito."},
+    "error":{"status":"pass","evidence":"YAML invalido nella nota sintetica: job failed con graph_parse_failed, nome pagina e invito a correggere/riprovare; conservati i 10 nodi precedenti e revisione. POST con risposta persa simulata: UI dichiara esito non confermato e retry recupera stesso job."},
+    "partial":{"status":"pass","evidence":"Modifica live esplicita nella fixture produce graph_stale; durante/dopo rebuild rimangono i 10 nodi e la revisione caricata, con refresh esplicito per la generazione nuova. I 93 test dashboard includono un worker trattenuto mentre le GET leggono la vecchia generazione."},
+    "success":{"status":"pass","evidence":"Launcher effettivamente installato con --dashboard, job reali succeeded, polling e refresh; 15 osservazioni/check browser nel registro. Riavvio con solo --registry ripristina due vault e nuova sessione. Due arresti UI terminano processo con exit 0. Hash finali di note/raw/schema/manifest/DB personali invariati dopo restore della sola nota sintetica modificata dal test."},
+    "permission":{"status":"pass","evidence":"Attach di fixture legacy reale: Ricostruisci grafo disabilitato con spiegazione readonly. Test HTTP verificano sessione/Origin/CSRF per rebuild e shutdown, e refusano adozione legacy. Launcher senza sessione mantiene i controlli disabilitati come nel bootstrap 2.3."}
+  },
+  "renderedEvidence":[
+    {"viewport":"1440x900","artifact":"desktop.png","observation":"Runtime installato, esito rebuild succeeded con refresh esplicito e vecchia vista stale consultabile, pulsanti rebuild/aggiorna/arresto separati."},
+    {"viewport":"390x844","artifact":"mobile.png","observation":"Errore reale di parsing con nome della nota, focus visibile sul rebuild, messaggi e digest a capo e controlli senza overflow."}
+  ],
+  "verification":{"fullSuite":"136 test: 135 pass, 1 skip symlink Windows noto; poi regressioni finali dashboard 93 test, 92 pass e stesso skip; registro/installer 6 test finali pass","installer":"--prova e --prova --dashboard pass; installazione/upgrade sacrificabili reali con backup","static":"compileall, node --check client e smoke, git diff --check; nessun sink HTML attivo o storage browser introdotto","coverage":"Coverage, type checker e linter dedicato non configurati"},
+  "limits":"Chrome Windows e fixture sintetiche soltanto; non audit screen reader/cross-browser. Busy riguarda job del servizio, non editor esterni. Snapshot/generazioni conservati, GC e replay automatico assenti. Nessuna adozione legacy. Nessuna evidenza o contenuto inviato a servizi esterni."
+}

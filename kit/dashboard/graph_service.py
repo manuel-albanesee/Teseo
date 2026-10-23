@@ -1,5 +1,6 @@
 """Generazioni derivate: il solo manifest corrente viene sostituito atomicamente."""
 import os
+from contextlib import nullcontext
 from pathlib import Path
 import sqlite3
 import tempfile
@@ -41,24 +42,50 @@ def _check_database(path):
         db.close()
 
 
-def rebuild(root):
+def _check_metadata(path, revision, generation):
+    db = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)
+    try:
+        try:
+            metadata = dict(db.execute("SELECT key, value FROM graph_metadata"))
+        except sqlite3.Error:
+            raise ContractError("graph_corrupt", "Metadati generazione mancanti o non validi") from None
+        if metadata != {"content_revision": revision, "generation": generation,
+                        "builder_version": str(BUILDER_VERSION)}:
+            raise ContractError("graph_corrupt", "Metadati generazione non corrispondenti")
+    finally:
+        db.close()
+
+
+def rebuild(root, *, lock=None, cancelled=None, validating=None):
     """Build da copia dei byte, lock comune e controllo contenuti prima del marker.
 
     Non modifica note e non applica operazioni del journal. Un crash prima del
     marker lascia la vecchia generazione; quella non referenziata è riutilizzabile.
     """
-    with VaultLock(root, timeout=5) as lock:
+    if lock is not None and (not lock.held or Path(root).resolve(strict=True) != lock.root):
+        raise ContractError("lock_required", "Richiesto lock del vault corrente")
+
+    def check_cancelled():
+        if cancelled is not None and cancelled.is_set():
+            raise ContractError("operation_cancelled", "Rebuild annullato prima della pubblicazione")
+
+    with (nullcontext(lock) if lock is not None else VaultLock(root, timeout=5)) as lock:
+        check_cancelled()
         root = lock.root
         snapshot = capture_snapshot(root)
         if any(entry.path.startswith(".teseo/shared/events/") for entry in snapshot.files):
             raise ContractError("event_validation_unavailable", "Validazione eventi non ancora disponibile")
         generation = content_hash({"content_revision": snapshot.digest, "builder_version": BUILDER_VERSION})
         legacy = root / ".graph/graph.sqlite"
+        _no_link(root / ".teseo/local/graphs")
         current = graph_reference(legacy)
         if current.generation == generation:
+            _no_link(current.path)
             _check_database(current.path)
             if file_hash(current.path) != current.sqlite_sha256:
                 raise ContractError("graph_corrupt", "Hash generazione corrente non valido")
+            _check_metadata(current.path, snapshot.digest, generation)
+            check_cancelled()
             return current
         local = root / ".teseo/local"
         graphs = resolve_path(root, ".teseo/local/graphs")
@@ -74,7 +101,13 @@ def rebuild(root):
                 target = copy / entry.path
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(entry.data)
-            parsed = build_graph.parse_snapshot(copy)
+            try:
+                parsed = build_graph.parse_snapshot(copy)
+            except ValueError as error:
+                raise ContractError("graph_parse_failed", str(error)[:500]) from error
+            check_cancelled()
+            if validating is not None:
+                validating()
             candidate = build_graph.build_candidate(parsed, destination)
             try:
                 db = sqlite3.connect(candidate)
@@ -95,6 +128,7 @@ def rebuild(root):
                 _check_database(candidate)
                 with candidate.open("r+b") as stream:
                     os.fsync(stream.fileno())
+                check_cancelled()
                 if destination.exists():
                     if file_hash(candidate) != file_hash(destination):
                         raise ContractError("graph_corrupt", "Generazione orfana diversa dalla ricostruzione")
@@ -103,15 +137,9 @@ def rebuild(root):
             finally:
                 candidate.unlink(missing_ok=True)
         _check_database(destination)
-        db = sqlite3.connect(destination.resolve().as_uri() + "?mode=ro", uri=True)
-        try:
-            metadata = dict(db.execute("SELECT key, value FROM graph_metadata"))
-            if metadata != {"content_revision": snapshot.digest, "generation": generation,
-                            "builder_version": str(BUILDER_VERSION)}:
-                raise ContractError("graph_corrupt", "Metadati generazione non corrispondenti")
-        finally:
-            db.close()
+        _check_metadata(destination, snapshot.digest, generation)
         snapshot.assert_unchanged(root)
+        check_cancelled()
         marker = local / "graph-current.json"
         _no_link(marker)
         _atomic_marker(marker, {"format_version": 1, "content_revision": snapshot.digest,

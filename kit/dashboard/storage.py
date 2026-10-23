@@ -231,7 +231,8 @@ class Journal(AbstractContextManager):
     """Record SQLite transazionali e copie prima dell'operazione.
 
     Richiede lock per ogni accesso. Non applica note, non completa recovery e non
-    autorizza transizioni applying/succeeded: riservate al futuro apply protetto.
+    autorizza applying delle note. Solo complete_rebuild può completare un job
+    derivato; succeeded delle operazioni note resta riservato all'apply protetto.
     """
 
     def __init__(self, lock):
@@ -361,6 +362,28 @@ class Journal(AbstractContextManager):
         record.update(state=state, error=error)
         self._save(record)
         return record
+
+    def complete_rebuild(self, operation_id, reference):
+        """Checkpoint derivato: non abilita apply/succeeded per operazioni note."""
+        self._require_lock()
+        record = self.get(operation_id)
+        if (record["kind"] != "rebuild" or record["state"] not in ("running", "validating")
+                or record["base_content_digest"] != reference.content_revision or not reference.generation):
+            raise ContractError("invalid_transition", "Checkpoint rebuild non corrispondente")
+        record.update(state="succeeded", error=None,
+                      checkpoint={"content_revision": reference.content_revision,
+                                  "graph_generation": reference.generation})
+        self._save(record)
+        return record
+
+    def recover_rebuilds(self):
+        """Chiamare senza worker attivi e sotto lock; nessun replay automatico."""
+        self._require_lock()
+        for (operation_id,) in self.db.execute("SELECT operation_id FROM operations").fetchall():
+            record = self.get(operation_id)
+            if record["kind"] == "rebuild" and record["state"] in _NEXT:
+                self.transition(operation_id, "recovery_required", error={"code": "interrupted",
+                    "message": "Rebuild interrotto; verificare la generazione e avviare un nuovo job"})
 
     def require_recovery(self):
         """Segnala operazioni interrotte, senza cancellare lock, snapshot o note."""

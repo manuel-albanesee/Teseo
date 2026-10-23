@@ -6,18 +6,20 @@ PAGE = """<!doctype html>
 <html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Teseo · Consulta il vault</title><style nonce="__NONCE__">""" + STYLE + """</style></head>
 <body><a class="skip" href="#workspace">Vai alla consultazione</a>
-<header><strong>TESEO</strong><span>CONSULTAZIONE LOCALE</span><span class="badge">Sola lettura</span></header>
+<header><strong>TESEO</strong><span>CONSULTAZIONE LOCALE</span><span class="badge">Note in sola lettura</span></header>
 <div class="shell"><aside aria-label="Collegamento vault">
 <h1>Il tuo vault</h1><label for="vault">Vault collegati</label><select id="vault" disabled><option value="">Nessun vault collegato</option></select>
 <details><summary>Collega una cartella</summary><form id="attach">
 <label for="path">Percorso assoluto del vault</label><input id="path" autocomplete="off" spellcheck="false" required placeholder="C:/Obsidian/MioVault">
 <button id="connect" disabled>Collega vault</button></form></details>
 <p id="message" role="status" aria-live="polite">Avvio della sessione…</p>
-<p class="hint">Chiudere la scheda lascia il servizio attivo. Per arrestarlo usa Ctrl+C nel terminale del launcher.</p>
+<button id="shutdown" disabled>Arresta servizio</button>
+<p class="hint">Chiudere la scheda lascia il servizio attivo. Puoi arrestarlo qui oppure con Ctrl+C nel terminale.</p>
 </aside><main id="workspace" tabindex="-1">
-<div class="heading"><div><p class="eyebrow">ESPLORA LE CONNESSIONI</p><h2>Consultazione</h2></div><button id="refresh" disabled>Aggiorna vista</button></div>
+<div class="heading"><div><p class="eyebrow">ESPLORA LE CONNESSIONI</p><h2>Consultazione</h2></div><div class="actions"><button id="refresh" disabled>Aggiorna vista</button><button id="rebuild" disabled>Ricostruisci grafo</button></div></div>
 <p id="root" class="path">Collega un vault per iniziare.</p><p id="revision" class="hint"></p>
 <p id="notice" role="status" aria-live="polite"></p>
+<p id="operation" role="status" aria-live="polite"></p>
 <nav aria-label="Viste del vault"><button data-view="graph" aria-pressed="true">Grafo</button><button data-view="ontology" aria-pressed="false">Ontologia</button><button data-view="diagnostics" aria-pressed="false">Diagnostica</button></nav>
 <section id="graph" aria-label="Grafo">
 <form id="filters" class="toolbar"><div><label for="type">Tipo</label><select id="type" disabled><option value="">Tutti i tipi</option></select></div>

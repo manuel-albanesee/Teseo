@@ -1,4 +1,4 @@
-"""Registro temporaneo dei vault collegati; nessuna scrittura nel filesystem."""
+"""Attach readonly; persistenza opzionale nel solo file scelto dal launcher."""
 import os
 from pathlib import Path
 import threading
@@ -8,9 +8,28 @@ from .contracts import ContractError, inspect_vault
 
 
 class VaultRegistry:
-    def __init__(self):
+    def __init__(self, store_path=None):
         self._roots = {}
         self._lock = threading.RLock()
+        self._store = None
+        self.restore_issues = []
+        if store_path is not None:
+            from .registry_store import RegistryStore
+            store = RegistryStore(store_path)
+            try:
+                for entry in store.read():
+                    try:
+                        result = self.attach(entry["path"])
+                        if result["vault_id"] != entry["vault_id"]:
+                            self._roots.pop(result["vault_id"], None)
+                            raise ContractError("vault_identity_changed", "Identità salvata non corrispondente")
+                    except ContractError as error:
+                        self.restore_issues.append({"code": error.code,
+                            "message": "Un vault salvato non è più disponibile; collegarlo nuovamente"})
+                self._store = store
+            except BaseException:
+                store.close()
+                raise
 
     @staticmethod
     def _root(value):
@@ -45,10 +64,26 @@ class VaultRegistry:
             existing = self._roots.get(result["vault_id"])
             if existing is not None and existing != root:
                 raise ContractError("vault_id_conflict", "Questo UUID è già collegato a un altro clone")
-            if len(self._roots) >= 32 and existing is None:
+            replaced = [identifier for identifier, path in self._roots.items()
+                        if path == root and identifier != result["vault_id"]]
+            if len(self._roots) - len(replaced) >= 32 and existing is None:
                 raise ContractError("vault_limit", "Massimo 32 vault per sessione")
+            previous = dict(self._roots)
+            for identifier in replaced:
+                del self._roots[identifier]
             self._roots[result["vault_id"]] = root
+            try:
+                if self._store is not None:
+                    self._store.write([{"vault_id": identifier, "path": str(path)}
+                                       for identifier, path in self._roots.items()])
+            except (ContractError, OSError):
+                self._roots = previous
+                raise ContractError("registry_unavailable", "Registro non salvato; collegamento non aggiunto") from None
         return result
+
+    def close(self):
+        if self._store is not None:
+            self._store.close()
 
     def status(self, vault_id):
         with self._lock:

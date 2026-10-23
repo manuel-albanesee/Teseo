@@ -419,3 +419,85 @@ reale di cambio generazione. Servizio e fixture di prova rimossi a fine verifica
 
 Prossimo incremento: distribuzione completa, arresto pulito e rebuild coordinato
 via API/UI (2.4), prima di procedere all'editor ontologia del passo 3.
+
+## Incremento 8 — Distribuzione e rebuild coordinato (passo 2.4)
+
+Installer con opzione esplicita --dashboard su cartella vuota: manifest v1 con
+UUID nuovo, generazioni immutabili, launcher Python disponibile. Un vault già
+compatibile conserva il proprio manifest. Un legacy non vuoto è rifiutato prima
+di modificare file, anche con --aggiorna; l'installazione ordinaria resta legacy.
+Aggiornamento completo a servizio fermo con backup dei moduli in .graph_backup,
+timestamp a microsecondi per non sovrascrivere backup ravvicinati. Note, raw,
+manifest esistenti e DB personali preservati. Python minimo dichiarato 3.10,
+coerente con le annotazioni già presenti nel runtime; CLI/launcher danno errore
+leggibile prima dell'uso su versioni precedenti.
+
+RebuildCoordinator usa il lock kernel comune e il journal esistente. POST rebuild
+accetta idempotency_key ed expected_content_revision; 202 con operation_id,
+GET operations readonly espone stato, errore e checkpoint. Stessa chiave/payload
+recupera il risultato anche dopo riavvio, conflitto 409 per payload diverso.
+Un job per vault, quattro vault attivi per processo, cache limitata a 256 record
+che non espelle job attivi. Altre richieste ricevono busy/limite esplicito, senza
+coda illimitata. Snapshot/digest controllati prima del build e prima della
+pubblicazione. Errori parsing/semantica sono strutturati, dettagli limitati;
+essun modello/Git/ingest o apply di note viene avviato.
+
+Journal.complete_rebuild conclude soltanto job derivati corrispondenti alla
+base; apply/succeeded delle note resta bloccato. Snapshot, hash e checkpoint
+persistono in .teseo/local ignorato da Git. Record non gestiti dalla sessione
+sono segnalati come da verificare, senza replay automatico; recovery sotto lock
+alla successiva POST riguarda solo rebuild. Crash tra marker e checkpoint può
+richiedere verifica di un grafo già valido; nessuna cancellazione o rollback
+implicito. Snapshot e generazioni restano conservati; retention/GC futuri.
+
+Builder accetta il lock già detenuto dal coordinator e verifica annullamento
+tra le fasi e prima del marker; controlla metadati e link anche nel ramo no-op.
+Il no-op non riscrive marker/generazione. UI con Ricostruisci grafo e polling
+limitato al job visibile, vecchi dati leggibili, errori specifici e refresh
+esplicito. Retry dopo perdita della risposta riusa la stessa chiave e dichiara
+esito incerto; terminali mostrano risultato/istruzione successiva. Busy è noto
+solo per i job di questo processo (busy_scope=service), non prova quiete di
+editor o altri servizi. Nessuna promessa di esclusione atomica degli editor.
+
+POST shutdown protetta da sessione/Origin/CSRF ferma listener e nuove submission;
+close attende thread HTTP e worker non daemon. Ctrl+C usa lo stesso close;
+un marker già in pubblicazione può completarsi. UI distingue richiesta di
+arresto da uscita effettiva del processo. Le POST rifiutate consumano solo
+body piccoli con lunghezza non ambigua, per evitare reset TCP Windows che
+nascondevano il JSON d'errore; framing ambiguo/grande resta rifiutato.
+
+Registro opzionale scelto con --registry, directory esistente; nessuna scrittura
+implicita nell'attach. Atomic replace, limite 32 vault/64 KiB, lock kernel di
+sessione, solo path/UUID e nessun token. Restore salta cartelle/identità non più
+compatibili con avviso; formato malformato blocca senza overwrite. Un ricollegamento
+esplicito dopo cambio identità sostituisce il binding precedente. Errori di
+salvataggio ripristinano registro in memoria e file precedente. Scelta consigliata:
+.teseo/local/dashboard-vaults.json di un vault host compatibile, ignorata da Git.
+
+Verifiche ECC verification-loop, security-review e frontend-design-direction:
+suite completa 136 test, 135 pass e uno skip symlink Windows noto. Dopo gli
+ultimi controlli no-op/cache/HTTP, 93 regressioni dashboard: 92 pass e stesso
+skip; sei test distribuzione/registro nuovamente superati dopo gestione del
+cambio UUID. Compilazione Python, sintassi JS, revisione diff e controlli sink/
+storage client superati. Coverage/type checker/linter dedicati non configurati.
+Superati installa.py --prova e --prova --dashboard; nuovo runtime e upgrade con
+backup provati in cartelle sacrificabili. Test job coprono CSRF/Origin, replay
+persistente e conflitto, worker attivo/GET precedente, cache piena, POST shutdown
+con build in corso, annullamento, nota modificata esternamente, parsing/semantica,
+legacy, checkpoint interrotto senza replay, hash invariati e nessuna esecuzione
+di script del vault collegato. Test no-op include metadati corrotti con hash
+coerente e junction interna; fixture SQLite chiusa prima di rinominare su Windows.
+
+Smoke Chrome DevTools ECC sul launcher effettivamente installato: 15 osservazioni
+nel [registro browser](evidence/step-2-4/browser-checks.json). Grafo assente e rebuild
+reale, risposta trattenuta, tastiera Enter, stale reale, parsing invalido con 10
+nodi precedenti conservati, retry della stessa richiesta dopo perdita risposta,
+legacy readonly, restore di due vault senza --vault e due arresti UI con exit 0.
+Hash di note, raw, schema, manifest e DB personali identici alla baseline dopo
+restore della sola nota sintetica modificata dalla prova. Screenshot misurati
+1440x900 e 390x844 nel [report ECC](evidence/step-2-4/report.json); checker della
+skill superato. Non è audit screen reader/cross-browser o suite browser in CI.
+Solo fixture sintetiche, rimosse e servizi/schede di prova chiusi a fine lavoro.
+
+Prossimo punto: 3.1, parser/serializer dell'ontologia con preservazione byte delle
+sezioni non toccate, catalogo tipi e validazione; apply e migrazioni restano futuri.

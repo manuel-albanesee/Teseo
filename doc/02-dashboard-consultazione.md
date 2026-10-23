@@ -1,6 +1,6 @@
 # 2 — Dashboard locale di consultazione
 
-Stato: bootstrap/attach readonly (2.1), API (2.2) e UI di consultazione (2.3) implementati; distribuzione completa e rebuild via API (2.4) ancora futuri. Dipende dal [contratto 1](01-contratto-dati-operazioni.md). Obiettivo utente: collegare una cartella già installata, vedere ontologia, grafo e diagnostica con una chiara indicazione della revisione. Non serve reinstallare o caricare il vault su un servizio remoto. Dettagli effettivamente disponibili nel [registro implementazioni](08-analisi-avanzamento.md).
+Stato: bootstrap/attach readonly (2.1), API (2.2), UI (2.3), distribuzione e rebuild coordinato (2.4) implementati; adozione legacy e export diagnostica ancora futuri. Dipende dal [contratto 1](01-contratto-dati-operazioni.md). Obiettivo utente: collegare una cartella già installata, vedere ontologia, grafo e diagnostica con una chiara indicazione della revisione. Non serve reinstallare o caricare il vault su un servizio remoto. Dettagli effettivamente disponibili nel [registro implementazioni](08-analisi-avanzamento.md).
 
 ## Punto di partenza e scope
 
@@ -8,7 +8,7 @@ Il punto di partenza era un kit di strumenti CLI e integrazioni per client; il b
 
 ## Componenti e flusso proposti
 
-`kit/dashboard/server.py` serve le API readonly e la pagina di collegamento; `read_api.py` legge le generazioni del grafo. Il workbench UI offre grafo/lista, filtri, dettaglio, ontologia e diagnostica. Il launcher disponibile è `python .graph/teseo_dashboard.py --vault "C:/Obsidian/MioVault"`, con `--no-browser` facoltativo. Il registro è in memoria e termina con il servizio; la persistenza proposta in `.teseo/local/` è rinviata alla distribuzione completa (2.4). La UI di consultazione è disponibile dal 2.3; non esiste ancora un entrypoint binario `teseo-dashboard`.
+`kit/dashboard/server.py` serve le API readonly e la pagina di collegamento; `read_api.py` legge le generazioni del grafo. Il workbench UI offre grafo/lista, filtri, dettaglio, ontologia e diagnostica. Il launcher disponibile è `python .graph/teseo_dashboard.py --vault "C:/Obsidian/MioVault"`, con `--no-browser` facoltativo. Il registro è in memoria per default; con `--registry <file-assoluto>` persiste solo nel file locale scelto dal launcher, preferibilmente in `.teseo/local/` ignorata da Git. La UI di consultazione è disponibile dal 2.3; non esiste ancora un entrypoint binario `teseo-dashboard`.
 
 1. L'utente indica un percorso locale tramite comando o form e visualizza la cartella risolta.
 2. `POST /api/v1/vaults/attach` valida root, file attesi e compatibilità senza eseguire file del vault. Restituisce `vault_id`, modalità `readonly/compatible/legacy/incompatible`, problemi e capacità.
@@ -16,12 +16,12 @@ Il punto di partenza era un kit di strumenti CLI e integrazioni per client; il b
 4. La home mostra conteggi e stato locale. Vista grafo filtrabile per tipo/relazione, frecce e legenda; dettaglio nodo mostra frontmatter, fonti e collegamenti verificabili al testo.
 5. Vista ontologia legge la sezione canonica; diagnostica distingue errore di parsing, struttura, compatibilità e controllo semantico. Esportare una diagnosi oscura percorsi sensibili e non include note per default.
 
-## Contratto API readonly e operazioni future
+## Contratto API di consultazione e rebuild
 
-Le GET sotto sono disponibili su generazioni builder v2. Le POST di rebuild e
-le operazioni restano future. Passare `generation=<id>` alle GET successive per
+Le GET sotto sono disponibili su generazioni builder v2. POST rebuild e GET
+operations sono disponibili dal 2.4, con sessione/Origin/CSRF sulle POST. Passare `generation=<id>` alle GET successive per
 fissare una lettura; cambio della generazione corrente produce `409 revision_changed`.
-Un vecchio grafo richiede rebuild esplicito con il kit aggiornato, mai una GET.
+Un vecchio grafo richiede rebuild esplicito con il kit aggiornato e manifest compatibile, mai una GET.
 
 Tutti i percorsi sotto `/api/v1/vaults/{id}`. GET non lancia modelli, Git o mutazioni dei DB personali.
 
@@ -70,8 +70,8 @@ Rilasciare sola consultazione prima dei pulsanti mutanti, che restano nascosti f
 
 Avviare il launcher aggiornato e aprire il collegamento completo stampato nel
 terminale. Il frammento di sessione viene rimosso e il token resta solo in memoria:
-ricaricare la scheda richiede riaprire quel collegamento. Il registro vault termina
-con il servizio. I dati non vengono salvati nel browser.
+ricaricare la scheda richiede riaprire quel collegamento. Il registro termina
+con il servizio salvo opzione `--registry`. I dati non vengono salvati nel browser.
 
 Selezione vault e Aggiorna vista caricano status, fissano la generazione e passano
 quel pin a tutte le letture successive. Filtri per tipo e relazione sono server-side;
@@ -91,5 +91,68 @@ si controlla con Aggiorna vista, senza polling implicito. Un 409 conserva i dati
 caricati e blocca paginazione/filtri/dettagli fino al refresh esplicito. Risposte
 obsolete dopo cambio vista/vault/nodo sono scartate. Errori di rete offrono retry,
 grafo assente disabilita la consultazione e mantiene il motivo diagnostico. Nessuna
-GET avvia rebuild. Operazioni busy, persistenza registro, rebuild e relativa UI
-restano per il 2.4; export diagnostica non ancora disponibile.
+GET avvia rebuild. Dal 2.4 sono disponibili job del servizio, registro opzionale
+e rebuild esplicito; export diagnostica non ancora disponibile.
+
+
+## Distribuzione e operazioni disponibili (2.4)
+
+Python minimo 3.10, coerente con le annotazioni del runtime. `installa.py <cartella-vuota>
+--dashboard` crea esplicitamente un manifest v1 con UUID nuovo e costruisce il primo
+grafo versionato. L'installazione senza flag conserva il comportamento legacy;
+nessun vault esistente non compatibile viene adottato neppure con --aggiorna.
+Il launcher Python è disponibile con ogni installazione completa. Un aggiornamento
+--aggiorna, a servizio fermo, copia il runtime con backup distinto per modulo e
+con timestamp a microsecondi. Manifest esistente, note, raw e DB personali non
+sono migrati o sovrascritti. `--solo-integrazione` non distribuisce il runtime.
+
+POST `/api/v1/vaults/{id}/rebuild` richiede esattamente
+`{idempotency_key, expected_content_revision}`; la chiave è 8–128 caratteri
+ASCII alfanumerici, underscore o trattino; revisione è SHA-256 o null se sconosciuta.
+Risposta 202 con operation_id e stato anche per il replay di un risultato terminale.
+Stessa chiave/payload recupera il job, anche dopo riavvio; payload diverso dà 409.
+Un job attivo per vault, al massimo quattro vault nel processo; altre richieste
+ricevono 409, senza coda illimitata. Il lock kernel è lo stesso di CLI/hook: una
+richiesta respinta per vault occupato può essere ritentata. Il controllo di digest
+prima del build e prima della pubblicazione rileva scritture di editor esterni;
+non è una garanzia di esclusione contro editor non cooperanti.
+
+Il journal comune `.teseo/local/operations.sqlite` conserva base, hash, snapshot,
+errori e checkpoint della generazione derivata. Solo `complete_rebuild` può
+completare questo tipo di job senza apply note: l'apply degli altri tipi resta
+bloccato. Stati osservabili: created, waiting_lock, running, validating e terminali
+succeeded/failed/cancelled/blocked_external_change/recovery_required. La fase
+waiting_lock è registrata all'acquisizione del lock nel worker, non promette una
+coda globale. Errori parsing riportano pagina e motivo, validazione semantica al
+massimo 20 dettagli da 500 caratteri. Fallimenti generici non espongono traceback.
+
+GET `/operations/{operation_id}` legge il journal readonly senza creare storage
+né fare replay; il DTO espone stato, base_content_digest, errore e checkpoint,
+non i contenuti degli snapshot. Un record non gestito dal processo corrente è
+presentato come recovery_required, con invito a verificare eventuali altri servizi.
+Solo una nuova POST sotto lock persiste recovery dei rebuild pendenti; non tocca
+operazioni note e non riesegue il vecchio job. Crash dopo pubblicazione e prima
+del checkpoint può lasciare grafo valido e job da verificare; nessun rollback
+implicito. Si può avviare una nuova richiesta con nuova chiave dopo verifica.
+
+`/status` espone busy_known=true, busy_scope=service, active_operation_id e capacità
+rebuild per manifest compatibile. Questo stato riguarda i job di questo processo:
+non certifica che editor o altri processi siano inattivi. Durante il build la UI
+mantiene la vecchia generazione; alla fine invita a refresh esplicito. La UI riusa
+la chiave quando perde la risposta alla POST e distingue esito sconosciuto da
+rifiuto certo. Poll limitato a un job visibile, interrotto cambiando vault o
+arrestando il servizio; errori di polling richiedono refresh esplicito.
+
+POST `/api/v1/shutdown` con `{}` richiede sessione, Origin e CSRF, restituisce 202
+e ferma il listener. Il processo attende i thread HTTP e i worker non daemon;
+il rebuild verifica annullamento tra le fasi e prima della pubblicazione. Una
+pubblicazione già iniziata può concludersi; nessuna terminazione forzata, nessuna
+cancellazione delle generazioni precedenti. Ctrl+C percorre lo stesso close.
+Chiudere la scheda non arresta il processo e 202 non certifica già chiuso il terminale.
+
+Registro opzionale con parent esistente, massimo 32 identità/percorsi e 64 KiB.
+Scrittura atomica e lock kernel per l'intera sessione impediscono due servizi
+sullo stesso file. Nessun token, password o codice ricevuto viene salvato/eseguito.
+UUID cambiato, cartella assente o incompatibile al restore sono saltati con avviso;
+un registro malformato blocca il launcher senza sovrascriverlo. La scelta del file
+è esplicita e distinta dall'attach; le GET restano prive di scritture nei vault.

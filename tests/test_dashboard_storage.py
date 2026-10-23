@@ -7,6 +7,7 @@ import sys
 import tempfile
 import time
 import unittest
+from types import SimpleNamespace
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -202,6 +203,12 @@ class Storage(unittest.TestCase):
             self.assert_code("apply_unavailable", journal.transition, operation, "applying")
             journal.transition(operation, "cancelled")
             self.assert_code("invalid_transition", journal.transition, operation, "running")
+            base = capture_snapshot(self.root)
+            note = journal.create("ontology", {}, "note-apply", base)
+            journal.transition(note["operation_id"], "waiting_lock")
+            journal.transition(note["operation_id"], "running")
+            self.assert_code("invalid_transition", journal.complete_rebuild, note["operation_id"],
+                             SimpleNamespace(content_revision=base.digest, generation="a" * 64))
 
     def test_prepare_persists_candidate_without_changing_live_notes(self):
         base = capture_snapshot(self.root)
