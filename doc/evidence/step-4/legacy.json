@@ -1,0 +1,5 @@
+{
+  "legacy": "Cicli ingest e lint\n\nPrepara una copia isolata e un mandato da eseguire nella tua sessione client. Nessun modello viene avviato automaticamente. Il callback e gli hook Stop non certificano il successo.\n\nCicli non disponibili per questo formato. Il vault resta consultabile.",
+  "formAbsent": true,
+  "overflow": false
+}

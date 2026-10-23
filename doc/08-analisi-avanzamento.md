@@ -25,7 +25,7 @@ a generazioni restano prerequisiti per attivare la dashboard e le automazioni.
 | 1 | Contratti, journal, lock, snapshot, generazioni e backup disponibili; apply protetto note e recovery multi-file ancora da realizzare |
 | 2 | Bootstrap, API e UI di consultazione, distribuzione e rebuild coordinato disponibili; adozione legacy ed export diagnostica futuri |
 | 3 | Parser/serializer (3.1), preview (3.2), form UI (3.3), apply manuale locale e recovery (3.4) disponibili; automatico disabilitato, mapping pagine/eventi al passo 5 |
-| 4 | Probe e ricevuta da provare su ogni client; Stop non certifica il successo |
+| 4 | Registry/coda/ricevute (4.1), handoff (4.2), pipeline/manifest/apply manuale (4.3), adapter e UI (4.4) disponibili; automazione nativa non verificata, fallback manuale per tre client |
 | 5 | Canonicalizzazione disponibile; schema eventi per tipo, DAG, proiezioni e migrazione ancora da sviluppare |
 | 6 | Staging Git isolato e attribuzione precisa obbligatori prima del push dati |
 | 7 | Apply automatico subordinato a recovery e gate Windows; rilevamento può precederlo |
@@ -668,3 +668,47 @@ interruzione/ripristino fino a rolled_back, desktop 1440x900 e mobile 390x844.
 Prossimo punto: 4.1, registry job/ricevute e adapter finto deterministico.
 Il protocollo pagine/eventi e il gate di esclusione restano prerequisiti per
 estendere l'apply oltre il percorso manuale documentato. Nessun merge.
+
+## Incrementi 13–16 — Cicli ingest/lint completi (punto 4)
+
+4.1 (`86a654c`): registry persistente con massimo otto cicli pendenti, una copia
+isolata attiva per vault e coda con precondizioni hash. API creazione/completamento,
+cancel/resume e dispatch esplicito. Ricevute locali con capacità monouso e replay
+idempotente, fasi ingest/lint separate, dialogo reale senza risposte simulate.
+Stop, exit 0 e callback da soli non producono successo o checkpoint pubblicabile.
+
+4.2 (`e97faa4`): adapter Codex/Claude/Copilot, probe esplicito delle versioni,
+handoff con UUID/perimetro, skill fidata e launcher ricevute installato. Nessun
+avvio automatico, script/config del vault collegato mai eseguiti. Rifiuto non
+aggirato; cancellazione non pretende di arrestare una sessione esterna manuale.
+
+4.3 (`7ad8ab7`): manifest prima/dopo e diff completi, raw/identità/perimetro
+invarianti, schema/fonti/alias/link e verificatore sintesi fidato su nuova copia
+sacrificabile. Candidate prepared senza mutare il vault; apply manuale Windows
+locale con precondizioni e backup del 3.4. Nuove note supportate con rollback
+esplicito; modifiche estranee conservate. Evento locale operation.validated e
+succeeded registrati atomicamente, manifest immutabile e publication_eligible.
+Nessuna esecuzione Git o pubblicazione automatica.
+
+4.4: pannello UI per ciclo/client/fonti/perimetro e registro con fasi, mandato,
+importazione ricevuta, sospensione/continuazione/rifiuto, cancel, diff, apply e
+recovery. Matrice capacità per i tre client installati: Codex 0.163.0-alpha.10.2,
+Claude Code 2.1.305, Copilot CLI 1.0.83. Solo versioni/protocolli/handoff verificati;
+avvio AI, isolamento e callback nativi non dimostrati. Fallback manuale dichiarato.
+I consensi della sessione e delle skill restano effettivi.
+
+ECC orch-add-feature, security-review, verification-loop e verifica frontend:
+209 test, 208 pass e uno skip Windows noto (323.495 s). Venti nuove prove,
+incluse 17 coordinator e tre adapter. Ulteriori run mirati e installer
+--prova --dashboard pass. Runtime installato e aggiornato, launcher ricevute e
+UI provati realmente su fixture sacrificabili: Enter, dialogo/rifiuto, prepared
+e apply riuscito, manifest pubblicabile, vuoto/errore/legacy e probe. Desktop
+1440x900 e mobile 390x844 senza overflow, label collegate e controlli da 44 px.
+Compilazione Python, node --check, checker ECC evidenze e diff superati.
+[Evidenze e limiti](evidence/step-4/verification.md).
+
+Restano deliberatamente bloccati mapping/consolidamento risposte, modifiche ai
+record condivisi e rinomine/eliminazioni di pagine, dipendenti dal passo 5.
+Il consumer di pubblicazione dell'evento locale è il passo 6. Automatico disabilitato
+finché non siano provati isolamento dei client ed esclusione degli scrittori esterni.
+Prossimo punto: 5.1, formato eventi, ID e invarianti condivise. Nessun merge.

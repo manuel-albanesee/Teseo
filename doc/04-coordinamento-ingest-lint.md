@@ -1,6 +1,6 @@
 # 4 — Coordinamento delle skill ingest e lint
 
-Stato: registry/API/ricevute (4.1), handoff client (4.2) e pipeline con apply manuale (4.3) disponibili; UI in completamento. Richiede [1](01-contratto-dati-operazioni.md) e [2](02-dashboard-consultazione.md). Obiettivo: avviare dal servizio un lavoro riconoscibile, ricevere un esito verificabile e rendere pubblicabile soltanto il checkpoint attribuibile al ciclo concluso ingest+lint.
+Stato: registry/API/ricevute (4.1), handoff client (4.2), pipeline con apply manuale (4.3), adapter e UI (4.4) disponibili. Avvio AI, isolamento nativo e callback automatici non verificati: fallback manuale esplicito per tutti i client. Richiede [1](01-contratto-dati-operazioni.md) e [2](02-dashboard-consultazione.md). Obiettivo: avviare dal servizio un lavoro riconoscibile, ricevere un esito verificabile e rendere pubblicabile soltanto il checkpoint attribuibile al ciclo concluso ingest+lint.
 
 ## Contesto attuale e scope
 
@@ -8,11 +8,11 @@ Stato: registry/API/ricevute (4.1), handoff client (4.2) e pipeline con apply ma
 
 Scope: lifecycle di job, adapter e completamento, attribuzione dei file e policy. Lacune con dialogo utente possono sospendere il job e non vanno simulate. Autenticazione AI rimane quella del client installato; nessun nuovo account provider nella dashboard e nessun SDK dato per supportato.
 
-## Protocollo e componenti futuri
+## Protocollo e componenti
 
-`operations.py` orchestra; `adapters/` implementa protocollo `probe`, `prepare`, `launch_or_handoff`, `cancel`, `collect_receipt`. Il probe registra versione rilevata, capacità effettivamente provate, supporto avvio/isolamento/callback e requisiti di consenso. Se non esiste un'interfaccia affidabile, produrre un handoff esplicito alla chat: prompt operativo con UUID e comando di completamento futuro. Stato «in attesa del client» resta visibile; non chiamarlo avvio automatico.
+`operations.py` orchestra; `adapters.py` implementa protocollo `probe`, `prepare`, `launch_or_handoff`, `cancel`, `collect_receipt`. Il probe registra versione rilevata, capacità effettivamente provate, supporto avvio/isolamento/callback e requisiti di consenso. Se non esiste un'interfaccia affidabile, produce un handoff esplicito alla chat: prompt operativo con UUID e comando di completamento locale. Stato «in attesa del client» resta visibile; non chiamarlo avvio automatico.
 
-Proposta API:
+API disponibili:
 
 ```text
 POST /api/v1/vaults/{id}/operations
@@ -51,9 +51,7 @@ Prima dell'apply: validare schema, raw, fonti, link, alias, sintesi e record con
 - Client richiede consenso: stato sospeso; dopo rifiuto nessun bypass. Mock di scritture e ricevuta falsificata viene respinto.
 - Una nuova risposta arriva mentre il lint ne consolida altre: solo ID dichiarati nel job vengono consolidati secondo [5](05-stato-condiviso.md).
 
-Comandi **esistenti** dalla root `python installa.py --prova`, `python -m unittest discover -s tests -v`; nel vault sacrificabile `python .graph/build_graph.py --check`, `python .graph/sintesi.py --verifica`. Non sono runner di ingest/lint. Test **da creare** `tests/test_dashboard_operations.py` con adapter finto e fault injection; esecuzione futura `python -m unittest discover -s tests -p 'test_dashboard_operations.py' -v`. Smoke reali per ciascun client richiedono account e consenso dell'utente e vanno riportati separatamente dai test deterministici. Nulla di ciò è dichiarato già eseguito.
-
-## Rollout, rollback e questioni aperte
+Comandi dalla root `python installa.py --prova`, `python -m unittest discover -s tests -v`; nel vault sacrificabile `python .graph/build_graph.py --check`, `python .graph/sintesi.py --verifica`. Non sono runner di ingest/lint. Test disponibili `tests/test_dashboard_operations.py` con adapter finto e fault injection: `python -m unittest discover -s tests -p 'test_dashboard_operations.py' -v`; adapter in `tests/test_dashboard_adapters.py`. Smoke AI reali per ciascun client richiedono account e consenso dell'utente e vanno riportati separatamente dai test deterministici; non sono stati eseguiti.
 
 ## Handoff locale disponibile (4.1–4.2)
 
@@ -140,4 +138,35 @@ publication_eligible; finish esplicito può completare la stessa transazione
 logica. L'endpoint complete accetta fino a 256 KiB; gli altri corpi restano
 limitati a 16 KiB. Nessun aumento globale del limite delle richieste.
 
-Attivare prima handoff manuale con ricevuta, poi automazione per client provati. Conservare la possibilità di eseguire skill nella chat; le operazioni esterne non diventano automaticamente pubblicabili. Rollback disabilita nuovi job e adapter, lascia i job esistenti in recovery e conserva manifest/backup. Non annullare file modificati dall'utente. Da verificare: avvio e isolamento reali dei tre client e disponibilità di un segnale esplicito supportato; se manca, usare protocollo manuale locale anziché dipendere da eventi generici.
+## Adapter e UI disponibili (4.4)
+
+Pannello «Cicli ingest e lint»: ciclo/client, fonti raw e perimetro per riga,
+creazione idempotente e diagnostica versioni esplicita. Registro operazioni con
+fasi separate, mandato, importazione ricevuta JSON, continuazione o rifiuto del
+dialogo, cancellazione, manifest/diff e apply/recovery manuali. Nessun pulsante
+esegue Git. Il file JSON resta locale (UI fino a 240 KiB) e contiene una capacità
+riservata; non condividerlo. Al termine aggiornare la vista e ricontrollare la
+coda esplicitamente. Vault legacy senza form di scrittura.
+
+Matrice rilevata il 23 ottobre 2026 tramite i binari installati:
+
+| Client | Versione osservata | Avvio AI / isolamento / callback nativo | Percorso disponibile |
+| --- | --- | --- | --- |
+| Codex | 0.163.0-alpha.10.2 | Non verificati; disabilitati nel servizio | Handoff e ricevuta locale espliciti |
+| Claude Code | 2.1.305 | Non verificati; disabilitati nel servizio | Handoff e ricevuta locale espliciti |
+| Copilot CLI | 1.0.83 | Non verificati; disabilitati nel servizio | Handoff e ricevuta locale espliciti |
+
+Probe e protocolli testati; nessun modello/account AI avviato durante le prove.
+L'handoff non è una sandbox di sicurezza del client: verificare il suo working
+directory e rispettare consensi/installazione della sessione. Il servizio valida
+soltanto il candidato e non esegue script provenienti dalla copia.
+[Report ECC, prove e limiti](evidence/step-4/verification.md).
+
+## Rollout, rollback e questioni aperte
+
+Rollout manuale con ricevuta completato. Automazione futura soltanto per client
+con avvio/isolamento/callback dimostrati e policy esplicita; non derivarla da Stop.
+Mapping/consolidamento risposte e record condivisi attendono il passo 5.
+Rollback: cancellare i cicli non applicati conservando output; per apply
+interrotti usare recovery esplicito senza annullare modifiche estranee.
+Snapshot, ricevute ed eventi locali restano conservati; retention futura.

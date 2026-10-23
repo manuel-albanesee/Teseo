@@ -1,5 +1,6 @@
 """Cicli skill: HTTP reale, copia isolata, ricevute e nessun client AI avviato."""
 import json
+import os
 from pathlib import Path
 import unittest
 import sqlite3
@@ -126,6 +127,7 @@ class Operations(unittest.TestCase):
             time.sleep(.1)
         return self.get('operations/'+job['operation_id'])[2]
 
+    @unittest.skipUnless(os.name=='nt','Apply manuale Windows')
     def test_full_ingest_lint_prepares_without_live_mutations_then_apply_emits_one_event(self):
         before=capture_snapshot(self.root).digest
         job=self.submit()
@@ -162,6 +164,7 @@ class Operations(unittest.TestCase):
             self.assertEqual(failed['error']['code'],error,failed)
             self.assertFalse(failed['publication_eligible'])
 
+    @unittest.skipUnless(os.name=='nt','Apply manuale Windows')
     def test_external_change_between_validation_and_apply_never_overwrites(self):
         job=self.prepared()
         self.page.write_bytes(b'External change to preserve')
@@ -171,6 +174,7 @@ class Operations(unittest.TestCase):
         self.assertEqual(status,409,raw)
         self.assertEqual(self.page.read_bytes(),b'External change to preserve')
 
+    @unittest.skipUnless(os.name=='nt','Apply manuale Windows')
     def test_new_note_crash_and_rollback_preserve_added_bytes_in_backup(self):
         before=capture_snapshot(self.root).digest
         job=self.prepared(new_page=True)
@@ -265,6 +269,7 @@ class Operations(unittest.TestCase):
         status,_,_=self.request('POST',self.base+'operations',{'padding':'x'*17000})
         self.assertEqual(status,400)
 
+    @unittest.skipUnless(os.name=='nt','Apply manuale Windows')
     def test_failure_before_atomic_event_commit_remains_recoverable(self):
         job=self.prepared()
         from kit.dashboard.storage import Journal

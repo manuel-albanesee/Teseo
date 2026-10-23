@@ -1,0 +1,60 @@
+{
+  "contract": "contract.md; cicli manuali ingest/lint, ricevute e checkpoint attribuibili",
+  "targetViewports": [
+    "1440x900",
+    "390x844"
+  ],
+  "accessibility": {
+    "status": "pass",
+    "evidence": "Label collegate, stato live, creazione e apply reali con Enter. Controlli mobile misurati almeno 44 px; nessuna animazione. Non audit screen reader."
+  },
+  "responsive": {
+    "status": "pass",
+    "evidence": "Viewport ECC 1440x900 e 390x844 con DOM renderizzato e nessun overflow documento. Campi, comandi e diff seguono lo stile del workbench."
+  },
+  "contentStates": {
+    "loading": {
+      "status": "pass",
+      "evidence": "Probe UI osservato come Rilevamento versioni e pulsante disabilitato; completamento reale con versioni dei tre binari."
+    },
+    "empty": {
+      "status": "pass",
+      "evidence": "Vault compatibile vuoto senza grafo collegato realmente: Nessuna operazione registrata, form di creazione disponibile."
+    },
+    "error": {
+      "status": "pass",
+      "evidence": "Fonte raw inesistente inviata dalla UI: invalid_operation con invito ad aggiornare la base, nessun job registrato. Test HTTP aggiuntivi per token/manifest/confitti."
+    },
+    "partial": {
+      "status": "pass",
+      "evidence": "Manifest distingue perimetro parziale e semantica del client; fasi ingest/lint separate. Lint completato rimane prepared/Pubblicabile no fino a apply esplicito."
+    },
+    "success": {
+      "status": "pass",
+      "evidence": "Ciclo sul runtime installato passato da awaiting_user a prepared e succeeded dopo diff/conferma/Enter. Un file attribuito; Pubblicabile sì dopo evento locale. Copilot fill_gaps rifiutato resta cancelled/non pubblicabile."
+    },
+    "permission": {
+      "status": "pass",
+      "evidence": "Apply senza conferma produce Conferma prima sospensione e revisione. Vault legacy realmente collegato senza form. Token ricevuta non restituito dalle GET; prove sessione/Origin/CSRF."
+    }
+  },
+  "renderedEvidence": [
+    {
+      "viewport": "1440x900",
+      "artifact": "desktop.json",
+      "observation": "Prepared, diff reale della nota, conferma obbligatoria, label e nessun overflow. Enter ha completato l'apply (success.json)."
+    },
+    {
+      "viewport": "390x844",
+      "artifact": "mobile-final.json",
+      "observation": "Runtime finale: fill_gaps Copilot sospeso e rifiutato, nessuna pubblicabilità; label e dimensioni controlli reali, nessun overflow."
+    }
+  ],
+  "verification": {
+    "python": "209 test: 208 pass e 1 skip Windows noto, 323.495 s; 17 test coordinator e 3 adapter pass anche in esecuzioni mirate",
+    "installer": "--prova --dashboard pass; installazione, aggiornamento e launcher effettivi",
+    "static": "compileall, node --check, diff review e controllo segreti/esecuzione shell",
+    "browser": "Fixture sintetiche, Enter, sospensione/ripresa/rifiuto, prepared/apply, vuoto/errore/legacy e probe versioni"
+  },
+  "limits": "Manual handoff per Codex/Claude/Copilot; nessun modello AI avviato, isolamento/callback nativi non verificati e automatico disabilitato. File picker nativo non testato: usato DataTransfer sul vero JSON del launcher. Dati condivisi al passo 5, Git al passo 6. Nessuna certificazione semantica/screen reader/cross-browser né coverage misurata."
+}

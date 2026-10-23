@@ -1,9 +1,10 @@
 """Workbench: consultazione e proposte ontologia, contenuti sempre inerti."""
 from .ontology_ui import EDITOR_SCRIPT
+from .skill_ui import SKILL_SCRIPT
 SCRIPT = r"""
 (() => {
  'use strict';
-""" + EDITOR_SCRIPT + r"""
+""" + EDITOR_SCRIPT + SKILL_SCRIPT + r"""
  const $ = id => document.getElementById(id);
  const token = new URLSearchParams(location.hash.slice(1)).get('session');
  history.replaceState(null, '', location.pathname);
@@ -24,6 +25,8 @@ SCRIPT = r"""
    return body;
  }
  const editor=createOntologyEditor({api,plain,element,getEpoch:()=>epoch,stopped:()=>stopping,onOperation:(vault,id)=>watchOperation(vault,id)});
+ const skills=createSkillPanel({api,element,getEpoch:()=>epoch,getVault:()=>$('vault').value,stopped:()=>stopping,onOperation:(vault,id)=>watchOperation(vault,id),reload:()=>$('list-operations').click()});
+ $('skill-dispatch').addEventListener('click',async()=>{const vault=$('vault').value;if(!vault||stopping)return;try{await api('/api/v1/vaults/'+encodeURIComponent(vault)+'/dispatch',{});if(vault===$('vault').value)$('list-operations').click();}catch(error){$('operation').textContent=error.code+': '+error.message;}});
  $('list-operations').addEventListener('click',async()=>{
    const vault=$('vault').value,run=epoch;if(!vault||stopping)return;
    const root='/api/v1/vaults/'+encodeURIComponent(vault),container=$('operation-list');container.replaceChildren();
@@ -32,6 +35,7 @@ SCRIPT = r"""
      if(!body.operations.length)element('p','Nessuna operazione registrata.',container);
      if(body.truncated)element('p','Visualizzate le ultime 50 operazioni.',container);
      for(const item of body.operations){const section=element('section',undefined,container);element('p',item.operation_id+' · '+item.kind+' · '+item.state,section);
+       skills.render(item,section);
        if(item.error)element('p',item.error.code+' · '+item.error.message,section);
        if(item.kind==='ontology_apply'&&item.state==='recovery_required'){
          element('p','Recovery manuale non protetto: sospendi editor/hook e verifica base, candidato e backup. Un conflitto estraneo blocca il recovery.',section);
@@ -63,7 +67,7 @@ SCRIPT = r"""
        const job=await api('/api/v1/vaults/'+encodeURIComponent(vaultId)+'/operations/'+encodeURIComponent(identifier));
        if(run!==epoch || poll!==operationPoll || stopping)return;
        const terminal=['succeeded','rolled_back','failed','cancelled','blocked_external_change','recovery_required'].includes(job.state);
-       $('operation').textContent=(job.kind==='ontology_apply'?'Applicazione ontologia ':'Rebuild ')+identifier+' · '+job.state;
+       $('operation').textContent=(job.kind==='rebuild'?'Rebuild ':'Operazione note ')+identifier+' · '+job.state;
        if(['succeeded','rolled_back'].includes(job.state))$('operation').textContent+=' · Completato. File cambiati: '+(job.checkpoint?.changed_files||[]).join(', ')+'. Premi Aggiorna vista per caricare la generazione pubblicata.';
        if(job.state==='recovery_required')$('operation').textContent+=' · Conserva base, candidato e backup. Sospendi gli editor e scegli recovery esplicito; nessun rollback automatico.';
        if(job.error)$('operation').textContent+=' · '+job.error.code+': '+job.error.message+' '+(job.error.details||[]).join(' · ')+' · Correggi il problema e aggiorna la vista prima di riprovare.';
@@ -172,6 +176,7 @@ SCRIPT = r"""
  async function selectVault() {
    if(stopping)return;
    editor.reset();
+   skills.reset();
    $('operation-list').replaceChildren();
    ++operationPoll;$('rebuild').disabled=true;$('operation').textContent='';
    const run=++epoch;++graphRequest;++detailRequest;state=null;invalid=false;loadingGraph=false;nodes=[];edges=[];cursor=null;filters={};
@@ -187,6 +192,7 @@ SCRIPT = r"""
      $('root').textContent=status.path;$('revision').textContent='Contenuti: '+(status.content_revision||'non disponibili')+' · Generazione: '+(status.graph_generation||'non disponibile')+' · Job di questo servizio: '+(status.busy?'rebuild attivo':'nessuno');
      $('rebuild').disabled=!status.capabilities.rebuild || !!status.busy;
      editor.mount(status);
+     skills.mount(status);
      if(status.active_operation_id)watchOperation(id,status.active_operation_id);
      else if(!status.capabilities.rebuild)$('operation').textContent='Rebuild non disponibile per questo formato. I vault legacy restano in sola lettura.';
      $('notice').textContent=(status.issues||[]).map(issue=>issue.code+': '+issue.message).join(' · ');

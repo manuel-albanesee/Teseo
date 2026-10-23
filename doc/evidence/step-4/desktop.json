@@ -1,0 +1,11 @@
+{
+  "viewport": [
+    1440,
+    900
+  ],
+  "state": "prepared",
+  "confirmationRequired": true,
+  "diffPresent": true,
+  "labels": true,
+  "overflow": false
+}

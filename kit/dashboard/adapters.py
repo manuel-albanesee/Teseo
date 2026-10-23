@@ -67,10 +67,14 @@ class ManualAdapter:
                         'I controlli deterministici saranno eseguiti dal servizio. Non consolidare risposte/eventi. '
                         'Non effettuare operazioni Git. Se la skill richiede consenso, rispettarlo; '
                         'usare --outcome awaiting_user --reason "motivazione" quando occorre dialogo.\n\n'+command+'\n',encoding='utf-8')
-        return {'adapter':self.name,'mode':'manual_handoff','prompt':prompt,
+        return self.launch_or_handoff({'adapter':self.name,'mode':'manual_handoff','prompt':prompt,
                 'workspace':str(workspace),'request_path':str(request_path),'receipt_path':str(request_path.parent/'receipt.json'),
                 'completion_command':command,'isolation':'snapshot_only; verify client working directory manually',
-                'automatic_launch':False}
+                'automatic_launch':False})
+
+    def launch_or_handoff(self, prepared):
+        """Return the explicit handoff; never launch a process or bypass consent."""
+        return dict(prepared, automatic_launch=False)
 
     def cancel(self, record):
         # No spawned client to terminate. User must stop their external session.

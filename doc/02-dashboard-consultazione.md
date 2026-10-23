@@ -39,8 +39,15 @@ Tutti i percorsi sotto `/api/v1/vaults/{id}`. GET non lancia modelli, Git o muta
 | `POST /ontology/preview` | dal 3.2: candidato e impatto sullo snapshot corrente, nessuna scrittura; [contratto](03-editor-ontologia.md#api-preview-disponibile-32) |
 | `POST /ontology/apply` | dal 3.4: apply manuale locale con conferme, If-Match e journal; [contratto](03-editor-ontologia.md) |
 | `GET /operations` | ultime 50 operazioni, lettura readonly e digest live per recovery |
+| `POST /operations` | dal 4.1: crea ciclo skill su copia isolata con handoff manuale; [contratto](04-coordinamento-ingest-lint.md) |
 | `GET /operations/{operation_id}` | stato e risultato strutturato |
+| `POST /operations/{operation_id}/complete` | ricevuta locale di fase, token e manifest verificati; non applica note |
+| `POST /operations/{operation_id}/cancel` | cancella ciclo non applicato conservando output |
+| `POST /operations/{operation_id}/resume` | decisione esplicita continue/refuse dopo awaiting_user |
+| `POST /operations/{operation_id}/apply` | candidato skill prepared, conferme manuali e If-Match |
 | `POST /operations/{operation_id}/recover` | dal 3.4: completa o ripristina esplicitamente un apply interrotto, senza sovrascrivere contenuti estranei |
+| `POST /probe-adapters` | versioni e capacità reali/manuali dei client; nessuna sessione AI |
+| `POST /dispatch` | ricontrolla esplicitamente la coda senza cambiare le basi dei job |
 
 Ogni risposta contiene `content_revision` e `graph_generation`; usare ETag e `If-None-Match` per cache. La paginazione di una generazione scaduta restituisce `409 revision_changed`, non combina revisioni. Errori: `400` input invalido, `403` sessione/path non autorizzato, `404` vault/nodo assente, `409` stato o revisione incompatibile, `422` formato non supportato, `503` capacità temporaneamente indisponibile. Gli errori contengono `code`, messaggio utile e possibilità di retry senza traceback o segreti.
 

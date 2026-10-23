@@ -1,0 +1,41 @@
+[
+  {
+    "adapter": "codex",
+    "installed": true,
+    "version": "codex-cli 0.163.0-alpha.10.2",
+    "error": null,
+    "mode": "manual_handoff",
+    "automatic_launch": false,
+    "verified_isolation": false,
+    "native_callback": false,
+    "consent": "Consensi della sessione client restano obbligatori",
+    "receipt": "local_explicit",
+    "provider_auth": "client_session"
+  },
+  {
+    "adapter": "claude",
+    "installed": true,
+    "version": "2.1.305 (Claude Code)",
+    "error": null,
+    "mode": "manual_handoff",
+    "automatic_launch": false,
+    "verified_isolation": false,
+    "native_callback": false,
+    "consent": "Consensi della sessione client restano obbligatori",
+    "receipt": "local_explicit",
+    "provider_auth": "client_session"
+  },
+  {
+    "adapter": "copilot",
+    "installed": true,
+    "version": "GitHub Copilot CLI 1.0.83.\nRun 'copilot update' to check for updates.",
+    "error": null,
+    "mode": "manual_handoff",
+    "automatic_launch": false,
+    "verified_isolation": false,
+    "native_callback": false,
+    "consent": "Consensi della sessione client restano obbligatori",
+    "receipt": "local_explicit",
+    "provider_auth": "client_session"
+  }
+]

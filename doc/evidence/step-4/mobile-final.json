@@ -1,0 +1,31 @@
+{
+  "viewport": [
+    390,
+    844
+  ],
+  "refused": true,
+  "notPublished": true,
+  "overflow": false,
+  "controls": [
+    {
+      "id": "skill-kind",
+      "label": true,
+      "height": 44
+    },
+    {
+      "id": "skill-adapter",
+      "label": true,
+      "height": 44
+    },
+    {
+      "id": "skill-inputs",
+      "label": true,
+      "height": 88
+    },
+    {
+      "id": "skill-scope",
+      "label": true,
+      "height": 118.80000305175781
+    }
+  ]
+}

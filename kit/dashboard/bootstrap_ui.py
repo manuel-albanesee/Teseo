@@ -6,7 +6,7 @@ PAGE = """<!doctype html>
 <html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Teseo · Consulta il vault</title><style nonce="__NONCE__">""" + STYLE + """</style></head>
 <body><a class="skip" href="#workspace">Vai alla consultazione</a>
-<header><strong>TESEO</strong><span>CONSULTAZIONE LOCALE</span><span class="badge">Note in sola lettura</span></header>
+<header><strong>TESEO</strong><span>VAULT LOCALE</span><span class="badge">Scritture solo con apply manuale</span></header>
 <div class="shell"><aside aria-label="Collegamento vault">
 <h1>Il tuo vault</h1><label for="vault">Vault collegati</label><select id="vault" disabled><option value="">Nessun vault collegato</option></select>
 <details><summary>Collega una cartella</summary><form id="attach">
@@ -21,6 +21,7 @@ PAGE = """<!doctype html>
 <p id="notice" role="status" aria-live="polite"></p>
 <p id="operation" role="status" aria-live="polite"></p>
 <details><summary>Operazioni persistenti e recovery</summary><button id="list-operations" type="button">Leggi operazioni del vault</button><div id="operation-list"></div></details>
+<details><summary>Cicli ingest e lint</summary><div id="skill-panel"></div><button id="skill-dispatch" type="button">Ricontrolla coda</button></details>
 <nav aria-label="Viste del vault"><button data-view="graph" aria-pressed="true">Grafo</button><button data-view="ontology" aria-pressed="false">Ontologia</button><button data-view="diagnostics" aria-pressed="false">Diagnostica</button></nav>
 <section id="graph" aria-label="Grafo">
 <form id="filters" class="toolbar"><div><label for="type">Tipo</label><select id="type" disabled><option value="">Tutti i tipi</option></select></div>
