@@ -122,8 +122,9 @@ class Operations(unittest.TestCase):
              {'mode':'manual_paused','external_writers_paused':True,'semantic_reviewed':True},
              headers={'If-Match':'"'+job['base_content_digest']+'"'})
         self.assertEqual(status,202,raw)
-        for _ in range(120):
-            if not self.server.applies.active(self.vault_id):break
+        deadline=time.monotonic()+90
+        while self.server.applies.active(self.vault_id):
+            if time.monotonic()>=deadline:self.fail('Apply non terminato entro il limite del test')
             time.sleep(.1)
         return self.get('operations/'+job['operation_id'])[2]
 

@@ -17,6 +17,24 @@ class Registry:
 
 
 class Service(unittest.TestCase):
+    def test_publication_is_separate_and_uses_only_persisted_push_receipt(self):
+        import hashlib
+        self.service.record(self.vault,self.body())
+        events=self.root/'.teseo/shared/events'
+        answer=next(json.loads(p.read_bytes()) for p in events.glob('*.json') if json.loads(p.read_bytes())['kind']=='answer.recorded')
+        note=self.root/'wiki/Anna.md';note.write_bytes(b'Anna')
+        operation=str(uuid4())
+        marker=dict(answer,event_id=str(uuid4()),operation_id=operation,kind='answer.consolidated',parents=[answer['event_id']],
+                    payload={'answer_ids':[answer['entity_id']],'note_hashes':{'wiki/Anna.md':hashlib.sha256(b'Anna').hexdigest()},'checkpoint_id':str(uuid4())})
+        (events/(marker['event_id']+'.json')).write_bytes(canonical_json(marker))
+        self.assertEqual(self.service.answers(self.vault)['answers'][0]['publication'],'unknown')
+        with _connection(self.root/'.teseo/local/sync.sqlite') as db:
+            db.execute('CREATE TABLE jobs(operation_id TEXT PRIMARY KEY,data BLOB NOT NULL)')
+            db.execute('INSERT INTO jobs VALUES (?,?)',(operation,canonical_json({'published_oid':'a'*40,'state':'published_pending_local_adoption'})))
+        result=self.service.answers(self.vault)['answers'][0]
+        self.assertTrue(result['applied']);self.assertEqual(result['publication'],'published')
+        self.assertEqual(result['published_oid'],'a'*40)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(dir=Path.cwd())
         self.addCleanup(self.temp.cleanup)

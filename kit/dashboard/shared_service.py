@@ -54,11 +54,23 @@ class SharedService:
         events = snapshot_events(snapshot, vault_id)
         state = project(events, vault_id)
         by_id = {e['event_id']: e for e in events}
+        publications = {}
+        sync_journal=root/'.teseo/local/sync.sqlite'
+        for suffix in ('','-journal','-wal','-shm'): _no_link(Path(str(sync_journal)+suffix))
+        if sync_journal.exists():
+            with _connection(sync_journal.as_uri()+'?mode=ro',uri=True) as db:
+                if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='jobs'").fetchone():
+                    for operation_id,data in db.execute('SELECT operation_id,data FROM jobs'):
+                        publication=parse_json(data).get('published_oid')
+                        if publication:publications[operation_id]=publication
         for answer in state['answers']:
             answer['publication'] = 'unknown'
             answer['applied'] = False
             if answer['state'] != 'consolidated': continue
             markers = [by_id[i] for i in answer['heads'] if by_id[i]['kind'] == 'answer.consolidated']
+            published=[publications[m['operation_id']] for m in markers if m['operation_id'] in publications]
+            if markers and len(published)==len(markers):
+                answer.update(publication='published',published_oid=published[-1],publication_verification='local_push_receipt')
             hashes_match = bool(markers) and all(all(snapshot.hashes.get(name) == digest
                         for name, digest in marker['payload']['note_hashes'].items()) for marker in markers)
             journal = root / '.teseo/local/operations.sqlite'
