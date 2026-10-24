@@ -1,0 +1,60 @@
+{
+  "contract": "contract.md; pubblicazione esplicita dati, causalità e recovery OID",
+  "targetViewports": [
+    "1440x900",
+    "390x844"
+  ],
+  "accessibility": {
+    "status": "pass",
+    "evidence": "Label collegate, aria-live, ripresa effettiva del checkpoint con consenso ed Enter; controlli mobile minimo44px. Nessun audit screen reader."
+  },
+  "responsive": {
+    "status": "pass",
+    "evidence": "Viewport emulati e misurati innerWidth/innerHeight a1440x900 e390x844 senza overflow, screenshot mobile ispezionato."
+  },
+  "contentStates": {
+    "loading": {
+      "status": "pass",
+      "evidence": "Preview reale: messaggio Analisi della allowlist e pulsante disabilitato durante la richiesta."
+    },
+    "empty": {
+      "status": "pass",
+      "evidence": "empty.json: vault compatibile nonGit, unconfigured, comandi config/publish disabilitati."
+    },
+    "error": {
+      "status": "pass",
+      "evidence": "desktop.json: UUID inesistente dalla UI rifiutato sync_unvalidated, nessuna pubblicazione."
+    },
+    "partial": {
+      "status": "pass",
+      "evidence": "pending.json: journal sintetico della sola presentazione needs_decision con chiave/perimetro; pipeline reale verifica lo stesso gate."
+    },
+    "success": {
+      "status": "pass",
+      "evidence": "desktop.json: converged di un vero push su bare locale, ripresa con Enter senza nuovo push; B/L/R/C visibili."
+    },
+    "permission": {
+      "status": "pass",
+      "evidence": "privacy.json: DB escluso, contenuto privato assente, consensofalse e configurazione disabilitata. legacy.json: formmutazioni assenti."
+    }
+  },
+  "renderedEvidence": [
+    {
+      "viewport": "1440x900",
+      "artifact": "desktop.json",
+      "observation": "Convergenza reale e errore recuperabile; label e assenza overflow."
+    },
+    {
+      "viewport": "390x844",
+      "artifact": "mobile.json",
+      "observation": "Minimo44px, label collegate, nessun overflow, animazioni o campi credenziali."
+    }
+  ],
+  "verification": {
+    "tests": "26 servizi/HTTP e tre regressioni pass; cinque scenari pipeline Git reali pass; validatore19pass. Suite generale312 censiti rimasta incompleta dopo errore privacy/cleanup Windows; riprova isolata privacy pass7.701s. Nessun PASS complessivo dichiarato; vedere verification.md.",
+    "installer": "--prova --dashboard finale pass.",
+    "coverage": "Core Git87%, validatore99%; non coverage globale.",
+    "static": "compileall, node--check, diff review, controlli sicurezza."
+  },
+  "limits": "Fixture locali; stato needs_decision renderizzato da journal sintetico e testato con Git reale nella pipeline. Nessun GitHub dati smoke, repository remoto/PR creati manualmente. Automatico e receiver disabilitati. Nessun audit screen reader/cross-browser."
+}

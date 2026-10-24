@@ -1,6 +1,6 @@
 # 6 — Pubblicazione automatica sul repository dati GitHub
 
-Stato: progetto futuro. Dipende da [1](01-contratto-dati-operazioni.md), [2](02-dashboard-consultazione.md), [4](04-coordinamento-ingest-lint.md), [5](05-stato-condiviso.md). Obiettivo: concluso ingest+lint valido, integrare le novità degli altri e pubblicare senza passaggi ordinari manuali; i conflitti o le policy bloccanti diventano richieste specifiche e recuperabili.
+Stato: publisher runtime disponibile con richiesta e conferme esplicite; automazione continuativa disabilitata. Onboarding locale, checkpoint, integrazione isolata, validazione, revisione mirata, push/recovery e UI sono implementati. Creazione remota GitHub e apertura automatica PR restano capacità distinte non attivate. Dipende da [1](01-contratto-dati-operazioni.md), [2](02-dashboard-consultazione.md), [4](04-coordinamento-ingest-lint.md), [5](05-stato-condiviso.md). Le sezioni progettuali seguenti descrivono anche l'obiettivo automatico; il contratto effettivo e i limiti del primo rilascio sono riportati in fondo.
 
 ## Stato attuale, onboarding e confini
 
@@ -34,7 +34,7 @@ Note diverse possono dire «referente Anna» e «referente Bruno» per lo stesso
 
 La chiave di deduplica è hash di `L`, `R`, schema, versione policy e insieme correlato; il risultato registra input/output. Un output di riconciliazione non avvia un nuovo ciclo ingest→lint→push: resta figlio della stessa operazione di sync. Limitare espansioni e tentativi; nuovo remote significa nuova chiave solo per nuovo contenuto. Non chiamare il modello per no-op. I controlli deterministici non provano assenza di contraddizioni semantiche; la UI deve mostrare perimetro verificato e limiti.
 
-## Stato, policy e API future
+## Stato, policy e API di riferimento
 
 `ready → checkpointed → fetching → integrating → validating → reconciling? → pushing → published → adopting → converged`; pause `waiting_network`, `waiting_auth`, `needs_resolution`, `needs_approval`, `retry_exhausted`, `published_pending_local_adoption`. Journal include `B/L/R/C`, tentativi, job figli e ricevuta push. Dopo crash in `pushing`, fetch e controllare se `C` è già raggiungibile sul branch remoto prima di ripubblicare; timeout non equivale a push fallito.
 
@@ -55,3 +55,107 @@ Comandi Git **esistenti** da usare su fixture: `git status --porcelain=v1`, `git
 Prima preview, poi pubblicazione richiesta dall'utente, infine ciclo automatico configurato. Rollback sospende nuove pubblicazioni e conserva OID/journal; contenuti già pubblicati si correggono con commit compensativo validato. Nessun force push o cancellazione di storia. Restano da decidere nomi dei branch operativi, policy di riconciliazione per dominio e retention dei candidati.
 
 [Git pull](https://git-scm.com/docs/git-pull) documenta fetch e integrazione e le opzioni fast-forward: il progetto esplicita le fasi per poterle validare. Gli [hook Git](https://git-scm.com/docs/githooks) sono legati a eventi del processo Git: un hook locale non sostituisce il rilevamento di push remoti. I comandi e le policy del progetto qui proposti non sono funzionalità già presenti nel kit.
+
+## Contratto runtime del primo rilascio
+
+Moduli: `git_sync.py` contiene primitive Git e policy; `sync_service.py` journal
+locale e coordinamento; `sync_validation.py` gate e correlazioni; `sync_ui.py`
+la superficie dashboard. Tutti sono distribuiti dall'installer dashboard.
+
+La creazione del repository su GitHub resta manuale: scegliere proprietario e
+visibilità sul servizio, autenticarsi localmente, poi indicare l'URL esistente.
+La dashboard non riceve password o token e non certifica la visibilità remota:
+la conferma è una dichiarazione dell'utente. Sono supportati GitHub HTTPS/SSH;
+helper globali credential manager/manager-core e agente SSH. Helper shell o
+configurazioni eseguibili del repository vengono rifiutati. Gli altri helper,
+inclusa una configurazione gh shell personalizzata, richiedono un percorso di
+autenticazione supportato. Autore commit distinto dall'account autenticato.
+
+In un vault non Git, la preview resta readonly. Inizializzazione esplicita con
+branch, URL, autore e hash completi della selezione crea il solo commit locale:
+nessun remoto viene creato o aggiornato. File esclusi restano visibili e locali;
+prima di configurare il publisher bisogna revisionare eventuali modifiche
+estranee ed esclusioni locali (`.git/info/exclude`), senza aggiungerle al commit
+dati. Non viene adottato implicitamente un repository padre, né caricato tutto.
+Un errore dopo init conserva `.git` per ispezione: nessuna cancellazione automatica.
+
+Endpoint relativi a `/api/v1/vaults/{id}/sync`, protetti dalla sessione locale;
+ogni POST richiede anche Origin e CSRF:
+
+| Metodo/percorso | Corpo e comportamento |
+| --- | --- |
+| GET `/status` | Readonly: configurazione, autore, B/L/R/C, stato e ultime 30 richieste |
+| POST `/preview` | `raw_paths` opzionale; file/hash inclusi, esclusioni e violazioni tracked |
+| POST `/initialize` | branch, remote_url, raw_paths, author{name,email}, share_confirmed, expected_files{percorso:hash} |
+| POST `/configure` | remote=origin, branch, visibility, mode direct/pr, raw_paths, share_confirmed, expected_head |
+| POST `/publish` | operation_id, idempotency_key, exclusive_confirmed, expected_head; raw_paths/share_confirmed opzionali per nuove fonti revisionate |
+| POST `/resolve` | idempotency_key originale, exclusive_confirmed; human_decision_key e resolution_digest opzionali |
+
+Configurare su branch/working tree/index puliti **prima** del ciclo radice.
+Il digest iniziale del ciclo deve coincidere con il checkpoint B configurato,
+eventualmente esteso dalle sole nuove fonti input selezionate esplicitamente.
+Modifiche condivise preesistenti, anche eventi appena registrati fuori da quel
+ciclo, richiedono un checkpoint revisionato prima di avviare il ciclo successivo:
+non vengono attribuite silenziosamente al lint. Per nuove fonti raw, revisionare
+una nuova preview e confermare la selezione prima del publish: i loro hash devono
+essere quelli degli input del ciclo. Nessun altro dato può estendere il baseline
+in questo modo e non vengono creati commit arbitrari per ripulire il working tree.
+
+Solo `operation.validated` dopo apply riuscito di ingest/lint, con tutti i gate,
+può essere consumato. Una chiave diversa non ripubblica la stessa operazione.
+No-op registrato senza nuovo commit; un fallimento non cancella L. Index isolato,
+hash e confronto byte/OID prima e dopo i gate impediscono di committare file
+estranei o pubblicare un tree diverso da quello verificato. Raw/eventi esistenti
+sono immutabili contro entrambi i parent. Il candidato contiene esclusivamente
+dati ammessi; il codice di validazione proviene dal kit installato.
+
+Git usa argomenti separati, ambiente filtrato, binari risolti da PATH assoluto,
+timeout, hook/filtri dei dati disabilitati e TLS verificato. Policy HEAD e storia
+sono controlli conservativi: SQLite, binari, script/configurazioni e alcuni
+pattern di credenziali riconoscibili bloccano il percorso automatico. Non è uno
+scanner universale di segreti: la revisione completa dei testi resta necessaria.
+Nessun force, stash, reset hard o aggiramento delle protezioni remote.
+
+L'audit automatico della storia è limitato a 128 commit raggiungibili e 64 MiB
+di blob unici; richiede manifest compatibile e identità costante anche nei
+commit storici. Storia più grande, priva di manifest o contaminata blocca il
+push e richiede una procedura esplicita: non viene riscritta automaticamente.
+La preview distingue il controllo HEAD dall'audit imposto prima del push.
+
+La validazione ricalcola struttura, eventi, grafo e sintesi. Correlazioni tramite
+link, componenti tipizzate, alias, fonti, sintesi ed eventi della stessa domanda
+producono `needs_decision`. Limite: 512 percorsi cambiati per ramo. La chiave di
+revisione copre digest B/L/R/C e perimetro; senza attestazione umana esatta non si
+pubblica il candidato correlato. Nessun modello è avviato da questa analisi e la
+heuristica non prova assenza di contraddizioni semantiche.
+
+Per conflitti testuali modificare soltanto la copia conservata indicata nel
+journal. Dopo la revisione, ottenere il digest con:
+
+```powershell
+python .graph/teseo_sync.py --vault "C:\dati\Vault" --candidate "C:\dati\Vault\.teseo\local\git-candidates\UUID"
+```
+
+Inserire digest e conferma nella UI. Il servizio controlla appartenenza della
+copia, parent, assenza di marker, immutabilità e gate; se occorre, richiede anche
+la chiave della revisione semantica. Remote avanzato invalida quella risoluzione.
+Non vengono accettati upload di file arbitrari e non si modifica il vault vivo
+per risolvere un conflitto remoto.
+
+Massimo tre push: remoto avanzato produce nuova integrazione; policy o auth
+fermano il ciclo. Dopo conferma persa, verifica dell'OID sul remoto anche dopo
+l'ultimo tentativo. PR mode pubblica soltanto `codex/teseo-<operation_id>` e
+restituisce `needs_approval` e link confronto: apertura/merge PR sono manuali,
+il branch condiviso non viene dichiarato aggiornato. Il primo rilascio non
+adotta automaticamente il merge futuro della PR.
+
+Push riuscito e modifica locale successiva producono
+`published_pending_local_adoption`: OID conservato, nessun altro push e nessun
+overwrite. Ripresa verifica HEAD/index/byte, fast-forward, grafo e proiezione;
+solo allora `converged`. Il journal registra operation/checkpoint→OID. Le risposte
+consolidate mostrano pubblicazione attestata dal journal locale; nei clone che
+non hanno quella ricevuta resta non verificata. Il ricevitore è il passo 7.
+
+[Verifiche ed evidenze ECC](evidence/step-6/verification.md). Test Git su remoti
+bare locali; uno smoke GitHub dei dati richiede la scelta di un repository dati
+specifico. Non usare il repository del kit per provare la pubblicazione dei vault.

@@ -1,0 +1,6 @@
+{
+  "text": "Pubblicazione Git dei dati\n\nRevisiona la selezione prima di pubblicare. Git e gh usano le credenziali locali: non inserire token o password qui. Visibilità del repository, autore dei commit e permesso di push sono verifiche distinte.\n\nStato Git aggiornato. Nessuna pubblicazione avviata dalla lettura.\n\nAggiorna stato Git\n\nStato: unconfigured\n\nAutenticazione e autorizzazione al push: delegate a Git/gh locali; nessuna credenziale acquisita dalla dashboard.\n\nCollega un repository dati esistente con remote origin e branch scelto, poi revisiona la preview.\n\nBase condivisa B\nnon disponibile\nCheckpoint locale L\nnon disponibile\nRevisione remota R\nnon disponibile\nCandidato integrato C\nnon disponibile\n{\n  \"configured\": false,\n  \"state\": \"unconfigured\",\n  \"head\": null,\n  \"branch\": null,\n  \"operations\": [],\n  \"automatic\": false,\n  \"authentication\": \"delegated_to_git; not_attested\",\n  \"git_error\": {\n    \"code\": \"git_repository_required\",\n    \"message\": \"Richiesto un clone dati con directory .git propria\",\n    \"path\": null\n  }\n}",
+  "hasInitializeForm": false,
+  "hasPublishForm": false,
+  "overflow": false
+}

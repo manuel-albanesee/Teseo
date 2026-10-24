@@ -23,6 +23,7 @@ PAGE = """<!doctype html>
 <details><summary>Operazioni persistenti e recovery</summary><button id="list-operations" type="button">Leggi operazioni del vault</button><div id="operation-list"></div></details>
 <details><summary>Cicli ingest e lint</summary><div id="skill-panel"></div><button id="skill-dispatch" type="button">Ricontrolla coda</button></details>
 <details><summary>Risposte e decisioni condivise</summary><div id="shared-panel"></div></details>
+<details><summary>Pubblicazione Git dei dati</summary><div id="sync-panel"></div></details>
 <nav aria-label="Viste del vault"><button data-view="graph" aria-pressed="true">Grafo</button><button data-view="ontology" aria-pressed="false">Ontologia</button><button data-view="diagnostics" aria-pressed="false">Diagnostica</button></nav>
 <section id="graph" aria-label="Grafo">
 <form id="filters" class="toolbar"><div><label for="type">Tipo</label><select id="type" disabled><option value="">Tutti i tipi</option></select></div>

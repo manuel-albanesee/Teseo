@@ -79,7 +79,8 @@ class VaultRegistry:
                                  "shared_state": compatibility.mode == 'compatible',
                                  "ontology_apply": compatibility.mode == 'compatible' and os.name == 'nt',
                                  "ontology_apply_automatic": False, "external_writer_exclusion": False,
-                                 "write_notes": False, "sync": False},
+                                 "write_notes": False, "sync": compatibility.mode == 'compatible',
+                                 "sync_automatic": False},
                 "content_revision": None, "graph_generation": None}
 
     def attach(self, value):

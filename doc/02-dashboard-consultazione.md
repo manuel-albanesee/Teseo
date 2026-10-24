@@ -188,3 +188,9 @@ Endpoint relativi a `/api/v1/vaults/{id}`, disponibili sui vault compatibili:
 Le POST richiedono sessione, Origin e CSRF. Stato archiviato, applicazione alle
 note e pubblicazione hanno indicatori distinti. La preview non seleziona righe
 implicitamente e non apre memoria personale. Contratti e limiti nel [passo 5](05-stato-condiviso.md).
+
+La sezione «Pubblicazione Git dei dati» aggiunge preview, inizializzazione locale,
+configurazione, publish e resolve espliciti. GET `/sync/status` resta readonly.
+Credenziali delegate a Git locale; nessun token inserito nel browser. Pubblicazione
+e adozione del candidato hanno stati distinti; il [passo 6](06-pubblicazione-github.md)
+descrive corpi API, privacy, conflitti e limiti del primo rilascio.

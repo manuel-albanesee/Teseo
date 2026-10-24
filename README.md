@@ -367,6 +367,15 @@ esplicito: note, fonti e DB personali restano invariati. L'esito indica quando
 premere **Aggiorna vista**. **Arresta servizio** o Ctrl+C chiudono il listener e
 attendono i worker; chiudere solo la scheda lascia il processo attivo.
 
+Nei vault compatibili sono disponibili anche cicli ingest/lint con ricevute e
+apply manuale, risposte condivise con migrazione selettiva e **Pubblicazione Git
+dei dati**. Il repository dati è distinto da questo kit: revisiona la preview,
+configura branch e visibilità prima del ciclo, poi pubblica un UUID validato.
+Credenziali delegate a Git locale; note correlate e conflitti richiedono revisione.
+La modalità PR propone un branch: apertura e merge restano manuali. Nessuna
+pubblicazione continuativa o applicazione automatica viene attivata.
+Contratti, recupero e limiti nel [passo 6](doc/06-pubblicazione-github.md).
+
 Il launcher viene distribuito anche dall'installazione ordinaria. Nei vault
 legacy l'attach verifica cartella e compatibilità, ma consultazione del grafo
 versionato e rebuild via servizio richiedono un manifest compatibile: non esiste

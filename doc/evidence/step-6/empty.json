@@ -1,0 +1,11 @@
+{
+  "viewport": [
+    1440,
+    900
+  ],
+  "text": "Pubblicazione Git dei dati\n\nRevisiona la selezione prima di pubblicare. Git e gh usano le credenziali locali: non inserire token o password qui. Visibilità del repository, autore dei commit e permesso di push sono verifiche distinte.\n\nStato Git aggiornato. Nessuna pubblicazione avviata dalla lettura.\n\nAggiorna stato Git\n\nStato: unconfigured\n\nAutenticazione e autorizzazione al push: delegate a Git/gh locali; nessuna credenziale acquisita dalla dashboard.\n\nCollega un repository dati esistente con remote origin e branch scelto, poi revisiona la preview.\n\nBase condivisa B\nnon disponibile\nCheckpoint locale L\nnon disponibile\nRevisione remota R\nnon disponibile\nCandidato integrato C\nnon disponibile\n{\n  \"configured\": false,\n  \"state\": \"unconfigured\",\n  \"head\": null,\n  \"branch\": null,\n  \"operations\": [],\n  \"automatic\": false,\n  \"authentication\": \"delegated_to_git; not_attested\",\n  \"git_error\": {\n    \"code\": \"git_repository_required\",\n    \"message\": \"Richiesto un clone dati con directory .git propria\",\n    \"path\": null\n  }\n}\nCollega o inizializza il repository dati\nPubblica un checkpoint validato\nUUID dell’operazione ingest/lint completata\n\nLa pubblicazione conserva il checkpoint locale se rete, autenticazione o policy bloccano il push. Prima di proseguire sospendi editor e hook che scrivono nel vault.\n\nHo sospeso gli scrittori esterni e autorizzo la pubblicazione del checkpoint e l’adozione locale del candidato validato.\nChiave di riconciliazione semantica · solo dopo revisione del perimetro mostrato\nHo revisionato le note e fonti correlate del candidato e confermo la decisione associata alla chiave indicata.\nSHA-256 del candidato risolto · restituito dal comando locale di revisione\nHo revisionato il candidato isolato risolto e confermo il digest indicato. Nessun file viene caricato dalla dashboard.\nPubblica operazione validataRiprendi candidato salvato\n\nRiprendi usa il candidato già registrato nel journal. Conflitti sui contenuti richiedono una revisione esplicita; non vengono caricati file arbitrari.",
+  "initAvailable": true,
+  "configureDisabled": true,
+  "publishDisabled": true,
+  "overflow": false
+}

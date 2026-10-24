@@ -21,6 +21,7 @@ from .ontology_apply import ApplyService
 from .operations import SkillCoordinator
 from .adapters import default_adapters
 from .shared_service import SharedService
+from .sync_service import SyncService
 
 MAX_BODY_BYTES = 16 * 1024
 
@@ -36,6 +37,7 @@ class DashboardServer(ThreadingHTTPServer):
         self.applies = ApplyService(self.registry, self.previews)
         self.skills = SkillCoordinator(self.registry, default_adapters())
         self.shared = SharedService(self.registry)
+        self.sync = SyncService(self.registry)
         self.operations.note_activity = self.applies.active
         self.session_token = secrets.token_urlsafe(32)
         self.csrf_token = secrets.token_urlsafe(32)
@@ -235,6 +237,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self.server.request_stop()
                 return
             parts = target.path.split("/")
+            if len(parts)==7 and parts[1:4]==['api','v1','vaults'] and parts[5]=='sync':
+                method={'preview':self.server.sync.preview,'initialize':self.server.sync.initialize,'configure':self.server.sync.configure,
+                        'publish':self.server.sync.publish,'resolve':self.server.sync.resolve}.get(parts[6])
+                if method:
+                    self._reply(200,method(parts[4],body))
+                    return
             if len(parts)==6 and parts[1:4]==['api','v1','vaults'] and parts[5]=='answers':
                 self._reply(201,self.server.shared.record(parts[4],body))
                 return
@@ -290,6 +298,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     raise ValueError
                 parameters = {key: values[0] for key, values in raw.items()}
                 if parts[1:4] == ["api", "v1", "vaults"]:
+                    if len(parts)==7 and parts[5:]==['sync','status']:
+                        self._data_reply(self.server.sync.status(parts[4],parameters))
+                        return
                     if len(parts) == 6:
                         reader = {"status": self.server.read_api.status, "graph": self.server.read_api.graph,
                                   "ontology": self.server.read_api.ontology,
@@ -337,6 +348,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                       'migration_invalid': 422, 'invalid_migrations': 400, 'shared_mapping_unavailable': 422,
                       'recovery_required': 409, 'recovery_conflict': 409}.get(error.code, status)
             status = {'invalid_receipt':403,'receipt_conflict':409,'receipt_manifest_mismatch':409}.get(error.code,status)
+            if error.code.startswith(('sync_','git_')):
+                status=422 if error.code in ('sync_request','sync_config','sync_consent','sync_exclusion','git_invalid_remote','git_invalid_selection','git_repository_required') else 409
             status = {'invalid_response_ids':422,'answer_conflict':409,'answer_not_supported':422,'event_write_forbidden':422,
                 'event_pending':409,'event_collision':409,'shared_heads_stale':409,'legacy_preview_stale':409,
                 'shared_confirmation_required':422,'legacy_missing':404,'legacy_invalid':422,'invalid_event':422,

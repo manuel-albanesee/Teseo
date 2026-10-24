@@ -82,7 +82,8 @@ SHARED_SCRIPT = r"""
        element('h4','Risposte registrate',stateView);const answers=Array.isArray(value.answers)?value.answers:[];
        if(!answers.length)element('p','Nessuna risposta condivisa registrata. La memoria personale non è consultata.',stateView);
        for(const answer of answers.slice(0,200)){const detail=element('details',undefined,stateView);element('summary',bounded(answer.entity_id||answer.answer_id,100)+' · '+bounded(answer.state||'archived',60),detail);
-         element('p','Registrata: sì · Applicata alle note: '+(answer.applied===true?'sì, checkpoint verificato':answer.applied===null?'storica, da verificare':'non attestata')+' · Pubblicata: non verificato (publisher del passo 6).',detail);json(detail,answer);}
+         const publication=answer.publication==='published'&&typeof answer.published_oid==='string'?'sì, OID '+bounded(answer.published_oid,128)+' · attestazione del journal locale':'non verificata';
+         element('p','Registrata: sì · Applicata alle note: '+(answer.applied===true?'sì, checkpoint verificato':answer.applied===null?'storica, da verificare':'non attestata')+' · Pubblicata: '+publication+'.',detail);json(detail,answer);}
        if(answers.length>200)element('p','Visualizzate le prime 200 risposte.',stateView);
        const previous=question.value;question.replaceChildren(new Option('Nuova domanda',''));for(const item of (value.questions||[]).slice(0,200)){if(item.question_id)question.append(new Option(bounded(item.text||item.question_text||item.question_id,200),item.question_id));}if([...question.options].some(option=>option.value===previous))question.value=previous;
        questionText.disabled=!!question.value;questionText.required=!question.value;
@@ -97,7 +98,7 @@ SHARED_SCRIPT = r"""
          if(conflict.kind==='answer.state')element('p','Accetta la revisione causale, poi esegui un nuovo lint sugli UUID interessati per attestare le note risolte.',section);
          decisionForm({...conflict,question_id:id,heads},index,section);});
        if(value.pending&&(!Array.isArray(value.pending)||value.pending.length)){element('p','Eventi pending: acquisisci i parent mancanti prima di considerarli applicati.',stateView);json(stateView,value.pending);}
-       element('p','Pubblicazione: non verificata. L’import aggiorna la proiezione locale e non esegue un push.',stateView).className='hint';
+       element('p','La pubblicazione è attestata per risposta dal journal locale quando disponibile; negli altri clone resta da verificare. L’import aggiorna la proiezione locale e non esegue un push.',stateView).className='hint';
        if(showMessage)message.textContent='Stato condiviso aggiornato.';
      }
      refreshDisabled();request('Lettura dello stato condiviso…',read);

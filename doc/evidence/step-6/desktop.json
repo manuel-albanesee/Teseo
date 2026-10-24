@@ -1,0 +1,11 @@
+{
+  "viewport": [
+    1440,
+    900
+  ],
+  "state": "converged",
+  "error": "sync_unvalidated: Operazione non validata per la pubblicazione · Rileggi lo stato Git. In caso di esito incerto riprendi la stessa richiesta.",
+  "keyboardResume": true,
+  "labels": true,
+  "overflow": false
+}

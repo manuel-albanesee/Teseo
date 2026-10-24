@@ -27,8 +27,33 @@ a generazioni restano prerequisiti per attivare la dashboard e le automazioni.
 | 3 | Parser/serializer (3.1), preview (3.2), form UI (3.3), apply manuale locale e recovery (3.4) disponibili; automatico disabilitato, mapping pagine/eventi al passo 5 |
 | 4 | Registry/coda/ricevute (4.1), handoff (4.2), pipeline/manifest/apply manuale (4.3), adapter e UI (4.4) disponibili; automazione nativa non verificata, fallback manuale per tre client |
 | 5 | 5.1–5.4 disponibili: eventi immutabili/DAG, migrazione selettiva, consolidamento UUID e checkpoint, UI conflitti/rinvii e ripristino documentato; publisher al passo 6 |
-| 6 | Staging Git isolato e attribuzione precisa obbligatori prima del push dati |
+| 6 | Publisher esplicito disponibile: onboarding, allowlist, checkpoint, integrazione isolata, gate/riconciliazione, push/recovery e UI; creazione remota e apertura PR manuali, automatico disabilitato |
 | 7 | Apply automatico subordinato a recovery e gate Windows; rilevamento può precederlo |
+
+## Incrementi 21–24 — publisher Git dei dati
+
+`835c970`: onboarding locale, allowlist, checkpoint preciso e integrazione
+isolata (6.1–6.2). `4872246`: gate strutturali, grafo/sintesi e revisione causale
+delle note correlate (6.3). `2861532`: journal, mapping OID, push/retry, recovery
+delle conferme perse, risoluzione e adozione locale protetta (6.4).
+
+6.5 aggiunge API protette, pannello UI, inizializzazione locale con preview,
+policy diretta o branch proposto per PR, indicatori separati di applicazione e
+pubblicazione. Apertura e merge PR restano manuali; nessun receiver o ciclo
+automatico attivato. Il repository dati è distinto dal kit.
+
+Due clone e remoto bare verificano modifiche disgiunte, conflitti sulla stessa
+nota, correlazioni semantiche, risoluzione revisionata e fonti nuove selettive.
+Test di recovery coprono commit prima del journal, timeout dell'ultimo push,
+ack perso in modalità PR e scrittura esterna dopo push. Storia privata o con
+credenziali riconoscibili blocca il push, anche se rimossa da HEAD.
+
+UI reale emulata a 1440×900 e 390×844: label, Enter, consensi, errori e privacy;
+nessun overflow, controlli almeno 44 px. Installer finale superato. Risultati
+completi, metriche e limiti nelle [evidenze ECC](evidence/step-6/verification.md).
+Smoke GitHub dei dati non svolto: richiede un repository dati esplicitamente
+scelto. Ogni push di questo sviluppo riguarda soltanto il branch del kit già
+autorizzato; nessun merge e branch principale intatto. Prossimo: passo 7.
 
 ## Incrementi 17–20 — stato condiviso completo
 
