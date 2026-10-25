@@ -40,6 +40,13 @@ class Repository:
 
 
 class Service(unittest.TestCase):
+    def test_status_remains_readable_with_missing_schema_during_receive(self):
+        service=self.service
+        def unavailable(_vault):
+            raise ContractError('schema_missing','Schema temporarily absent')
+        service.registry=type('Registry',(),{'root':staticmethod(unavailable),'operation_root':lambda _,v:self.root})()
+        self.assertFalse(service.status(self.vault)['configured'])
+
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory(dir=Path.cwd());self.addCleanup(self.temp.cleanup)
         self.root=Path(self.temp.name);self.vault=str(uuid4());(self.root/'wiki').mkdir();(self.root/'.teseo').mkdir()

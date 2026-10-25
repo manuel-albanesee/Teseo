@@ -34,6 +34,8 @@ class SharedService:
         return root
 
     def _readable(self, root):
+        from .storage import assert_receiver_complete
+        assert_receiver_complete(root)
         # Awaiting a client may legitimately collect new answers. Only partially
         # applied note candidates make current shared state unsafe to read.
         path = root / '.teseo/local/operations.sqlite'

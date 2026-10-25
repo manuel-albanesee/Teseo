@@ -75,10 +75,16 @@ class SyncService:
 
     def status(self,vault_id,parameters=None):
         if parameters:raise ContractError('invalid_parameters','Parametri sync non supportati')
-        root=self.registry.root(vault_id);path=self._path(root)
+        try:root=self.registry.root(vault_id)
+        except ContractError:
+            if not hasattr(self.registry,'operation_root'):raise
+            root=self.registry.operation_root(vault_id)
+        path=self._path(root)
         result={'configured':False,'state':'unconfigured','head':None,'branch':None,'operations':[],
                 'automatic':False,'authentication':'delegated_to_git; not_attested'}
         try:
+            from .storage import assert_receiver_complete
+            assert_receiver_complete(root)
             git=self._repo(root).inspect();result.update(git=git,head=git['head'],branch=git['branch'])
         except ContractError as error:result['git_error']=error.as_dict()
         if not path.exists():return result
