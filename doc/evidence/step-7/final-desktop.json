@@ -1,0 +1,10 @@
+{
+  "viewport": [
+    1440,
+    900
+  ],
+  "label": "Valida e applica candidato",
+  "applyDisabled": true,
+  "consent": false,
+  "overflow": false
+}

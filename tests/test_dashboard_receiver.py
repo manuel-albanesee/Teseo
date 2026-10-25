@@ -238,6 +238,7 @@ class ReceiverTests(unittest.TestCase):
         record = self.receiver._load(self.root)
         self.assertIsNone(record['candidate'])
         self.assertIsNone(record['candidate_digest'])
+        self.assertIsNone(record['preview'])
 
     def test_terminal_receive_with_owned_index_lock_still_reports_recovery(self):
         self.configure()

@@ -62,7 +62,8 @@ class ReceiverApplyService:
         if body['exclusive_confirmed'] is not True:
             raise ContractError('receiver_confirmation','Sospendere editor, client e hook esterni; revisionare il candidato prima dell’import manuale')
         _oid(body['expected_head']);_oid(body['pending_oid'])
-        if not isinstance(body['expected_digest'],str) or len(body['expected_digest'])!=64:
+        if (not isinstance(body['expected_digest'],str) or len(body['expected_digest'])!=64
+            or any(char not in '0123456789abcdef' for char in body['expected_digest'])):
             raise ContractError('receiver_request','Digest candidato non valido')
         if recovery and body['action'] not in ('finish','rollback'):raise ContractError('receiver_request','Scegliere finish oppure rollback')
         if os.name!='nt':raise ContractError('apply_platform_unavailable','Ricezione manuale verificata soltanto su Windows locale')
@@ -104,6 +105,9 @@ class ReceiverApplyService:
                 or pending.get('last_seen_remote_oid')!=body['pending_oid'] or pending['candidate']['oid']!=body['pending_oid']
                 or pending['base_head']!=body['expected_head'] or pending['candidate_digest']!=body['expected_digest']):
                 raise ContractError('receiver_stale','Rileggere il candidato e i suoi input prima dell’import')
+            review=pending.get('preview')
+            if not review or review.get('truncated') is not False or review.get('complete') is not True:
+                raise ContractError('receiver_preview_incomplete','Preview troncata o assente: revisionare il candidato completo con strumenti locali')
             config=self.receiver._config(root)
             if config!=pending['config'] or self.receiver._publishing(root):raise ContractError('sync_pending','Configurazione o pubblicazione pendenti')
             repo=self.sync._repo(root);self.sync._identity(repo,config)
@@ -165,7 +169,7 @@ class ReceiverApplyService:
         with self.sync._db(root) as db:db.execute('UPDATE config SET data=? WHERE id=1',(canonical_json(config),))
         pending=self.receiver._load(root)
         fresh=pending.get('update_event')!=update
-        pending.update(state='current' if action=='finish' else 'idle',last_applied_oid=desired_oid,
+        pending.update(state='current' if action=='finish' else 'idle',last_applied_oid=desired_oid,preview=None,
             pending_oid=None if action=='finish' else record['R'],update_event=update,revision=pending.get('revision',0)+int(fresh))
         if action=='rollback':pending.update(candidate=None,candidate_digest=None,operation_id=None,base_head=None,base_digest=None)
         self.receiver._save(root,pending)

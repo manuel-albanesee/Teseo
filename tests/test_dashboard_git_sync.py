@@ -1,6 +1,9 @@
 """ECC TDD: publication primitives exercise real temporary Git repositories."""
 import hashlib
+import os
 from pathlib import Path
+import shutil
+import stat
 import subprocess
 import tempfile
 import time
@@ -12,6 +15,52 @@ from kit.dashboard.contracts import ContractError, DEFAULT_SHARED_PATHS, canonic
 from kit.dashboard.storage import capture_snapshot
 from kit.dashboard.git_sync import (GitRepository, validate_remote, initialize_data_repository,
                                     preview_data_repository, github_repository_url, _invoke, _oid, _branch)
+
+
+def _remove_fixture(folder):
+    """Bound retries, including Git's read-only objects, without tempfile recursion."""
+    folder = Path(folder).resolve()
+    if folder.parent != Path.cwd().resolve() or not folder.name.startswith('teseo-git-'):
+        raise ValueError('Unexpected Git fixture cleanup path')
+
+    def read_only(function, path, error):
+        failure = error[1]
+        if not isinstance(failure, PermissionError) or os.stat(path).st_mode & stat.S_IWRITE:
+            raise failure
+        os.chmod(path, stat.S_IWRITE | stat.S_IREAD)
+        function(path)
+
+    for attempt in range(21):
+        if not folder.exists():
+            return
+        try:
+            shutil.rmtree(folder, onerror=read_only)
+            return
+        except PermissionError:
+            if attempt == 20:
+                raise
+            time.sleep(.25)
+
+
+class GitFixtureCleanup(unittest.TestCase):
+    def test_transient_scanner_lock_is_retried_without_hiding_failure(self):
+        with tempfile.TemporaryDirectory(prefix='teseo-git-', dir=Path.cwd()) as folder:
+            with mock.patch('shutil.rmtree', side_effect=[PermissionError('scanner lock'), None]) as remove, \
+                 mock.patch('time.sleep') as sleep:
+                _remove_fixture(folder)
+            self.assertEqual(remove.call_count, 2)
+            sleep.assert_called_once_with(.25)
+
+    def test_permanent_lock_stops_after_bounded_retries_and_preserves_fixture(self):
+        with tempfile.TemporaryDirectory(prefix='teseo-git-', dir=Path.cwd()) as folder:
+            failure = PermissionError('persistent lock')
+            with mock.patch('shutil.rmtree', side_effect=failure) as remove, mock.patch('time.sleep') as sleep:
+                with self.assertRaises(PermissionError) as raised:
+                    _remove_fixture(folder)
+            self.assertIs(raised.exception, failure)
+            self.assertEqual(remove.call_count, 21)
+            self.assertEqual(sleep.call_count, 20)
+            self.assertTrue(Path(folder).exists())
 
 
 class GitPolicy(unittest.TestCase):
@@ -110,9 +159,9 @@ class GitPolicy(unittest.TestCase):
 
 class GitSync(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory(prefix='teseo-git-', dir=Path.cwd())
+        self.fixture = Path(tempfile.mkdtemp(prefix='teseo-git-', dir=Path.cwd()))
         self.addCleanup(self.cleanup_fixture)
-        self.root = Path(self.tmp.name) / 'vault'
+        self.root = self.fixture / 'vault'
         self.root.mkdir()
         self.git('init', '-b', 'shared')
         self.git('config', 'user.name', 'Fixture')
@@ -132,16 +181,7 @@ class GitSync(unittest.TestCase):
         self.repo = GitRepository(self.root, allow_local_remote=True)
 
     def cleanup_fixture(self):
-        # Windows scanners can briefly hold a directory after git exits. A
-        # bounded retry preserves cleanup failures rather than ignoring them.
-        for attempt in range(21):
-            try:
-                self.tmp.cleanup()
-                return
-            except PermissionError:
-                if attempt == 20:
-                    raise
-                time.sleep(.25)
+        _remove_fixture(self.fixture)
 
     def git(self, *args, cwd=None):
         result = subprocess.run(['git', '-c', 'core.autocrlf=false', *args], cwd=cwd or self.root,
@@ -210,8 +250,8 @@ class GitSync(unittest.TestCase):
         self.git('rm', '--', '.graph/domande.sqlite')
         self.git('commit', '-m', 'removed from current tree')
         self.assertFalse(self.repo.inspect()['tracked_violations'])
-        bare = Path(self.tmp.name) / 'remote.git'
-        self.git('init', '--bare', str(bare), cwd=Path(self.tmp.name))
+        bare = self.fixture / 'remote.git'
+        self.git('init', '--bare', str(bare), cwd=self.fixture)
         with self.assertRaises(ContractError) as raised:
             self.repo.push(self.repo.head(), str(bare), 'shared')
         self.assertEqual(raised.exception.code, 'git_history_policy')
@@ -239,7 +279,7 @@ class GitSync(unittest.TestCase):
             self.repo.inspect()
 
     def test_only_vetted_global_credential_helper_and_author_are_inherited(self):
-        home = Path(self.tmp.name) / 'home'
+        home = self.fixture / 'home'
         home.mkdir()
         (home / '.gitconfig').write_text('[user]\n name = Global User\n email = global@example.invalid\n'
                                        '[credential]\n helper = manager\n', encoding='utf-8')
@@ -255,7 +295,7 @@ class GitSync(unittest.TestCase):
         self.assertIsNone(repo.credential_helper)
 
     def test_initialization_is_explicit_and_only_previewed_data_is_committed(self):
-        target = Path(self.tmp.name) / 'fresh'
+        target = self.fixture / 'fresh'
         target.mkdir()
         (target / '.teseo').mkdir()
         (target / '.teseo/project.json').write_bytes(canonical_json(self.manifest))
@@ -285,8 +325,8 @@ class GitSync(unittest.TestCase):
         base = self.repo.head()
         (self.root / 'wiki/A.md').write_text('local\n', encoding='utf-8')
         local = self.repo.checkpoint(str(uuid4()), base, self.hashes('wiki/A.md'))
-        other = Path(self.tmp.name) / 'other'
-        self.git('clone', str(self.root), str(other), cwd=Path(self.tmp.name))
+        other = self.fixture / 'other'
+        self.git('clone', str(self.root), str(other), cwd=self.fixture)
         self.git('config', 'user.name', 'Other', cwd=other)
         self.git('config', 'user.email', 'other@example.invalid', cwd=other)
         self.git('checkout', '--detach', base, cwd=other)
@@ -301,8 +341,8 @@ class GitSync(unittest.TestCase):
         self.assertTrue((Path(candidate['root']) / 'wiki/B.md').is_file())
         self.assertTrue(self.repo.is_ancestor(local, candidate['oid']))
         self.assertTrue(self.repo.is_ancestor(remote, candidate['oid']))
-        bare = Path(self.tmp.name) / 'remote.git'
-        self.git('init', '--bare', str(bare), cwd=Path(self.tmp.name))
+        bare = self.fixture / 'remote.git'
+        self.git('init', '--bare', str(bare), cwd=self.fixture)
         self.repo.push(candidate['oid'], str(bare), 'shared')
         self.repo.adopt(local, candidate)
         self.assertEqual(self.repo.head(), candidate['oid'])
@@ -315,8 +355,8 @@ class GitSync(unittest.TestCase):
 
     def test_remote_raw_mutation_and_non_fast_forward_push_are_preserved(self):
         base = self.repo.head()
-        other = Path(self.tmp.name) / 'other'
-        self.git('clone', str(self.root), str(other), cwd=Path(self.tmp.name))
+        other = self.fixture / 'other'
+        self.git('clone', str(self.root), str(other), cwd=self.fixture)
         self.git('config', 'user.name', 'Other', cwd=other)
         self.git('config', 'user.email', 'other@example.invalid', cwd=other)
         (other / 'raw/source.txt').write_text('remote raw mutation\n', encoding='utf-8')
@@ -327,8 +367,8 @@ class GitSync(unittest.TestCase):
             self.repo.integrate(base, remote)
         self.assertEqual(raised.exception.code, 'git_immutable_changed')
         self.assertEqual(self.repo.head(), base)
-        bare = Path(self.tmp.name) / 'remote.git'
-        self.git('init', '--bare', str(bare), cwd=Path(self.tmp.name))
+        bare = self.fixture / 'remote.git'
+        self.git('init', '--bare', str(bare), cwd=self.fixture)
         self.git('push', str(bare), 'HEAD:refs/heads/shared', cwd=other)
         (self.root / 'wiki/A.md').write_text('local\n', encoding='utf-8')
         local = self.repo.checkpoint(str(uuid4()), base, self.hashes('wiki/A.md'))
@@ -342,8 +382,8 @@ class GitSync(unittest.TestCase):
         base = self.repo.head()
         (self.root / 'wiki/A.md').write_text('local\n', encoding='utf-8')
         local = self.repo.checkpoint(str(uuid4()), base, self.hashes('wiki/A.md'))
-        other = Path(self.tmp.name) / 'other'
-        self.git('clone', str(self.root), str(other), cwd=Path(self.tmp.name))
+        other = self.fixture / 'other'
+        self.git('clone', str(self.root), str(other), cwd=self.fixture)
         self.git('config', 'user.name', 'Other', cwd=other)
         self.git('config', 'user.email', 'other@example.invalid', cwd=other)
         self.git('checkout', '--detach', base, cwd=other)

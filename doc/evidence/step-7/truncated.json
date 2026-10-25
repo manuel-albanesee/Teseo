@@ -1,0 +1,16 @@
+{
+  "viewport": [
+    390,
+    844
+  ],
+  "state": "pending",
+  "truncated": true,
+  "complete": false,
+  "diffLength": 20000,
+  "warning": true,
+  "consent": true,
+  "applyDisabled": true,
+  "xssExecuted": false,
+  "scriptDisplayedAsText": true,
+  "overflow": false
+}

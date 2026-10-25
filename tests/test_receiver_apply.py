@@ -22,6 +22,21 @@ class Preview(unittest.TestCase):
         result = _preview(base, large)
         self.assertLessEqual(len(result['diff']), 20000)
         self.assertTrue(result['truncated'])
+        from kit.dashboard.contracts import canonical_json
+        non_nfc=Snapshot((SnapshotFile('wiki/Anna.md','cafe\u0301'.encode('utf-8')),))
+        result=_preview(base,non_nfc)
+        self.assertFalse(result['complete'])
+        canonical_json(result)
+
+
+class Request(unittest.TestCase):
+    def test_digest_must_be_lowercase_hex_of_the_canonical_length(self):
+        body = dict(exclusive_confirmed=True, expected_head='a'*40, pending_oid='b'*40)
+        for digest in ('Z'*64, 'A'*64, 'a'*63, 'a'*65, 7, None):
+            with self.subTest(digest=digest):
+                with self.assertRaises(ContractError) as error:
+                    ReceiverApplyService._confirm(dict(body, expected_digest=digest))
+                self.assertEqual(error.exception.code, 'receiver_request')
 
 
 class Receive(unittest.TestCase):
@@ -60,6 +75,7 @@ class Receive(unittest.TestCase):
         self.assertNotEqual(graph_reference(self.root/'.graph/graph.sqlite').generation,old.generation)
         self.assertEqual(reader.execute('PRAGMA integrity_check').fetchone()[0],'ok')
         self.assertEqual(personal.read_bytes(),b'personal state stays local')
+        self.assertIsNone(self.receiver._load(self.root)['preview'], 'Adopted candidate must not keep a review')
         self.assertEqual(self.service.apply(self.vault, self.body), result)
         self.assertEqual(self.receiver.check(self.vault)['state'], 'up_to_date')
         from kit.dashboard.shared_migration import _connection
@@ -74,6 +90,26 @@ class Receive(unittest.TestCase):
             self.service.apply(self.vault, self.body)
         self.assertEqual(capture_snapshot(self.root).digest, before)
         self.assertEqual(self.fixture.git('rev-parse', 'HEAD', cwd=self.root), self.fixture.base)
+
+    def test_remote_shared_events_and_notes_converge_on_one_revision(self):
+        from kit.dashboard.shared_service import SharedService
+        peer=self.fixture.peer
+        registry=type('Registry',(),{'root':lambda _,v:peer})()
+        SharedService(registry).record(self.vault,dict(question_id=None,question_text='Chi decide?',
+            pages=['Anna'],text='Risposta condivisa ricevuta',idempotency_key='receive-shared-events',share_confirmed=True))
+        self.fixture.git('add','--','.teseo/shared',cwd=peer)
+        self.fixture.git('commit','-m','shared answer',cwd=peer)
+        self.fixture.git('push','origin','team',cwd=peer)
+        pending=self.receiver.check(self.vault)
+        body=dict(exclusive_confirmed=True,expected_head=pending['base_head'],
+                  pending_oid=pending['pending_oid'],expected_digest=pending['candidate_digest'])
+        result=self.service.apply(self.vault,body)
+        self.assertEqual(result['state'],'current',result)
+        state=SharedService(self.fixture.service.registry).answers(self.vault)
+        self.assertEqual(state['content_revision'],result['candidate_digest'])
+        self.assertEqual(state['answers'][0]['text'],'Risposta condivisa ricevuta')
+        self.assertTrue((self.root/'.teseo/local/shared-state.sqlite').is_file())
+        self.assertIn('Ricevuta da remoto',(self.root/'wiki/Anna.md').read_text())
 
     def test_modified_candidate_is_rejected_without_live_changes(self):
         from pathlib import Path
@@ -103,6 +139,29 @@ class Receive(unittest.TestCase):
         self.assertEqual(result['state'], 'recovery_required', result)
         self.assertIn('Salvataggio esterno successivo', (self.root/'wiki/Anna.md').read_text())
         self.assertEqual(self.fixture.git('rev-parse', 'HEAD', cwd=self.root), self.fixture.base)
+
+    def test_rollback_discards_candidate_and_its_review(self):
+        with patch('kit.dashboard.receiver_apply._replace', side_effect=OSError('injected')):
+            self.service.apply(self.vault, self.body)
+        result = self.service.recover(self.vault, dict(self.body, action='rollback'))
+        self.assertEqual(result['state'], 'rolled_back', result)
+        record = self.receiver._load(self.root)
+        self.assertIsNone(record['preview'])
+        self.assertIsNone(record['candidate'])
+        self.assertIsNone(record['candidate_digest'])
+        self.assertEqual(self.fixture.git('rev-parse', 'HEAD', cwd=self.root), self.fixture.base)
+
+    def test_incomplete_review_is_refused_by_the_service_not_only_the_ui(self):
+        for review in (None, dict(files=[], diff='', truncated=True, complete=False)):
+            with self.subTest(review=review):
+                record = self.receiver._load(self.root)
+                record['preview'] = review
+                self.receiver._save(self.root, record)
+                with self.assertRaises(ContractError) as error:
+                    self.service.apply(self.vault, self.body)
+                self.assertEqual(error.exception.code, 'receiver_preview_incomplete')
+                self.assertEqual(capture_snapshot(self.root).digest, self.fixture.before.digest)
+                self.assertEqual(self.fixture.git('rev-parse', 'HEAD', cwd=self.root), self.fixture.base)
 
     def test_terminal_lock_cleanup_replays_without_new_revision(self):
         with patch.object(self.service, '_release', side_effect=OSError('injected')):

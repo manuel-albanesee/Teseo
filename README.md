@@ -376,6 +376,17 @@ La modalità PR propone un branch: apertura e merge restano manuali. Nessuna
 pubblicazione continuativa o applicazione automatica viene attivata.
 Contratti, recupero e limiti nel [passo 6](doc/06-pubblicazione-github.md).
 
+**Ricevi aggiornamenti dal gruppo** aggiunge rilevamento remoto opt-in, pausa
+persistente e controllo immediato. Il processo continua a controllare con la
+scheda chiusa; prepara un candidato isolato e lascia invariato il vault.
+Per adottarlo sospendi editor e hook, revisiona OID e digest, poi conferma
+l'applicazione manuale. Il checkpoint ricostruisce grafo e stato condiviso;
+**Aggiorna vista** carica la nuova generazione. Nessun ingest/lint AI viene
+avviato dal controllo remoto. In caso di interruzione conserva journal e copie
+locali e usa il recovery esplicito; modifiche esterne possono bloccarlo.
+Apply automatico disabilitato: i buffer editor non salvati non sono rilevabili.
+Dettagli, API e limiti nel [passo 7](doc/07-ricezione-automatica.md).
+
 Il launcher viene distribuito anche dall'installazione ordinaria. Nei vault
 legacy l'attach verifica cartella e compatibilità, ma consultazione del grafo
 versionato e rebuild via servizio richiedono un manifest compatibile: non esiste

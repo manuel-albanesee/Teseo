@@ -1,0 +1,64 @@
+{
+  "viewport": [
+    390,
+    844
+  ],
+  "overflow": false,
+  "message": "Stato Git aggiornato. Nessuna pubblicazione avviata dalla lettura.",
+  "receiver": "Rilevamento remoto\n\nRicezione: current · sospesa\n\nUltima revisione remota vista\nb2b1dc09e344a135bbc7995a9f576573b3a6cc42\nUltima revisione applicata\nb2b1dc09e344a135bbc7995a9f576573b3a6cc42\nNovità in attesa\nnon disponibile\nUltimo controllo\n1792895380\nProssimo controllo\nnon disponibile\nHEAD alla preparazione\n450e618e11c80dc5dc9b3670290cda0370743359\nDigest del candidato\nf462b1ee79b02904528742ef45ccfe7a59ed2251d386fd9b2e4cc0e6f5f1197a\n\nVault aggiornato. Usa “Aggiorna” per rileggere grafo e generazione corrente.\n\nModifiche del candidato da revisionare\n[\n  {\n    \"after\": \"40cfabfc05ef5911b640910f363971b31597efde1ac5f86a326fac7ef9fe233a\",\n    \"before\": \"8e3f5208efdc0f0dc84569697697b49964d6c4c4266d745f84b8e0df5b012718\",\n    \"path\": \"wiki/Anna.md\"\n  }\n]\n--- base/wiki/Anna.md\n+++ candidate/wiki/Anna.md\n@@ -1,4 +1,4 @@\n ---\r\n tipo: persona\r\n ---\r\n-Originale\r\n+Aggiornamento remoto per prova UI\r\n\nValidazione e checkpoint della ricezione",
+  "labels": [
+    {
+      "id": "receiver-consent",
+      "labels": 1
+    },
+    {
+      "id": "receiver-exclusive",
+      "labels": 1
+    }
+  ],
+  "targets": [
+    {
+      "id": "receiver-consent",
+      "width": 24,
+      "height": 44
+    },
+    {
+      "id": "receiver-check",
+      "width": 350.3999938964844,
+      "height": 44.400001525878906
+    },
+    {
+      "id": "receiver-resume",
+      "width": 350.3999938964844,
+      "height": 44.400001525878906
+    },
+    {
+      "id": "receiver-pause",
+      "width": 350.3999938964844,
+      "height": 44.400001525878906
+    },
+    {
+      "id": "receiver-exclusive",
+      "width": 24,
+      "height": 44
+    },
+    {
+      "id": "receiver-receive",
+      "width": 350.3999938964844,
+      "height": 44.400001525878906
+    },
+    {
+      "id": "receiver-finish",
+      "width": 350.3999938964844,
+      "height": 44.400001525878906
+    },
+    {
+      "id": "receiver-rollback",
+      "width": 350.3999938964844,
+      "height": 44.400001525878906
+    }
+  ],
+  "animations": 0,
+  "credentials": 0,
+  "privateAbsent": true
+}

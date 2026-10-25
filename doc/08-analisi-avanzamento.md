@@ -28,7 +28,26 @@ a generazioni restano prerequisiti per attivare la dashboard e le automazioni.
 | 4 | Registry/coda/ricevute (4.1), handoff (4.2), pipeline/manifest/apply manuale (4.3), adapter e UI (4.4) disponibili; automazione nativa non verificata, fallback manuale per tre client |
 | 5 | 5.1–5.4 disponibili: eventi immutabili/DAG, migrazione selettiva, consolidamento UUID e checkpoint, UI conflitti/rinvii e ripristino documentato; publisher al passo 6 |
 | 6 | Publisher esplicito disponibile: onboarding, allowlist, checkpoint, integrazione isolata, gate/riconciliazione, push/recovery e UI; creazione remota e apertura PR manuali, automatico disabilitato |
-| 7 | Apply automatico subordinato a recovery e gate Windows; rilevamento può precederlo |
+| 7 | Rilevamento opt-in, staging isolato, adozione manuale Windows e recovery disponibili; UI pausa/ripresa, nessun apply automatico; collaudo integrato e limiti nelle evidenze del passo |
+
+## Passo 7 — rilevamento e adozione manuale
+
+Receiver persistente opt-in con intervallo, jitter, backoff e sospensione dopo
+errore di autenticazione. Candidato remoto isolato; dirty, job pendenti,
+divergenze, rewind e incompatibilità fermano l'adozione. La chiusura del tab
+lascia attivo il servizio; l'arresto ferma il rilevamento.
+
+La ricezione manuale lega il consenso a HEAD, OID e digest, conserva file/index
+nel journal, avanza la ref tramite compare-and-swap e ricostruisce grafo e
+proiezione. Recovery finish/rollback esplicito; scritture esterne inattese
+impediscono il ripristino. `vault.updated` invita a rileggere la vista e non è
+un trigger per pubblicare o eseguire job AI.
+
+Verifiche ed evidenze renderizzate sono raccolte in
+[evidence/step-7](evidence/step-7/verification.md). Il collaudo con un repository
+dati GitHub scelto, editor non cooperanti e client AI autenticati resta distinto
+dalle fixture locali. Nessuna modalità di apply automatico viene qualificata;
+buffer non salvati e salvataggi degli editor richiedono sospensione esplicita.
 
 ## Incrementi 21–24 — publisher Git dei dati
 

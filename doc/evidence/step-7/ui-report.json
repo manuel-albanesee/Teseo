@@ -1,0 +1,25 @@
+{
+  "contract": "contract.md; rilevamento opt-in e adozione manuale separati",
+  "targetViewports": ["1440x900", "390x844"],
+  "accessibility": {
+    "status": "pass",
+    "evidence": "Label checkbox collegate, area label cliccabile, focus desktop visibile e adozione reale con Enter; altezza controlli almeno44px e aria-live. Nessun audit screen reader."
+  },
+  "responsive": {
+    "status": "pass",
+    "evidence": "Viewport emulati e misurati1440x900 e390x844 senza overflow; screenshot mobile ispezionato con testi e pulsanti nella colonna."
+  },
+  "contentStates": {
+    "loading": {"status":"pass","evidence":"loading.json: controllo reale avviato dalla UI, messaggio e pulsante disabilitato."},
+    "empty": {"status":"pass","evidence":"empty.json: idle/sospeso, campi non disponibili e consensi falsi."},
+    "error": {"status":"pass","evidence":"remote-error.json: bare temporaneamente assente, git_invalid_remote visibile, generazione conservata e apply disabilitato."},
+    "partial": {"status":"pass","evidence":"pending.json: preview reale con diff e hash, candidato isolato e generazione precedente conservata."},
+    "success": {"status":"pass","evidence":"success.json: adozione reale con Enter, current e vault.updated; nuova generazione ricaricata."},
+    "permission": {"status":"pass","evidence":"empty/pending/desktop.json: opt-in e consenso di adozione separati, nessuno preselezionato, pulsante adottabile solo dopo consenso."}
+  },
+  "renderedEvidence": [
+    {"viewport":"1440x900","artifact":"desktop.json","observation":"Preview reale, consenso dedicato, pulsante con focus visibile e successiva adozione con Enter."},
+    {"viewport":"390x844","artifact":"mobile.json","observation":"Nessun overflow, label collegate, controlli alti44px, nessuna animazione o campo password."}
+  ],
+  "limits": "Fixture locali senza GitHub dati o editor non cooperanti. Nessun apply automatico. Recovery filesystem coperto nei test, non in ogni stato browser. Nessun audit screen reader o cross-browser."
+}

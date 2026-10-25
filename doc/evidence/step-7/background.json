@@ -1,0 +1,12 @@
+{
+  "observed_without_browser_tab": true,
+  "now": 1792895394,
+  "last_fetch_before_tab_close": 1792895316,
+  "last_fetch_after_tab_close": 1792895380,
+  "enabled": true,
+  "paused": false,
+  "pending_oid": "b2b1dc09e344a135bbc7995a9f576573b3a6cc42",
+  "head": "450e618e11c80dc5dc9b3670290cda0370743359",
+  "base_head": "450e618e11c80dc5dc9b3670290cda0370743359",
+  "private_unchanged": true
+}

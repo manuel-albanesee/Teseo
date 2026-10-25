@@ -11,6 +11,7 @@ SYNC_SCRIPT = r"""
      const mutable=[];
      const bounded=value=>{const text=typeof value==='string'?value:JSON.stringify(value,null,2);return (text||'').slice(0,32000)+((text||'').length>32000?'\n… visualizzazione troncata; non confermare senza revisione completa.':'');};
      const previewComplete=()=>preview&&JSON.stringify(preview,null,2).length<=32000;
+     const receiverPreviewComplete=data=>!!data?.preview&&!data.preview.truncated&&data.preview.complete!==false&&JSON.stringify(data.preview.files||[],null,2).length<=32000&&(data.preview.diff||'').length<=32000;
      const json=(parent,value)=>element('pre',bounded(value),parent);
      const button=(parent,id,title,handler)=>{const input=element('button',title,parent);input.id=id;input.type='button';input.addEventListener('click',handler);mutable.push(input);return input;};
      const field=(parent,id,title,tag='input')=>{const row=element('div',undefined,parent),label=element('label',title,row),input=element(tag,undefined,row);input.id=id;label.htmlFor=id;input.maxLength=4096;mutable.push(input);return input;};
@@ -21,6 +22,7 @@ SYNC_SCRIPT = r"""
      const actions=element('div',undefined,box);actions.className='editor-actions';
      button(actions,'sync-refresh','Aggiorna stato Git',()=>request('Lettura dello stato Git…',()=>read()));
      const view=element('section',undefined,box);view.id='sync-state';view.setAttribute('aria-label','Checkpoint e stato della pubblicazione');
+     const receiverView=element('section',undefined,box);receiverView.id='receiver-state';receiverView.setAttribute('aria-label','Novità remote e candidato da ricevere');
      if(vaultStatus.compatibility!=='compatible'){message.textContent='Vault consultabile in sola lettura. La pubblicazione richiede un manifest compatibile.';request('Lettura dello stato Git…',()=>read());return;}
      const config=element('details',undefined,box);element('summary','Collega o inizializza il repository dati',config);
      const remote=field(config,'sync-remote','Remote Git già configurato');remote.value='origin';remote.readOnly=true;
@@ -63,9 +65,62 @@ SYNC_SCRIPT = r"""
      const resolve=button(publication,'sync-resolve','Riprendi candidato salvato',()=>mutate('resolve'));
      element('p','Riprendi usa il candidato già registrato nel journal. Conflitti sui contenuti richiedono una revisione esplicita; non vengono caricati file arbitrari.',publication).className='hint';
      const resultView=element('section',undefined,box);resultView.id='sync-result';resultView.setAttribute('aria-label','Esito della richiesta di pubblicazione');
+     const receiverSection=element('section',undefined,box);receiverSection.id='receiver-controls';element('h3','Ricevi aggiornamenti dal gruppo',receiverSection);
+     element('p','Il servizio può rilevare novità anche con questa scheda chiusa. Il rilevamento prepara un candidato isolato; applicarlo al vault richiede una conferma manuale.',receiverSection).className='ontology-direction';
+     const receiverConsent=check(receiverSection,'receiver-consent','Autorizzo il controllo periodico del branch dati configurato. Nessuna applicazione automatica al vault.');
+     const receiverActions=element('div',undefined,receiverSection);receiverActions.className='editor-actions';
+     const receiverCheck=button(receiverActions,'receiver-check','Controlla novità ora',()=>receiverAction('check',{}));
+     const receiverResume=button(receiverActions,'receiver-resume','Attiva rilevamento · ogni 60 secondi',()=>receiverAction('resume',{interval_seconds:60}));
+     const receiverPause=button(receiverActions,'receiver-pause','Sospendi rilevamento',()=>receiverAction('pause',{}));
+     element('p','Prima di adottare il candidato sospendi Obsidian, editor e hook che scrivono nel vault. Aggiorna lo stato e revisiona OID, digest, conflitti e validazione qui sopra.',receiverSection).className='hint';
+     const receiverExclusive=check(receiverSection,'receiver-exclusive','Ho sospeso gli scrittori esterni e revisionato il candidato mostrato; autorizzo questa adozione manuale.');
+     const receiveActions=element('div',undefined,receiverSection);receiveActions.className='editor-actions';
+     const receive=button(receiveActions,'receiver-receive','Valida e applica candidato',()=>receiveCandidate());
+     const finish=button(receiveActions,'receiver-finish','Completa ripristino interrotto',()=>receiveCandidate('finish'));
+     const rollback=button(receiveActions,'receiver-rollback','Ripristina checkpoint precedente',()=>receiveCandidate('rollback'));
+     receiverConsent.addEventListener('change',refresh);receiverExclusive.addEventListener('change',refresh);
+     async function receiverAction(action,body){
+       if(action==='resume'&&!receiverConsent.checked)return;
+       return request(action==='check'?'Controllo remoto e preparazione isolata…':'Aggiornamento del rilevamento remoto…',async()=>{const result=await api(path+'/'+action,body);if(!current())return;resultView.replaceChildren();json(resultView,result);receiverExclusive.checked=false;message.textContent='Stato del rilevamento registrato. Il vault richiede un’adozione manuale separata.';await read(false);});
+     }
+     async function receiveCandidate(action){
+       const receiver=snapshot?.receiver;if(!receiverExclusive.checked||!receiver)return;
+       const transaction=snapshot?.receive_transaction;
+       const body={exclusive_confirmed:true,expected_head:action?transaction?.B:receiver.base_head,pending_oid:action?transaction?.R:receiver.pending_oid,expected_digest:action?transaction?.candidate_digest:receiver.candidate_digest,...(action?{action}:{})};
+       return request(action?'Ripristino del checkpoint in corso…':'Validazione e adozione manuale del candidato…',async()=>{receiverExclusive.checked=false;const result=await api(path+(action?'/receive-recover':'/receive'),body);if(!current())return;resultView.replaceChildren();json(resultView,result);receiverExclusive.checked=false;message.textContent='Esito ricezione registrato. Aggiorna il vault per consultare la generazione applicata.';await read(false);});
+     }
+     function renderReceiver(value){
+       receiverView.replaceChildren();element('h3','Rilevamento remoto',receiverView);const data=value.receiver;
+       if(!data){element('p','Stato del rilevamento non disponibile. Aggiorna lo stato Git.',receiverView);return;}
+       element('p','Ricezione: '+bounded(data.state||'non configurato')+(data.paused?' · sospesa':''),receiverView);
+       const labels=[['last_seen_remote_oid','Ultima revisione remota vista'],['last_applied_oid','Ultima revisione applicata'],['pending_oid','Novità in attesa'],['last_fetch_at','Ultimo controllo'],['next_check_at','Prossimo controllo'],['base_head','HEAD alla preparazione'],['candidate_digest','Digest del candidato']];
+       const fields=element('dl',undefined,receiverView);for(const[key,label]of labels){element('dt',label,fields);element('dd',bounded(data[key]??'non disponibile'),fields);}
+       if(data.error)element('p','Controllo non completato: '+bounded(data.error)+'. Conserva il candidato; riprova dopo aver risolto rete, autenticazione o conflitto.',receiverView).className='ontology-direction';
+       if(data.backoff)element('p','Attesa dopo errore: '+bounded(data.backoff),receiverView).className='hint';
+       if(data.update_event)element('p','Vault aggiornato. Usa “Aggiorna” per rileggere grafo e generazione corrente.',receiverView).className='ontology-direction';
+       if(data.pending_oid&&data.candidate_digest)element('p','Il candidato è isolato: le viste del vault restano sulla generazione corrente fino all’adozione confermata.',receiverView).className='hint';
+       if(data.preview){
+         const review=element('section',undefined,receiverView);review.id='receiver-preview';element('h4','Modifiche del candidato da revisionare',review);
+         if(data.preview.files)json(review,data.preview.files);
+         if(typeof data.preview.diff==='string')element('pre',bounded(data.preview.diff),review);
+         if(!receiverPreviewComplete(data))element('p','Preview incompleta o troncata. Revisiona il candidato completo con gli strumenti locali prima di proseguire; l’applicazione da questa vista è disabilitata.',review).className='ontology-direction';
+       }
+       const details=element('details',undefined,receiverView);element('summary','Validazione e checkpoint della ricezione',details);json(details,data);
+       if(value.receive_transaction){element('h4','Transazione locale di ricezione',details);json(details,value.receive_transaction);}
+     }
+     function refreshReceiver(){
+       const data=snapshot?.receiver,transaction=snapshot?.receive_transaction;
+       receiverResume.disabled=busy||!!pending||!receiverConsent.checked||!snapshot?.configured;
+       receiverCheck.disabled=busy||!!pending||!snapshot?.configured;receiverPause.disabled=busy||!!pending||!data?.enabled||data?.paused;
+       const complete=!!data?.pending_oid&&!!data?.base_head&&!!data?.candidate_digest&&receiverPreviewComplete(data);
+       const recovering=data?.state==='recovery_required'||['applying','recovery_required','rebuilding'].includes(transaction?.state);
+       receive.disabled=busy||!!pending||!receiverExclusive.checked||!complete||data?.state!=='pending'||recovering;
+       const recoverable=!!transaction?.B&&!!transaction?.R&&!!transaction?.candidate_digest;
+       finish.disabled=rollback.disabled=busy||!!pending||!receiverExclusive.checked||!recoverable||!recovering;
+     }
      operation.addEventListener('input',refresh);exclusive.addEventListener('change',refresh);
      function head(){return snapshot?.head||snapshot?.local_head||snapshot?.HEAD||snapshot?.git?.head||null;}
-     function refresh(){if(!current())return;for(const item of mutable)item.disabled=busy;configure.disabled=busy||!!pending||!head()||!previewComplete()||!consent.checked||!visibility.value||!branch.value.trim();initialize.disabled=busy||!!pending||!!head()||!previewComplete()||!Array.isArray(preview?.files)||!initializeConsent.checked||!branch.value.trim()||!remoteUrl.value.trim()||!authorName.value.trim()||!authorEmail.value.trim();publish.disabled=busy||pending?.action==='resolve'||!exclusive.checked||!operation.value.trim()||!head()||selectedRaw().length>0&&(!previewComplete()||!consent.checked);resolve.disabled=busy||pending?.action==='publish'||!snapshot?.current_operation?.idempotency_key||!exclusive.checked||!!decisionKey.value.trim()&&!semantic.checked||!!resolutionDigest.value.trim()&&!resolutionConsent.checked;for(const item of [branch,visibility,mode,raw,operation,decisionKey,semantic,resolutionDigest,resolutionConsent,remoteUrl,authorName,authorEmail,initializeConsent])item.disabled=busy||!!pending;previewButton.disabled=busy||!!pending;}
+     function refresh(){if(!current())return;for(const item of mutable)item.disabled=busy;configure.disabled=busy||!!pending||!head()||!previewComplete()||!consent.checked||!visibility.value||!branch.value.trim();initialize.disabled=busy||!!pending||!!head()||!previewComplete()||!Array.isArray(preview?.files)||!initializeConsent.checked||!branch.value.trim()||!remoteUrl.value.trim()||!authorName.value.trim()||!authorEmail.value.trim();publish.disabled=busy||pending?.action==='resolve'||!exclusive.checked||!operation.value.trim()||!head()||selectedRaw().length>0&&(!previewComplete()||!consent.checked);resolve.disabled=busy||pending?.action==='publish'||!snapshot?.current_operation?.idempotency_key||!exclusive.checked||!!decisionKey.value.trim()&&!semantic.checked||!!resolutionDigest.value.trim()&&!resolutionConsent.checked;for(const item of [branch,visibility,mode,raw,operation,decisionKey,semantic,resolutionDigest,resolutionConsent,remoteUrl,authorName,authorEmail,initializeConsent])item.disabled=busy||!!pending;previewButton.disabled=busy||!!pending;refreshReceiver();}
      async function request(label,work){if(busy||!current())return;busy=true;if(vaultStatus.compatibility==='compatible')refresh();message.textContent=label;try{await work();}catch(error){if(current())message.textContent=(error.code||'Esito non confermato')+': '+error.message+' · Rileggi lo stato Git. In caso di esito incerto riprendi la stessa richiesta.';}finally{if(current()){busy=false;if(vaultStatus.compatibility==='compatible')refresh();}}}
      decisionKey.addEventListener('input',()=>{semantic.checked=false;refresh();});semantic.addEventListener('change',refresh);
      resolutionDigest.addEventListener('input',()=>{resolutionConsent.checked=false;refresh();});resolutionConsent.addEventListener('change',refresh);
@@ -78,7 +133,7 @@ SYNC_SCRIPT = r"""
        return request('Pubblicazione in corso: conserva il checkpoint e attendi l’esito…',async()=>{try{const result=await api(path+'/'+action,pending.body);if(!current())return;pending=null;resultView.replaceChildren();json(resultView,result);message.textContent='Esito registrato nel journal. Controlla stato, checkpoint e prossima azione.';await read(false);}catch(error){if(error.code)pending=null;throw error;}});
      }
      async function read(announce=true){
-       const value=await api(path+'/status');if(!current())return;snapshot=value;view.replaceChildren();
+       const value=await api(path+'/status');if(!current())return;const previous=snapshot?.receiver;snapshot=value;if(vaultStatus.compatibility==='compatible'&&(previous?.pending_oid!==value.receiver?.pending_oid||previous?.candidate_digest!==value.receiver?.candidate_digest||previous?.base_head!==value.receiver?.base_head))receiverExclusive.checked=false;renderReceiver(value);view.replaceChildren();
        const job=value.operation||value.current_operation||value.last_operation||value,state=job.state||value.state||'non configurato';
        element('p','Stato: '+bounded(state),view);
        const next={waiting_network:'Rete non disponibile: conserva il checkpoint e riprendi dopo il ripristino della connessione.',waiting_auth:'Autenticati con Git/gh nel terminale, poi riprendi il candidato salvato.',needs_resolution:'Conflitto conservato in area isolata. Revisiona il perimetro e le note; nessun lato viene scelto automaticamente.',needs_decision:'Revisiona note, fonti e perimetro semantico. Per attestare la decisione usa la chiave restituita nel journal e il consenso dedicato.',needs_approval:'È richiesta approvazione: revisiona il branch proposto o le protezioni. Nessun merge viene eseguito dalla dashboard.',retry_exhausted:'Il remote continua a cambiare. Riprendi dopo aver concordato il momento di pubblicazione.',published_pending_local_adoption:'Il candidato è pubblicato. Conserva le modifiche locali e sospendi gli scrittori prima di riprendere l’adozione; nessun nuovo lint richiesto.',converged:'Pubblicazione e adozione locale verificate.',noop:'Nessuna novità condivisibile: nessun commit aggiuntivo.'}[state];

@@ -1,0 +1,20 @@
+{
+  "viewport": [
+    1440,
+    900
+  ],
+  "message": "Stato Git aggiornato. Nessuna pubblicazione avviata dalla lettura.",
+  "idle": "Rilevamento remoto\n\nRicezione: idle · sospesa\n\nUltima revisione remota vista\nnon disponibile\nUltima revisione applicata\nnon disponibile\nNovità in attesa\nnon disponibile\nUltimo controllo\nnon disponibile\nProssimo controllo\nnon disponibile\nHEAD alla preparazione\nnon disponibile\nDigest del candidato\nnon disponibile\nValidazione e checkpoint della ricezione",
+  "consents": [
+    {
+      "id": "receiver-consent",
+      "checked": false
+    },
+    {
+      "id": "receiver-exclusive",
+      "checked": false
+    }
+  ],
+  "applyDisabled": true,
+  "overflow": false
+}

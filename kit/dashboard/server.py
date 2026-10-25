@@ -6,6 +6,7 @@ import json
 import hashlib
 import re
 import secrets
+import sqlite3
 import threading
 import time
 from urllib.parse import urlsplit, parse_qs, unquote
@@ -22,6 +23,8 @@ from .operations import SkillCoordinator
 from .adapters import default_adapters
 from .shared_service import SharedService
 from .sync_service import SyncService
+from .receiver import Receiver
+from .receiver_apply import ReceiverApplyService
 
 MAX_BODY_BYTES = 16 * 1024
 
@@ -38,6 +41,8 @@ class DashboardServer(ThreadingHTTPServer):
         self.skills = SkillCoordinator(self.registry, default_adapters())
         self.shared = SharedService(self.registry)
         self.sync = SyncService(self.registry)
+        self.receiver = Receiver(self.registry, self.sync)
+        self.receiver_apply = ReceiverApplyService(self.registry, self.sync, self.receiver)
         self.operations.note_activity = self.applies.active
         self.session_token = secrets.token_urlsafe(32)
         self.csrf_token = secrets.token_urlsafe(32)
@@ -46,17 +51,21 @@ class DashboardServer(ThreadingHTTPServer):
         self._slots = threading.BoundedSemaphore(8)
         super().__init__(("127.0.0.1", port), DashboardHandler)
         self.origin = f"http://127.0.0.1:{self.server_port}"
+        self.receiver.start()
 
     def server_close(self):
+        self.receiver.request_stop()
         self.operations.request_stop()
         self.applies.request_stop()
         self.skills.request_stop()
         super().server_close()
+        self.receiver.close()
         self.operations.close()
         self.applies.close()
         self.skills.close()
 
     def request_stop(self):
+        self.receiver.request_stop()
         self.operations.request_stop()
         self.applies.request_stop()
         self.skills.request_stop()
@@ -239,7 +248,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             parts = target.path.split("/")
             if len(parts)==7 and parts[1:4]==['api','v1','vaults'] and parts[5]=='sync':
                 method={'preview':self.server.sync.preview,'initialize':self.server.sync.initialize,'configure':self.server.sync.configure,
-                        'publish':self.server.sync.publish,'resolve':self.server.sync.resolve}.get(parts[6])
+                        'publish':self.server.sync.publish,'resolve':self.server.sync.resolve,
+                        'check':self.server.receiver.check,'pause':self.server.receiver.pause,
+                        'resume':self.server.receiver.resume,'receive':self.server.receiver_apply.apply,
+                        'receive-recover':self.server.receiver_apply.recover}.get(parts[6])
                 if method:
                     self._reply(200,method(parts[4],body))
                     return
@@ -299,7 +311,17 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 parameters = {key: values[0] for key, values in raw.items()}
                 if parts[1:4] == ["api", "v1", "vaults"]:
                     if len(parts)==7 and parts[5:]==['sync','status']:
-                        self._data_reply(self.server.sync.status(parts[4],parameters))
+                        result = self.server.sync.status(parts[4],parameters)
+                        # A receiver fault must not hide publication state: report it in place.
+                        for key, reader in (('receiver', self.server.receiver.status),
+                                            ('receive_transaction', self.server.receiver_apply.status)):
+                            try:
+                                result[key] = reader(parts[4])
+                            except ContractError as error:
+                                result[key] = {'error': {'code': error.code, 'message': str(error)}}
+                            except sqlite3.Error:
+                                result[key] = {'error': {'code': 'receiver_storage', 'message': 'Stato locale del receiver non leggibile'}}
+                        self._data_reply(result)
                         return
                     if len(parts) == 6:
                         reader = {"status": self.server.read_api.status, "graph": self.server.read_api.graph,

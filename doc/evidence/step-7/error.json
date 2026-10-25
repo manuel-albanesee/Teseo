@@ -1,0 +1,13 @@
+{
+  "viewport": [
+    1440,
+    900
+  ],
+  "message": "invalid_value: Valore non ammesso nel JSON v1 · Rileggi lo stato Git. In caso di esito incerto riprendi la stessa richiesta.",
+  "receiver": "Rilevamento remoto\n\nRicezione: idle · sospesa\n\nUltima revisione remota vista\nnon disponibile\nUltima revisione applicata\nnon disponibile\nNovità in attesa\nnon disponibile\nUltimo controllo\nnon disponibile\nProssimo controllo\nnon disponibile\nHEAD alla preparazione\nnon disponibile\nDigest del candidato\nnon disponibile\nValidazione e checkpoint della ricezione",
+  "applyDisabled": true,
+  "consent": false,
+  "privateAbsent": true,
+  "generation": "Contenuti: 5bbfe6e1fcfd089ac6010b6e733c5edc76eb785f99cab6d2a80aee75ec038a46 · Generazione: c6366238451e00748116c7907174e9fe2430c9b02537823313ed0528751e4ee7 · Job di questo servizio: nessuno",
+  "overflow": false
+}

@@ -1,0 +1,15 @@
+{
+  "platform": "Windows local fixed volume",
+  "transport": "two disposable Git clones and a local bare remote; no data repository network push",
+  "receiver_apply_unique_tests": 8,
+  "receiver_apply_result": "pass across final targeted batches",
+  "batches": [
+    {"tests": 6, "passed": 5, "errors": 1, "seconds": 197.126, "note": "Adoption assertions passed until a test queried the optional absent validated_events table; corrected test to accept an absent table or zero rows."},
+    {"tests": 2, "passed": 2, "errors": 0, "seconds": 42.621, "note": "Final adoption replay, no-op, personal state, old SQLite reader and bounded preview."},
+    {"tests": 1, "passed": 1, "errors": 0, "seconds": 57.000, "note": "Real remote shared events and notes converge on one revision and rebuild projection."}
+  ],
+  "fault_suite": {"tests": 7, "passed": 7, "seconds": 273.296},
+  "fault_cases": ["external HEAD before CAS preserved", "metadata failure blocks other writers until finish", "missing index after replacement recoverable", "partial note replacement rollback", "external revert during rebuild fails exact final check", "orphan preparation retry", "process crash after terminal journal before owned lock release"],
+  "manual_external_exclusion": "Required confirmation; automatic application disabled. Tests detect and preserve injected foreign bytes but do not demonstrate exclusion of arbitrary editors or unsaved buffers.",
+  "coverage": "Receiver detection previously measured 94% before bounded source preview; no whole-project or receive-apply coverage percentage claimed."
+}

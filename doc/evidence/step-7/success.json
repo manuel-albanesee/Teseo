@@ -1,0 +1,38 @@
+{
+  "viewport": [
+    390,
+    844
+  ],
+  "transaction": {
+    "operation_id": "a2d12358-c9bb-490a-a76a-cf629303c118",
+    "state": "current",
+    "B": "450e618e11c80dc5dc9b3670290cda0370743359",
+    "R": "b2b1dc09e344a135bbc7995a9f576573b3a6cc42",
+    "base_digest": "f847fe5ad775be20f08816d228a868447a519866137c0d7b43f62f606a0f9eac",
+    "candidate_digest": "f462b1ee79b02904528742ef45ccfe7a59ed2251d386fd9b2e4cc0e6f5f1197a",
+    "error": null,
+    "update_event": {
+      "content_revision": "f462b1ee79b02904528742ef45ccfe7a59ed2251d386fd9b2e4cc0e6f5f1197a",
+      "graph_generation": "36c434f7294ada23d935d1bee6a0e40a79f7ec711bd4d2355bdf947593b75877",
+      "oid": "b2b1dc09e344a135bbc7995a9f576573b3a6cc42",
+      "operation_id": "a2d12358-c9bb-490a-a76a-cf629303c118",
+      "type": "vault.updated"
+    }
+  },
+  "receiver": {
+    "state": "current",
+    "last_applied_oid": "b2b1dc09e344a135bbc7995a9f576573b3a6cc42",
+    "pending_oid": null,
+    "update_event": {
+      "content_revision": "f462b1ee79b02904528742ef45ccfe7a59ed2251d386fd9b2e4cc0e6f5f1197a",
+      "graph_generation": "36c434f7294ada23d935d1bee6a0e40a79f7ec711bd4d2355bdf947593b75877",
+      "oid": "b2b1dc09e344a135bbc7995a9f576573b3a6cc42",
+      "operation_id": "a2d12358-c9bb-490a-a76a-cf629303c118",
+      "type": "vault.updated"
+    },
+    "automatic": false
+  },
+  "message": "Stato Git aggiornato. Nessuna pubblicazione avviata dalla lettura.",
+  "applyDisabled": true,
+  "generation": "Contenuti: f462b1ee79b02904528742ef45ccfe7a59ed2251d386fd9b2e4cc0e6f5f1197a · Generazione: 36c434f7294ada23d935d1bee6a0e40a79f7ec711bd4d2355bdf947593b75877 · Job di questo servizio: nessuno"
+}

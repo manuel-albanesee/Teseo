@@ -9,6 +9,7 @@ import random
 import sqlite3
 import threading
 import time
+import unicodedata
 from uuid import uuid4
 
 from .contracts import ContractError, canonical_json, parse_json
@@ -28,11 +29,16 @@ def _preview(base, candidate):
     for path in paths[:128]:
         files.append(dict(path=path,before=base.hashes.get(path),after=candidate.hashes.get(path)))
         try:
-            old=before.get(path,b'').decode('utf-8').splitlines(keepends=True)
-            new=after.get(path,b'').decode('utf-8').splitlines(keepends=True)
+            old_text=before.get(path,b'').decode('utf-8')
+            new_text=after.get(path,b'').decode('utf-8')
         except UnicodeError:
             truncated=True
             continue
+        if any(unicodedata.normalize('NFC',text)!=text for text in (old_text,new_text)):
+            # JSON v1 forbids NFD strings. Never normalize source bytes for review.
+            truncated=True
+            continue
+        old=old_text.splitlines(keepends=True);new=new_text.splitlines(keepends=True)
         # Limit input as well as output: a single long line must not defeat bounds.
         if len(before.get(path,b''))+len(after.get(path,b''))>256000:
             truncated=True
@@ -77,7 +83,7 @@ class Receiver:
                     automatic=False, last_seen_remote_oid=None, last_applied_oid=None,
                     pending_oid=None, last_fetch_at=None, backoff=0,
                     next_check_at=None, error=None, operation_id=None,
-                    candidate=None, candidate_digest=None, base_head=None,
+                    candidate=None, candidate_digest=None, preview=None, base_head=None,
                     base_digest=None, revision=0)
 
     def _load(self, root):
@@ -217,15 +223,15 @@ class Receiver:
                     raise ContractError('receiver_rewind', 'Cronologia remota riavvolta o divergente: revisione esplicita richiesta')
                 record['last_seen_remote_oid'] = remote
                 if record.get('candidate') and record['candidate']['oid'] != remote:
-                    record.update(candidate=None, candidate_digest=None, base_head=None,
+                    record.update(candidate=None, candidate_digest=None, preview=None, base_head=None,
                                   base_digest=None, operation_id=None)
                 self._assert_running()
                 if remote == head and remote == record['last_applied_oid']:
                     record.update(state='up_to_date', pending_oid=None, candidate=None,
-                                  candidate_digest=None, error=None)
+                                  candidate_digest=None, preview=None, error=None)
                 elif remote != head and repo.is_ancestor(remote, head):
                     record.update(state='local_ahead', pending_oid=None, candidate=None,
-                                  candidate_digest=None)
+                                  candidate_digest=None, preview=None)
                 elif not repo.is_ancestor(head, remote):
                     raise ContractError('receiver_diverged', 'HEAD locale e remoto divergono: usare la riconciliazione isolata')
                 else:
@@ -281,6 +287,9 @@ class Receiver:
                 else:
                     state = 'diverged' if code in ('receiver_rewind', 'receiver_diverged', 'git_unrelated_history') else 'recovery_required' if code == 'recovery_required' else 'incompatible'
                     record.update(state=state, error={'code': code, 'message': 'Revisione non importata; occorre revisione esplicita'}, next_check_at=self._now() + self._delay(record))
+                    if state in ('diverged', 'incompatible'):
+                        # A stale review must not look like an adoptable candidate.
+                        record.update(preview=None)
             self._save(root, record)
         return self.status(vault_id)
 
