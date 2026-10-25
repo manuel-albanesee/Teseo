@@ -61,6 +61,27 @@ def _ensure_ignored(local):
         raise ContractError("local_not_ignored", "Lo storage locale richiede .gitignore con regola *")
 
 
+def assert_receiver_complete(root):
+    """A crashed receive blocks other cooperative writers and live projections."""
+    path=Path(root)/'.teseo/local/receive.sqlite'
+    for relative in ('.teseo','.teseo/local'): _no_link(Path(root)/relative)
+    for suffix in ('','-wal','-shm','-journal'): _no_link(Path(str(path)+suffix))
+    if not path.exists():return
+    db=sqlite3.connect(path.as_uri()+'?mode=ro',uri=True)
+    try:
+        if not db.execute("SELECT 1 FROM sqlite_master WHERE name='transactions' AND type='table'").fetchone():return
+        for (data,) in db.execute('SELECT record FROM transactions'):
+            record=parse_json(data)
+            if record.get('state') not in ('current','rolled_back','failed'):
+                raise ContractError('recovery_required','Ricezione interrotta: completare finish/rollback prima di altre scritture')
+            marker=record.get('index_lock_marker')
+            lock=Path(root)/'.git/index.lock'
+            _no_link(lock)
+            if marker and lock.exists() and lock.read_bytes()==marker.encode('ascii'):
+                raise ContractError('recovery_required','Rilasciare il lock della ricezione completata tramite recovery esplicito')
+    finally:db.close()
+
+
 class VaultLock(AbstractContextManager):
     """Lock kernel su un file persistente: non rimuovere lock in base al PID.
 
@@ -110,6 +131,7 @@ class VaultLock(AbstractContextManager):
                         raise ContractError("vault_busy", "Vault occupato da un altro scrittore") from error
                     time.sleep(min(0.05, max(0, deadline - time.monotonic())))
             _ensure_ignored(local)
+            if not self.recovery:assert_receiver_complete(self.root)
             self._stream = stream
             return self
         except BaseException:
