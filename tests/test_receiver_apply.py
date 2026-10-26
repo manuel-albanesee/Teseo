@@ -1,4 +1,5 @@
 """Real Git receive transactions: adoption, stale previews and recovery gates."""
+import _shortpath  # noqa: F401
 import unittest
 from unittest.mock import patch
 
@@ -149,6 +150,15 @@ class Receive(unittest.TestCase):
         self.assertIsNone(record['preview'])
         self.assertIsNone(record['candidate'])
         self.assertIsNone(record['candidate_digest'])
+        self.assertEqual(self.fixture.git('rev-parse', 'HEAD', cwd=self.root), self.fixture.base)
+
+    def test_repeating_a_rolled_back_request_is_refused_not_replayed_as_success(self):
+        with patch('kit.dashboard.receiver_apply._replace', side_effect=OSError('injected')):
+            self.service.apply(self.vault, self.body)
+        self.service.recover(self.vault, dict(self.body, action='rollback'))
+        with self.assertRaises(ContractError) as error:
+            self.service.apply(self.vault, self.body)
+        self.assertEqual(error.exception.code, 'receiver_stale')
         self.assertEqual(self.fixture.git('rev-parse', 'HEAD', cwd=self.root), self.fixture.base)
 
     def test_incomplete_review_is_refused_by_the_service_not_only_the_ui(self):

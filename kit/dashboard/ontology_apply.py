@@ -7,7 +7,8 @@ import re
 import threading
 from uuid import uuid4
 
-from .contracts import ContractError, content_hash, file_hash, resolve_path
+from .contracts import ContractError, content_hash, file_hash, resolve_path, check_path_budget
+from .diagnostics import log_unexpected as _log_unexpected
 from .storage import Journal, Snapshot, SnapshotFile, VaultLock, capture_snapshot, _no_link
 from .ontology_migrations import migrate
 from .ontology_preview import _fields
@@ -176,8 +177,8 @@ def execute(journal, identifier, action='finish'):
         projection=root/'.teseo/local/shared-state.sqlite'
         for suffix in ('','-journal','-wal','-shm'): _no_link(Path(str(projection)+suffix))
         rebuild_projection(projection,snapshot_events(desired,record['vault_id']),record['vault_id'])
-    except Exception:
-        pass  # Explicit shared-state/import can rebuild it; source events and checkpoint remain authoritative.
+    except Exception as error:
+        _log_unexpected(error)  # Cache non autorevole: import/rebuild esplicito la riallinea; eventi e checkpoint restano la fonte.
     return record
 
 
@@ -217,6 +218,7 @@ class ApplyService:
             self._available(vault_id)
             root = self.registry.operation_root(vault_id)
             _local_volume(root)
+            check_path_budget(root)
             with VaultLock(root, recovery=True) as lock, Journal(lock) as journal:
                 previous = journal.find_request('ontology_apply', payload, body['idempotency_key'])
                 if previous:
@@ -320,14 +322,15 @@ class ApplyService:
                         raise ContractError('service_stopping', 'Servizio in arresto: recovery esplicito richiesto')
                     execute(journal, identifier, action)
                 except Exception as error:
+                    if not isinstance(error, ContractError): _log_unexpected(error)
                     record = journal.get(identifier)
                     record.update(state='recovery_required', error={
                         'code': error.code if isinstance(error, ContractError) else 'apply_interrupted',
                         'message': str(error)[:500] if isinstance(error, ContractError) else 'Applicazione interrotta: verificare snapshot, backup e stato dei file'})
                     journal.save_ontology(record)
-        except Exception:
-            # Lock/identity/storage failure leaves a durable record for explicit recovery.
-            pass
+        except Exception as error:
+            # Lock/identity/storage failure leaves a durable record for explicit recovery; la causa va almeno loggata.
+            _log_unexpected(error)
         finally:
             with self._mutex:
                 self._workers.pop(vault_id, None)

@@ -1,4 +1,5 @@
 """Contratti Copilot CLI e migrazione Claude: solo fixture locali, nessun modello."""
+import _shortpath  # noqa: F401
 import contextlib
 from contextlib import closing
 import hashlib

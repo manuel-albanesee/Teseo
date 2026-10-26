@@ -8,7 +8,7 @@ import time
 import subprocess
 import sys
 
-from .contracts import ContractError, canonical_json, content_hash, resolve_path, portable_path
+from .contracts import ContractError, canonical_json, content_hash, resolve_path, portable_path, check_path_budget
 from .storage import Journal, VaultLock, capture_snapshot, _no_link
 from .jobs import _public
 
@@ -63,6 +63,7 @@ class SkillCoordinator:
             if self._stop:
                 raise ContractError('service_stopping', 'Servizio in arresto')
             root = self.registry.root(vault_id)
+            check_path_budget(root)
             with VaultLock(root) as lock, Journal(lock) as journal:
                 previous = journal.find_request(body['kind'], body, body['idempotency_key'])
                 if previous:
@@ -82,6 +83,13 @@ class SkillCoordinator:
 
     def _advance(self, journal):
         records = self._records(journal)
+        # La preparazione è sincrona sotto lock del journal: un 'preparing' visto qui è di un processo morto
+        # a metà. Chiuderlo in modo esplicito evita che blocchi la coda per sempre; l'area isolata è rigenerabile.
+        for record in records:
+            if record['state'] == 'preparing':
+                record.update(state='failed', error={'code': 'prepare_interrupted',
+                              'message': 'Preparazione interrotta; creare un nuovo ciclo'})
+                self._save(journal, record)
         if any(r['state'] not in FINAL | {'queued'} for r in records):
             return
         # Ontology recovery/apply excludes dispatch; queue stays durable.

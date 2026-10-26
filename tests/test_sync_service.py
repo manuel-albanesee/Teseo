@@ -1,9 +1,9 @@
 """Publisher: consenso, attribuzione, crash e ripresa senza duplicazione."""
+import _shortpath  # noqa: F401
 import hashlib
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
 from uuid import uuid4
 
 from kit.dashboard.contracts import ContractError, canonical_json

@@ -1,4 +1,5 @@
 """Regressioni del gate di pubblicazione legacy: nessun vault personale."""
+import _shortpath  # noqa: F401
 import contextlib
 import io
 import os

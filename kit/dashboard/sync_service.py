@@ -8,7 +8,7 @@ import hashlib
 import re
 import threading
 
-from .contracts import ContractError, canonical_json, content_hash, parse_json, portable_path
+from .contracts import ContractError, canonical_json, content_hash, parse_json, portable_path, stamp_schema
 from .storage import VaultLock, capture_snapshot, _local_directory, _ensure_ignored, _no_link
 from .shared_migration import _connection
 from .shared_state import _uuid
@@ -55,6 +55,7 @@ class SyncService:
     @staticmethod
     def _schema(db):
         db.execute('PRAGMA synchronous=FULL')
+        stamp_schema(db)
         db.execute('CREATE TABLE IF NOT EXISTS config(id INTEGER PRIMARY KEY CHECK(id=1),data BLOB NOT NULL)')
         db.execute('CREATE TABLE IF NOT EXISTS jobs(operation_id TEXT PRIMARY KEY,request_key TEXT UNIQUE NOT NULL,request_hash TEXT NOT NULL,data BLOB NOT NULL)')
         db.commit()
@@ -133,7 +134,7 @@ class SyncService:
             if not p.startswith('raw/'):raise ContractError('sync_config','Sono ammesse solo fonti raw selezionate')
         _oid(body['expected_head'])
         root=self.registry.root(vault_id)
-        with self._mutex,VaultLock(root) as lock:
+        with self._mutex,VaultLock(root):
             repo=self._repo(root);git=repo.inspect()
             if not git.get('remote_url'):
                 raise ContractError('sync_config','Configurare origin nel repository dati prima della selezione')
@@ -351,7 +352,10 @@ class SyncService:
         try:
             self._identity(repo,record['config'])
             if repo.head()!=record['L'] or not repo.clean():
-                if repo.head()!=record['C'] or not repo.clean():
+                # Fast-forward interrotto: completabile solo se ogni file sporco è L o C, mai con modifiche esterne.
+                resumed=(record['state'] in ('adopting','published_pending_local_adoption') and repo.head()==record['L']
+                         and hasattr(repo,'resume_adoption') and repo.resume_adoption(record['L'],{'oid':record['C']}))
+                if not resumed and (repo.head()!=record['C'] or not repo.clean()):
                     raise ContractError('blocked_external_change','Pubblicato; adozione locale sospesa per modifiche esterne')
             else:
                 record['state']='adopting';self._save(db,record)

@@ -1,4 +1,5 @@
 """Receiver scheduling and readonly gates with an injected clock and transport."""
+import _shortpath  # noqa: F401
 from pathlib import Path
 import tempfile
 import threading
@@ -275,6 +276,11 @@ class ReceiverTests(unittest.TestCase):
         self.registry.operation_root = lambda vault: self.root
         self.registry.root = lambda vault: (_ for _ in ()).throw(ContractError('vault_readonly', 'Schema missing during apply'))
         self.assertTrue(self.receiver.status(self.vault)['paused'])
+
+    def test_public_status_is_an_allow_list_so_new_internal_fields_stay_private(self):
+        public = Receiver._public({'state': 'pending', 'candidate': {'x': 1}, 'config': {'remote_url': 'u'},
+                                   'internal_new_field': 'secret', 'pending_oid': 'a' * 40})
+        self.assertEqual(public, {'state': 'pending', 'pending_oid': 'a' * 40})
 
 
 if __name__ == '__main__': unittest.main()

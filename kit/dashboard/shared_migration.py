@@ -180,7 +180,7 @@ class LegacyMigration:
             check.rmdir()
         if identity != preview['source_identity'] or digest != preview['source_digest']:
             raise ContractError('legacy_preview_stale', 'Database legacy cambiato: rigenerare la preview')
-        events = {}
+        events: dict = {}
         with self._db() as db:
             db.execute('BEGIN IMMEDIATE')
             for selection in sorted(selection_ids):

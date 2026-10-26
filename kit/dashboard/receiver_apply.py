@@ -4,7 +4,8 @@ import os
 from pathlib import Path
 from uuid import uuid4
 
-from .contracts import ContractError,canonical_json,parse_json,resolve_path,file_hash
+from .contracts import ContractError,canonical_json,parse_json,resolve_path,file_hash,check_path_budget,stamp_schema
+from .diagnostics import log_unexpected as _log_unexpected
 from .storage import VaultLock,Journal,capture_snapshot,_local_directory,_ensure_ignored,_no_link
 from .shared_migration import _connection
 from .ontology_apply import _replace,_write_stage,_local_volume,_check_live
@@ -39,6 +40,7 @@ class ReceiverApplyService:
         _ensure_ignored(_local_directory(root))
         with _connection(self._path(root)) as db:
             db.execute('PRAGMA synchronous=FULL')
+            stamp_schema(db)
             db.execute('CREATE TABLE IF NOT EXISTS transactions(operation_id TEXT PRIMARY KEY,record BLOB NOT NULL)')
             db.execute('INSERT OR REPLACE INTO transactions VALUES(?,?)',(record['operation_id'],canonical_json(record)))
 
@@ -89,12 +91,16 @@ class ReceiverApplyService:
         base.assert_unchanged(base_root);candidate.assert_unchanged(candidate_root)
 
     def apply(self,vault,body):
-        self._confirm(body);root=self._root(vault)
+        self._confirm(body);root=self._root(vault);check_path_budget(root)
         with self.sync._mutex,VaultLock(root,recovery=True) as lock:
             previous=self._load(root)
             if previous and self._same_request(previous,body):
-                if previous['state'] in ('current','rolled_back'):
+                if previous['state']=='current':
                     return self._terminal(vault,root,self.sync._repo(root),previous)
+                if previous['state']=='rolled_back':
+                    # Un rollback scarta candidato e revisione: ripetere la richiesta non è un successo da rispondere di nuovo.
+                    self._terminal(vault,root,self.sync._repo(root),previous)
+                    raise ContractError('receiver_stale','Ricezione annullata con rollback: rileggere il candidato prima di importare di nuovo')
                 raise ContractError('recovery_required','Ricezione già iniziata: usare finish/rollback')
             if previous and previous['state'] not in ('current','rolled_back','failed'):
                 raise ContractError('recovery_required','Un’importazione precedente richiede recovery')
@@ -253,10 +259,16 @@ class ReceiverApplyService:
             update=self._metadata(vault,root,record,action,desired,reference)
             self._final(root,repo,record,desired,desired_oid,wanted)
             record.update(state='current' if action=='finish' else 'rolled_back',update_event=update,error=None);self._save(root,record)
-            self._release(root,record)
         except Exception as error:
+            if not isinstance(error,ContractError):_log_unexpected(error)
             record.update(state='recovery_required',error=error.as_dict() if isinstance(error,ContractError) else {'code':'receiver_interrupted','message':'Ricezione interrotta; conservare copie e scegliere finish/rollback'})
             self._save(root,record)
+            return self._public(record)
+        try:self._release(root,record)
+        except (ContractError,OSError) as error:
+            # Checkpoint già durevole: lo stato terminale non si declassa; il lock residuo lo chiude recover/_terminal.
+            _log_unexpected(error)
+            return self._public(record)|{'state':'recovery_required','finalized_state':record['state'],'error':error.as_dict() if isinstance(error,ContractError) else {'code':'receiver_index','message':'Lock Git da rilasciare con il recupero'}}
         return self._public(record)
 
     def recover(self,vault,body):

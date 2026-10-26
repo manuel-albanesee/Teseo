@@ -1,5 +1,5 @@
 """Due clone e remoto bare: pubblicazione reale senza rete né dati personali."""
-import hashlib
+import _shortpath  # noqa: F401
 from pathlib import Path
 import subprocess
 import tempfile

@@ -1,14 +1,13 @@
 """Probe senza sessioni AI e handoff dal solo runtime fidato."""
-import json
+import _shortpath  # noqa: F401
+import os
 from pathlib import Path
 import subprocess
 import tempfile
 import unittest
 from unittest import mock
 
-from kit.dashboard.adapters import ManualAdapter, default_adapters
-from kit.dashboard.client_receipt import create_receipt
-from kit.dashboard.contracts import ContractError
+from kit.dashboard.adapters import ManualAdapter, _which, default_adapters
 
 
 class Adapters(unittest.TestCase):
@@ -46,3 +45,13 @@ class Adapters(unittest.TestCase):
                 self.assertEqual(result['adapter'],name)
                 self.assertFalse(result['automatic_launch'])
                 self.assertFalse(adapter.cancel({})['external_session_stopped'])
+
+    def test_executable_lookup_ignores_current_directory_and_relative_path_entries(self):
+        seen = []
+        def fake_which(candidate):
+            seen.append(candidate)
+            return None
+        with mock.patch.dict('os.environ', {'PATH': os.pathsep.join(['', '.', 'relative', str(Path(tempfile.gettempdir()).resolve())])}),                 mock.patch('shutil.which', side_effect=fake_which):
+            self.assertIsNone(_which('codex'))
+        self.assertEqual(len(seen), 1)
+        self.assertTrue(Path(seen[0]).is_absolute())

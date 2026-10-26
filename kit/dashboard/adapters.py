@@ -1,4 +1,5 @@
 """Adapter manuali: versioni osservabili, nessun avvio AI o callback presunto."""
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -10,6 +11,16 @@ from .storage import _no_link
 CLIENTS = ('codex','claude','copilot')
 
 
+def _which(name: str) -> str | None:
+    # Mai la cwd né voci PATH relative/vuote: shutil.which(nome) su Windows cerca prima in cwd.
+    for directory in os.environ.get('PATH','').split(os.pathsep):
+        if directory and Path(directory).is_absolute():
+            found = shutil.which(str(Path(directory)/name))
+            if found:
+                return found
+    return None
+
+
 class ManualAdapter:
     def __init__(self, name):
         if name not in CLIENTS:
@@ -17,7 +28,7 @@ class ManualAdapter:
         self.name = name
 
     def probe(self):
-        binary = shutil.which(self.name)
+        binary = _which(self.name)
         version, error = None, None
         if binary and Path(binary).suffix.lower() not in ('.cmd','.bat','.ps1'):
             try:

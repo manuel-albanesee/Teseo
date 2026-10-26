@@ -1,14 +1,18 @@
 """Contratti readonly: formati, confini e byte canonici senza servizi esterni."""
+import _shortpath  # noqa: F401
 import hashlib
 import json
+import os
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
+from unittest import mock
 from uuid import uuid4
 
 from kit.dashboard.contracts import (
-    ContractError, DEFAULT_SHARED_PATHS, MAX_INTEGER, PathKind, canonical_json,
-    classify_path, content_hash, inspect_vault, parse_json, parse_manifest,
+    ContractError, DEFAULT_SHARED_PATHS, MAX_INTEGER, PathKind, canonical_json, check_path_budget,
+    is_junction, classify_path, content_hash, inspect_vault, parse_json, parse_manifest,
     portable_path, resolve_path, validate_paths,
 )
 
@@ -145,6 +149,44 @@ class Contracts(unittest.TestCase):
             except OSError:
                 self.skipTest("La piattaforma non consente la creazione di symlink")
             self.assert_code("path_escape", resolve_path, root, "outside/secret")
+
+
+class PathBudget(unittest.TestCase):
+    def test_long_root_is_refused_before_any_write_on_limited_windows(self):
+        with tempfile.TemporaryDirectory() as temp,                 mock.patch("kit.dashboard.contracts.os.name", "nt"),                 mock.patch("kit.dashboard.contracts._long_paths_enabled", return_value=False):
+            with self.assertRaises(ContractError) as caught:
+                check_path_budget(Path(temp) / ("x" * 120))
+            self.assertEqual(caught.exception.code, "path_too_long")
+            self.assertNotIn(temp, str(caught.exception))
+
+    def test_short_root_and_long_path_support_are_accepted(self):
+        with tempfile.TemporaryDirectory() as temp:
+            deep = Path(temp) / ("x" * 120)
+            deep.mkdir()
+            with mock.patch("kit.dashboard.contracts.os.name", "nt"),                     mock.patch("kit.dashboard.contracts._long_paths_enabled", return_value=True):
+                check_path_budget(deep)
+            with mock.patch("kit.dashboard.contracts.os.name", "posix"):
+                check_path_budget(deep)
+
+
+@unittest.skipUnless(os.name == "nt", "le junction NTFS esistono solo su Windows")
+class Junctions(unittest.TestCase):
+    def test_junction_is_detected_with_and_without_native_path_is_junction(self):
+        with tempfile.TemporaryDirectory() as temp:
+            target, link = Path(temp) / "target", Path(temp) / "link"
+            target.mkdir()
+            result = subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(target)], capture_output=True)
+            if result.returncode:
+                self.skipTest("mklink /J non disponibile")
+            try:
+                self.assertTrue(is_junction(link))
+                self.assertFalse(is_junction(target))
+                self.assertFalse(is_junction(Path(temp) / "missing"))
+                with mock.patch.object(Path, "is_junction", None):  # Python < 3.12
+                    self.assertTrue(is_junction(link))
+                    self.assertFalse(is_junction(target))
+            finally:
+                os.rmdir(link)
 
 
 if __name__ == "__main__":

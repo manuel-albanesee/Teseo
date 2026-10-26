@@ -1,7 +1,6 @@
 """Consultazione di una generazione immutabile; nessuna GET costruisce o scrive dati."""
 import base64
 from contextlib import contextmanager
-import hashlib
 import hmac
 import html
 import json
@@ -94,7 +93,7 @@ class ReadAPI:
         try:
             live = capture_snapshot(root)
             result["live_content_revision"] = live.digest
-        except (ContractError, OSError) as error:
+        except (ContractError, OSError):
             result["issues"].append(_issue("live_revision_unavailable", "warning",
                                            "Revisione corrente non verificabile", None))
         try:

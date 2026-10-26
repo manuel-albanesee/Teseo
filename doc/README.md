@@ -4,7 +4,7 @@ Avanzamento runtime e analisi ECC: [registro implementazioni](08-analisi-avanzam
 Le sezioni progettuali seguenti descrivono il piano originario; il registro distingue
 gli incrementi implementati dalle funzionalità ancora future.
 
-Stato: proposta implementabile, 22 ottobre 2026. Metodo: ECC Blueprint. Questa consegna contiene solo documentazione; nessuna API, CLI o directory proposta qui è già disponibile salvo indicazione esplicita. La destinazione `doc/` è quella richiesta dall'utente. Non sono stati eseguiti commit, push o test runtime per scrivere questi documenti.
+Stato: passi 1–6 implementati, passo 7 parziale (rilevamento opt-in e adozione manuale); lo stato di ciascun passo è in testa al suo documento e il dettaglio in [08](08-analisi-avanzamento.md). Metodo: ECC Blueprint; proposta del 22 ottobre 2026, aggiornata il 25 ottobre 2026. Ciò che il documento di un passo non dichiara implementato resta proposta.
 
 ## Risultato atteso
 
@@ -57,7 +57,7 @@ flowchart TD
     SYNC --> GH[Repository dati GitHub]
 ```
 
-Proposta di sorgenti future nel kit: `kit/dashboard/` con moduli `contracts`, `storage`, `graph_service`, `server`, `operations`, `adapters`, `shared_state`, `git_sync`, `receiver`, più asset UI. L'installatore dovrà distribuirli e risolvere il runtime senza copiarli dal repository dati. Questi nomi sono decisioni progettuali modificabili con aggiornamento coordinato dei documenti.
+Sorgenti nel kit: `kit/dashboard/` con moduli `contracts`, `storage`, `graph_service`, `server`, `operations`, `adapters`, `shared_state`, `git_sync`, `receiver` e altri, più asset UI. L'installatore (`--dashboard`) li distribuisce e risolve il runtime senza copiarli dal repository dati. I nomi restano modificabili con aggiornamento coordinato dei documenti.
 
 Nel vault: `.teseo/project.json` portabile, `.teseo/shared/events/` condivisa; `.teseo/local/` esclusa da Git per registro del vault, journal, lock, checkpoint, generazioni e cache. Il file `Wiki reference.md` rimane l'unica autorità dello schema: niente secondo vocabolario JSON modificabile indipendentemente. Il manifest registra solo versioni, identificatore del vault e selezione dati; non contiene token, percorsi assoluti o endpoint arbitrari eseguibili.
 
@@ -85,7 +85,7 @@ Per cambiare il piano: aggiornare prima il contratto interessato, elencare motiv
 
 ## Verifiche e fonti
 
-Esistono `python installa.py --prova` e `python -m unittest discover -s tests -v` dalla root, documentati nel [README del kit](../README.md). Andranno usati per le modifiche runtime future; non sono stati eseguiti per questa consegna Markdown. I comandi `.graph/...` nei documenti si eseguono nel vault installato, non nella root del kit. Tutti gli endpoint `/api/v1`, il comando `teseo-dashboard` e i test `test_dashboard_*` sono proposte future.
+Esistono `python installa.py --prova` e `python -m unittest discover -s tests -v` dalla root, documentati nel [README del kit](../README.md), da eseguire per ogni modifica runtime. I comandi `.graph/...` nei documenti si eseguono nel vault installato, non nella root del kit. Gli endpoint `/api/v1` e i test `test_dashboard_*` sono implementati per i passi dichiarati tali nei rispettivi documenti. Su Windows senza percorsi lunghi (`LongPathsEnabled=0`) il limite di 260 caratteri vale anche per i vault: le operazioni che scrivono rifiutano con `path_too_long` un vault la cui radice supera il massimo calcolato in `contracts.max_vault_path_length`, e i test usano una temp dir corta (`tests/_shortpath.py`).
 
 Sono stati letti README, istruzioni modello del vault, builder, hook, stato domande/memoria e skill ingest/lint. `kit/vault/AGENTS.md` riguarda il modello installato nel vault; nessun `AGENTS.md` applicabile è stato trovato nella root o negli antenati controllati. I riferimenti locali in ogni documento permettono di riaccertare le assunzioni senza dipendere dalla conversazione.
 

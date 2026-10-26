@@ -504,7 +504,7 @@ Un job per vault, quattro vault attivi per processo, cache limitata a 256 record
 che non espelle job attivi. Altre richieste ricevono busy/limite esplicito, senza
 coda illimitata. Snapshot/digest controllati prima del build e prima della
 pubblicazione. Errori parsing/semantica sono strutturati, dettagli limitati;
-essun modello/Git/ingest o apply di note viene avviato.
+Nessun modello/Git/ingest o apply di note viene avviato.
 
 Journal.complete_rebuild conclude soltanto job derivati corrispondenti alla
 base; apply/succeeded delle note resta bloccato. Snapshot, hash e checkpoint
@@ -776,3 +776,48 @@ record condivisi e rinomine/eliminazioni di pagine, dipendenti dal passo 5.
 Il consumer di pubblicazione dell'evento locale è il passo 6. Automatico disabilitato
 finché non siano provati isolamento dei client ed esclusione degli scrittori esterni.
 Prossimo punto: 5.1, formato eventi, ID e invarianti condivise. Nessun merge.
+
+## Verifica del piano e correzioni (25 ottobre 2026)
+
+La suite di 359 test aveva 17 fallimenti (`test_dashboard_apply`, `test_dashboard_operations`,
+`test_shared_pipeline`). Causa: su Windows senza percorsi lunghi (`LongPathsEnabled=0`) il grafo
+candidato annidato in uno snapshot superava MAX_PATH (253–275 caratteri); il server mascherava
+l'errore come 503 generico e l'apply restava in `recovery_required`. Non era un difetto della
+logica di apply o recovery.
+
+Correzioni: nome temporaneo breve del candidato; rifiuto anticipato `path_too_long` (422) per i
+vault con radice oltre il massimo calcolato quando i percorsi lunghi sono disattivati; log
+diagnostico sicuro (`diagnostics.py`, tipo e posizione senza messaggi né percorsi assoluti);
+temp dir corte nei test (`tests/_shortpath.py`). Rivedute le finestre di crash: orfano in
+`preparing`, `update-ref`/`read-tree` del checkpoint, `.git` di inizializzazione interrotta,
+fast-forward di adozione interrotto (`resume_adoption`, solo se ogni file è L o C), riferimenti
+`refs/teseo/fetch/*` ripuliti. Ripetere una ricezione dopo `rolled_back` è ora rifiutato con
+`receiver_stale`. Contratti: `PRAGMA user_version` sui database locali, campi iniziali del journal
+in allow-list, stato pubblico del receiver in allow-list, `is_junction` anche prima di Python 3.12.
+Sicurezza: bind esclusivo su Windows, ricerca eseguibili senza cwd, `core.askpass` e altre chiavi
+Git bloccate, `PATH` dei processi Git filtrato.
+
+Esito dell'ultima suite completa prima di queste ultime modifiche: 364 test, 363 superati e uno
+saltato (symlink). I moduli toccati dopo (git_sync, contracts, storage, receiver, receiver_apply,
+operations, readonly, adapters, jobs) sono stati rieseguiti singolarmente e passano; il run
+completo finale va ripetuto. `ruff` e `mypy` (configurati in `ruff.toml` e `mypy.ini`) passano.
+Limite noto in quel momento: senza percorsi lunghi la radice del vault non poteva superare circa 51
+caratteri (superato dalla sezione seguente, ora circa 91).
+
+### Cartelle snapshot con token corto (26 ottobre 2026)
+
+Le cartelle sotto `.teseo/local/snapshots/` usano i primi 16 caratteri esadecimali dell'UUID
+(`dir_token` in `contracts.py`) invece dei 36 con trattini. Gli UUID restano gli identificatori
+logici in API, ref Git, eventi e journal; i record salvano comunque il percorso completo, quindi i
+vault esistenti con cartelle a UUID intero continuano a funzionare senza migrazione. La cartella
+foglia è creata in modo esclusivo: un token in collisione fa rigenerare l'id (se generato da
+Teseo) o fallire con `snapshot_exists` (se imposto dal chiamante), senza mai riusare una copia.
+`orphan_snapshots` confronta i percorsi salvati nei record, non il nome della cartella, e ora
+controlla anche `rebased/`. Il budget `_LONGEST_INTERNAL_PATH` è calcolato con gli stessi
+costruttori dei percorsi reali (168 caratteri, grafo annidato in un candidato) e un test lo
+confronta con il percorso massimo prodotto da un rebuild annidato.
+
+Nuovo limite: la radice del vault può arrivare a circa 91 caratteri senza percorsi lunghi. Il
+budget include anche `receives/` (158) e `git-candidates/` (165), che usano ancora UUID interi.
+Restano fuori i nomi delle note (scelti dall'utente) e `transactions/`, `skill-jobs/`. Un'operazione creata con il layout precedente e
+recuperata in una radice di 52–91 caratteri può ancora superare MAX_PATH.

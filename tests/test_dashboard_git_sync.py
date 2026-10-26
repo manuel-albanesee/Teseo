@@ -1,4 +1,5 @@
 """ECC TDD: publication primitives exercise real temporary Git repositories."""
+import _shortpath  # noqa: F401
 import hashlib
 import os
 from pathlib import Path
@@ -15,6 +16,9 @@ from kit.dashboard.contracts import ContractError, DEFAULT_SHARED_PATHS, canonic
 from kit.dashboard.storage import capture_snapshot
 from kit.dashboard.git_sync import (GitRepository, validate_remote, initialize_data_repository,
                                     preview_data_repository, github_repository_url, _invoke, _oid, _branch)
+
+
+NL = chr(10)
 
 
 def _remove_fixture(folder):
@@ -90,7 +94,9 @@ class GitPolicy(unittest.TestCase):
             repo = object.__new__(GitRepository)
             repo.root = Path(folder)
             for setting in ('http.sslverify\nfalse\x00', 'http.proxy\nhttp://proxy.invalid\x00',
-                            'https.proxy\nhttp://proxy.invalid\x00'):
+                            'https.proxy\nhttp://proxy.invalid\x00', 'core.askpass\nevil.exe\x00',
+                            'core.editor\nevil.exe\x00', 'diff.x.textconv\nevil.exe\x00',
+                            'gpg.program\nevil.exe\x00', 'alias.st\n!evil\x00'):
                 repo.run = mock.Mock(return_value=setting)
                 with self.subTest(setting=setting.split('\n')[0]):
                     with self.assertRaises(ContractError) as raised:
@@ -213,6 +219,49 @@ class GitSync(unittest.TestCase):
         self.assertTrue(self.repo.clean())
         self.assertEqual(self.repo.checkpoint(str(uuid4()), oid, files), oid)
 
+    def test_checkpoint_crash_between_update_ref_and_read_tree_is_recovered_by_retry(self):
+        base = self.repo.head()
+        (self.root / 'wiki/A.md').write_text('# A\nchanged\n', encoding='utf-8')
+        operation = str(uuid4())
+        files = self.hashes('wiki/A.md')
+        real_run = self.repo.run
+        def crash_after_ref(*args, **kwargs):
+            if args and args[0] == 'read-tree' and len(args) == 2:
+                raise OSError('simulated crash')
+            return real_run(*args, **kwargs)
+        with mock.patch.object(self.repo, 'run', side_effect=crash_after_ref):
+            with self.assertRaises(OSError):
+                self.repo.checkpoint(operation, base, files)
+        crashed = self.repo.head()
+        self.assertNotEqual(crashed, base)
+        self.assertFalse(self.repo.clean())
+        self.assertEqual(self.repo.checkpoint(operation, base, files), crashed)
+        self.assertTrue(self.repo.clean())
+        self.assertEqual((self.root / 'wiki/A.md').read_text(encoding='utf-8'), '# A\nchanged\n')
+
+    def _partial_adoption_fixture(self):
+        base = self.repo.head()
+        path = self.root / 'wiki/A.md'
+        path.write_text('# A' + NL + 'changed' + NL, encoding='utf-8')
+        candidate = self.repo.checkpoint(str(uuid4()), base, self.hashes('wiki/A.md'))
+        self.repo.run('reset', '--hard', base)
+        path.write_text('# A' + NL + 'changed' + NL, encoding='utf-8')  # il merge interrotto aveva già scritto C
+        self.assertFalse(self.repo.clean())
+        return base, candidate, path
+
+    def test_interrupted_fast_forward_adoption_is_completed_without_external_edits(self):
+        base, candidate, _ = self._partial_adoption_fixture()
+        self.assertTrue(self.repo.resume_adoption(base, {'oid': candidate}))
+        self.assertEqual(self.repo.head(), candidate)
+        self.assertTrue(self.repo.clean())
+
+    def test_interrupted_adoption_with_foreign_bytes_is_refused_and_preserved(self):
+        base, candidate, path = self._partial_adoption_fixture()
+        path.write_text('# A' + NL + 'foreign edit' + NL, encoding='utf-8')
+        self.assertFalse(self.repo.resume_adoption(base, {'oid': candidate}))
+        self.assertEqual(self.repo.head(), base)
+        self.assertEqual(path.read_text(encoding='utf-8'), '# A' + NL + 'foreign edit' + NL)
+
     def test_checkpoint_foreign_file_staged_file_and_hash_drift_blocked(self):
         base = self.repo.head()
         (self.root / 'wiki/A.md').write_text('changed\n', encoding='utf-8')
@@ -320,6 +369,31 @@ class GitSync(unittest.TestCase):
         self.assertIn('raw/source.txt', repo.tree(repo.head()))
         self.assertTrue((target / 'private.sqlite').exists())
         self.assertFalse(repo.clean())  # Existing excluded content is not silently hidden.
+
+    def test_interrupted_initialization_is_discarded_and_retry_succeeds(self):
+        target = self.fixture / 'interrupted'
+        target.mkdir()
+        (target / '.teseo').mkdir()
+        (target / '.teseo/project.json').write_bytes(canonical_json(self.manifest))
+        (target / 'raw').mkdir()
+        (target / 'raw/source.txt').write_text('source\n', encoding='utf-8')
+        author = {'name': 'User', 'email': 'user@example.invalid'}
+        expected = {f['path']: f['sha256'] for f in preview_data_repository(target, ['raw/source.txt'])['files']}
+        arguments = (target, 'shared', 'https://github.com/a/b.git', ['raw/source.txt'])
+        options = dict(author=author, share_confirmed=True, expected_files=expected)
+        with mock.patch('kit.dashboard.git_sync._invoke', side_effect=ContractError('git_failed', 'injected')):
+            with self.assertRaises(ContractError):
+                initialize_data_repository(*arguments, **options)
+        self.assertFalse((target / '.git').exists())
+        # Crash del processo: nessuna eccezione gestita, .git parziale con marker.
+        (target / '.git').mkdir()
+        (target / '.git' / 'teseo-init-pending').write_bytes(b'')
+        result = initialize_data_repository(*arguments, **options)
+        self.assertEqual(result['head'], GitRepository(target).head())
+        self.assertFalse((target / '.git/teseo-init-pending').exists())
+        with self.assertRaises(ContractError) as raised:
+            initialize_data_repository(*arguments, **options)
+        self.assertEqual(raised.exception.code, 'git_repository_exists')
 
     def test_isolated_merge_push_and_fast_forward_adoption(self):
         base = self.repo.head()

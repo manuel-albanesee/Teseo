@@ -1,4 +1,5 @@
 """Cicli skill: HTTP reale, copia isolata, ricevute e nessun client AI avviato."""
+import _shortpath  # noqa: F401
 import json
 import os
 from pathlib import Path
@@ -9,8 +10,7 @@ from unittest import mock
 
 import test_dashboard_queries as fixture
 from kit.dashboard.client_receipt import create_receipt
-from kit.dashboard.storage import capture_snapshot
-from kit.dashboard import ontology_apply
+from kit.dashboard.storage import Journal, VaultLock, capture_snapshot
 
 
 class FakeAdapter:
@@ -62,6 +62,18 @@ class Operations(unittest.TestCase):
         changed=dict(receipt,reason='different')
         self.complete(first,changed,status=409)
         self.assertNotIn(receipt['token'],json.dumps(next_phase))
+
+    def test_orphan_preparing_record_is_failed_and_does_not_block_the_queue(self):
+        first=self.submit()
+        with VaultLock(self.root) as lock, Journal(lock) as journal:
+            record=journal.get(first['operation_id'])
+            record['state']='preparing'
+            journal._save(record)
+        second=self.submit('operation_002',kind='lint')
+        self.assertEqual(second['state'],'awaiting_client')
+        stale=self.get('operations/'+first['operation_id'])[2]
+        self.assertEqual(stale['state'],'failed')
+        self.assertEqual(stale['error']['code'],'prepare_interrupted')
 
     def test_forged_and_changed_manifest_receipts_rejected(self):
         first=self.submit()

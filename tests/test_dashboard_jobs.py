@@ -1,4 +1,5 @@
 """Rebuild HTTP reali e iniezione guasti: preservare dati e ultima generazione."""
+import _shortpath  # noqa: F401
 import json
 import threading
 import time

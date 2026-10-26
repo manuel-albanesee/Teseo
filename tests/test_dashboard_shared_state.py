@@ -1,4 +1,5 @@
 """Regressioni del DAG condiviso: eventi sono dati, mai autorità temporale."""
+import _shortpath  # noqa: F401
 import copy
 from pathlib import Path
 import random

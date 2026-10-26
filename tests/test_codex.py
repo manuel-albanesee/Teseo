@@ -1,4 +1,5 @@
 """Regressioni locali: nessun modello, servizio di rete o vault reale."""
+import _shortpath  # noqa: F401
 import contextlib
 from contextlib import closing
 import hashlib

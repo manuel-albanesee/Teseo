@@ -5,8 +5,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import hashlib
 import re
+import os
 import secrets
+import socket
 import sqlite3
+import sys
 import threading
 import time
 from urllib.parse import urlsplit, parse_qs, unquote
@@ -14,6 +17,7 @@ import webbrowser
 
 from .bootstrap_ui import PAGE
 from .contracts import ContractError, parse_json
+from .diagnostics import log_unexpected
 from .readonly import VaultRegistry
 from .read_api import ReadAPI
 from .jobs import RebuildCoordinator
@@ -29,8 +33,18 @@ from .receiver_apply import ReceiverApplyService
 MAX_BODY_BYTES = 16 * 1024
 
 
+_log_unexpected = log_unexpected
+
+
 class DashboardServer(ThreadingHTTPServer):
     daemon_threads = False
+    # Windows: SO_REUSEADDR lascia a un altro processo condividere la porta e ricevere i token.
+    allow_reuse_address = os.name != "nt"
+
+    def server_bind(self):
+        if os.name == "nt" and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
 
     def __init__(self, port=0, registry=None, rate_limit=120):
         self.registry = registry or VaultRegistry()
@@ -102,8 +116,10 @@ class DashboardServer(ThreadingHTTPServer):
             self._slots.release()
 
     def handle_error(self, request, client_address):
-        # Nessun traceback o percorso sensibile nei log del servizio.
-        pass
+        # Nessun traceback/percorso/client nei log; disconnect e timeout del client sono normali e restano muti.
+        error = sys.exc_info()[1]
+        if error is not None and not isinstance(error, (ConnectionError, TimeoutError)):
+            _log_unexpected(error)
 
 
 class DashboardHandler(BaseHTTPRequestHandler):
@@ -367,7 +383,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                       'invalid_schema': 422}.get(error.code, status)
             status = {'manual_confirmation_required': 422, 'apply_platform_unavailable': 422,
                       'precondition_required': 428, 'migration_manual': 422, 'migration_collision': 409,
-                      'migration_invalid': 422, 'invalid_migrations': 400, 'shared_mapping_unavailable': 422,
+                      'migration_invalid': 422, 'invalid_migrations': 400, 'path_too_long': 422, 'shared_mapping_unavailable': 422,
                       'recovery_required': 409, 'recovery_conflict': 409}.get(error.code, status)
             status = {'invalid_receipt':403,'receipt_conflict':409,'receipt_manifest_mismatch':409}.get(error.code,status)
             if error.code.startswith(('sync_','git_')):
@@ -380,7 +396,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._error(status, error.code, str(error), getattr(error, 'details', None))
         except (ConnectionError, TimeoutError):
             self.close_connection = True
-        except Exception:
+        except Exception as error:
+            _log_unexpected(error)
             self._error(503, "service_unavailable", "Servizio temporaneamente non disponibile")
 
     do_GET = _handle
@@ -417,6 +434,9 @@ def main(argv=None):
                 server.serve_forever(poll_interval=0.2)
             except KeyboardInterrupt:
                 pass
+    except OSError as error:
+        # Con --port fisso il bind è esclusivo su Windows: la porta occupata va spiegata, non lasciata a un traceback.
+        parser.error(f"server non avviabile (porta non disponibile?): {type(error).__name__}")
     finally:
         registry.close()
 

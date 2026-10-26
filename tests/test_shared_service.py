@@ -1,4 +1,5 @@
 """Shared API service: explicit consent, durable retries and immutable events."""
+import _shortpath  # noqa: F401
 import json
 from pathlib import Path
 import tempfile

@@ -1,7 +1,7 @@
 """Roundtrip byte, proposte pure, validazione builder e generazioni HTTP coerenti."""
+import _shortpath  # noqa: F401
 from dataclasses import replace
 import hashlib
-import json
 from pathlib import Path
 import shutil
 import sqlite3

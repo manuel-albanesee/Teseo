@@ -1,4 +1,5 @@
 """Gate Windows: lettore aperto, pubblicazione interrotta e backup SQLite WAL."""
+import _shortpath  # noqa: F401
 import json
 import os
 from pathlib import Path

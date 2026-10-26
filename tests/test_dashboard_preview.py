@@ -1,4 +1,5 @@
 """Preview HTTP su snapshot corrente: impatto completo, conflitti e zero scritture."""
+import _shortpath  # noqa: F401
 from concurrent.futures import ThreadPoolExecutor
 import html
 import json

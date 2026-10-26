@@ -4,7 +4,8 @@ import sqlite3
 import threading
 from uuid import UUID
 
-from .contracts import ContractError, parse_json, content_hash
+from .contracts import ContractError, parse_json, content_hash, check_path_budget
+from .diagnostics import log_unexpected as _log_unexpected
 from .storage import VaultLock, Journal, capture_snapshot, _no_link
 
 TERMINAL = {"succeeded", "failed", "cancelled", "blocked_external_change", "recovery_required"}
@@ -58,6 +59,7 @@ class RebuildCoordinator:
             if len(self._workers) >= 4:
                 raise ContractError("job_limit", "Quattro rebuild già attivi; riprovare al termine")
             root = self.registry.root(vault_id)
+            check_path_budget(root)
             with VaultLock(root) as lock, Journal(lock) as journal:
                 journal.assert_notes_idle()
                 journal.recover_rebuilds()
@@ -107,6 +109,7 @@ class RebuildCoordinator:
                         validating=lambda: journal.transition(identifier, "validating"))
                     journal.complete_rebuild(identifier, reference)
                 except Exception as error:
+                    if not isinstance(error, ContractError) and not hasattr(error, "problemi"): _log_unexpected(error)
                     code = error.code if isinstance(error, ContractError) else "rebuild_failed"
                     message = str(error) if isinstance(error, ContractError) else "Rebuild fallito; generazione precedente conservata"
                     details = getattr(error, "problemi", [])
@@ -117,10 +120,10 @@ class RebuildCoordinator:
                     state = ("cancelled" if code == "operation_cancelled" else
                              "blocked_external_change" if code in ("blocked_external_change", "revision_changed") else "failed")
                     journal.transition(identifier, state, error=failure)
-        except Exception:
+        except Exception as error:
             # Un lock/storage esterno può impedire il checkpoint; GET lo segnala
             # recovery_required, senza scrivere durante una lettura o fare replay.
-            pass
+            _log_unexpected(error)
         finally:
             with self._mutex:
                 self._workers.pop(vault_id, None)

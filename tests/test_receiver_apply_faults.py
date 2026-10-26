@@ -1,4 +1,5 @@
 """ECC fault injection: receive preserves foreign bytes and completes its journal."""
+import _shortpath  # noqa: F401
 import os
 from pathlib import Path
 import shutil

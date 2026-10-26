@@ -1,4 +1,5 @@
 """HTTP reale su loopback: attach readonly, sessione, CSRF e input ostili."""
+import _shortpath  # noqa: F401
 import contextlib
 import hashlib
 import http.client
@@ -236,6 +237,37 @@ class ReadonlyHTTP(unittest.TestCase):
             main(["--vault", str(self.root), "--no-browser"])
         browser.assert_not_called()
         self.assertEqual(self.hashes(), before)
+
+
+class UnexpectedErrorLog(unittest.TestCase):
+    def raised(self):
+        try:
+            raise RuntimeError("segreto C:/Users/privato/vault")
+        except RuntimeError as error:
+            return error
+
+    def test_default_log_has_type_and_location_without_message_or_absolute_path(self):
+        from kit.dashboard.server import _log_unexpected
+        with mock.patch("sys.stderr", new_callable=io.StringIO) as stream,                 mock.patch.dict("os.environ", {"TESEO_DASHBOARD_DEBUG": "0"}):
+            _log_unexpected(self.raised())
+        text = stream.getvalue()
+        self.assertIn("RuntimeError", text)
+        self.assertIn("test_dashboard_readonly.py:", text)
+        self.assertNotIn("segreto", text)
+        self.assertNotIn("privato", text)
+
+
+@unittest.skipUnless(os.name == "nt", "SO_EXCLUSIVEADDRUSE esiste solo su Windows")
+class ExclusiveBind(unittest.TestCase):
+    def test_fixed_port_cannot_be_shared_with_a_second_listener(self):
+        import socket
+        server = DashboardServer()
+        self.addCleanup(server.server_close)
+        other = socket.socket()
+        self.addCleanup(other.close)
+        other.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        with self.assertRaises(OSError):
+            other.bind(("127.0.0.1", server.server_port))
 
 
 if __name__ == "__main__":

@@ -1,4 +1,5 @@
 """Integration gates use isolated data snapshots, never candidate executables."""
+import _shortpath  # noqa: F401
 import json
 from pathlib import Path
 import shutil

@@ -1,0 +1,11 @@
+# Lo stile compatto (più istruzioni per riga) è voluto in questo codice; E701/E702 non sono difetti.
+# E731/E741/F401 negli script legacy kit/graph, copiati nei vault, non si toccano da qui.
+target-version = "py310"
+exclude = ["tests/fixtures", "teseo-publisher-*"]
+
+[lint]
+ignore = ["E701", "E702"]
+
+[lint.per-file-ignores]
+"kit/graph/*" = ["E731", "E741", "F401"]
+"tests/*" = ["E402", "F841"]

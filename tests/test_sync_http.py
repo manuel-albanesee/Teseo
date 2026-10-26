@@ -1,4 +1,5 @@
 """Publisher HTTP: routing solo dopo sessione, origine e CSRF validi."""
+import _shortpath  # noqa: F401
 import json
 import unittest
 from unittest import mock

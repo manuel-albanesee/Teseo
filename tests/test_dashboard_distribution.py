@@ -1,4 +1,5 @@
 """Installazione nuova, upgrade con backup e registro locale esplicito."""
+import _shortpath  # noqa: F401
 import contextlib
 import hashlib
 import io

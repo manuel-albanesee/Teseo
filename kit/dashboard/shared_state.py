@@ -9,7 +9,7 @@ import re
 import sqlite3
 from uuid import UUID
 
-from .contracts import ContractError, canonical_json, content_hash, parse_json, portable_path
+from .contracts import ContractError, canonical_json, content_hash, is_junction, parse_json, portable_path
 
 MAX_EVENTS = 2048
 MAX_EVENT_BYTES = 65536
@@ -290,7 +290,7 @@ def import_events(db_path, events, vault_id):
     Anche gli eventi pending restano nel ledger per import successivi.
     """
     path = Path(db_path)
-    if path.is_symlink() or getattr(path, 'is_junction', lambda:False)():
+    if path.is_symlink() or is_junction(path):
         _fail('Cache collegata non ammessa', 'linked_path')
     db = sqlite3.connect(path)
     try:
@@ -342,7 +342,7 @@ def rebuild_projection(db_path, events, vault_id):
     """
     projection = project(events, vault_id)
     path = Path(db_path)
-    if path.is_symlink() or getattr(path, 'is_junction', lambda:False)():
+    if path.is_symlink() or is_junction(path):
         _fail('Cache collegata non ammessa', 'linked_path')
     db = sqlite3.connect(path)
     try:

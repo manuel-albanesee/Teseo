@@ -8,7 +8,7 @@ Disponibili generazioni immutabili, lettori readonly e backup SQLite nel passo
 1.4; apply protetto delle note e recovery multi-file restano futuri. Consultare
 il registro per la distinzione tra vault compatibili e legacy.
 
-Stato: progettazione futura, prerequisito dei passi successivi. Obiettivo: rendere verificabile cosa viene letto, modificato, condiviso e ripristinato. L'utente vede una revisione coerente e conserva l'ultima vista valida quando una modifica fallisce.
+Stato: implementato (contratti, journal, lock, snapshot, generazioni, backup); apply protetto e recovery multi-file sono nei passi 3–5. Prerequisito dei passi successivi. Obiettivo: rendere verificabile cosa viene letto, modificato, condiviso e ripristinato. L'utente vede una revisione coerente e conserva l'ultima vista valida quando una modifica fallisce.
 
 ## Contesto verificato e confini
 
@@ -41,7 +41,7 @@ Configurazioni portabili sono dati dichiarativi allowlist, senza percorsi assolu
 
 ## Protocollo operativo e moduli futuri
 
-`kit/dashboard/contracts.py` definisce DTO e validatori; `storage.py` gestisce snapshot, lock e journal; `graph_service.py` costruisce generazioni. Ogni record locale di operazione contiene `operation_id`, `vault_id`, `kind`, `base_git_revision` anche null senza Git, `base_content_digest`, `schema_digest`, hash prima/dopo per percorso, elenco letture, stato, errore strutturato e checkpoint. UUID identifica l'operazione; digest del contenuto identifica lo snapshot anche con working tree non committato.
+`kit/dashboard/contracts.py` definisce DTO e validatori; `storage.py` gestisce snapshot, lock e journal; `graph_service.py` costruisce generazioni. Ogni record locale di operazione contiene `operation_id`, `vault_id`, `kind`, `base_git_revision` anche null senza Git, `base_content_digest`, `schema_digest`, hash prima/dopo per percorso, elenco letture, stato, errore strutturato e checkpoint. UUID identifica l'operazione; digest del contenuto identifica lo snapshot anche con working tree non committato. L'UUID è l'identificatore logico (API, ref Git, eventi, journal); le copie su disco stanno in `.teseo/local/snapshots/<token>/`, dove `<token>` sono i primi 16 caratteri esadecimali dell'UUID (`dir_token` in `contracts.py`), per restare sotto MAX_PATH su Windows senza percorsi lunghi. Il percorso reale è quello salvato nel record (`snapshot_path`, `checkpoint.candidate_path`), mai ricavato dall'id: i record con cartelle a UUID intero restano validi. La cartella foglia è creata in modo esclusivo (`snapshot_exists` se già presente).
 
 Stati: `created → waiting_lock → running → validating → prepared → applying → succeeded`; uscite `failed`, `cancelled`, `blocked_external_change`, `recovery_required`. `succeeded` certifica l'applicazione locale; pubblicazione remota è un record collegato separato. Richieste ripetute con stessa chiave idempotente e stesso payload restituiscono lo stesso job; payload diverso con stessa chiave dà conflitto.
 

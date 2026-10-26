@@ -2,7 +2,7 @@
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
-from .contracts import ContractError, canonical_json, resolve_path
+from .contracts import ContractError, canonical_json, rebased_rel, resolve_path
 from .storage import Snapshot, SnapshotFile, capture_snapshot
 from .shared_state import snapshot_events, validate_snapshot
 from .read_api import _parser
@@ -72,7 +72,7 @@ def prepare(journal, record, candidate, answer_ids):
             if entry.path.startswith(PREFIX): values[entry.path]=entry.data
         record['client_snapshot_path']=record['snapshot_path']
         record['client_base_content_digest']=base.digest
-        relative='.teseo/local/snapshots/'+record['operation_id']+'/rebased/'+str(uuid4())
+        relative=rebased_rel(record['operation_id'],uuid4())
         journal._persist_snapshot(relative,live)
         record.update(snapshot_path=relative,base_content_digest=live.digest,before=live.hashes)
         base=live

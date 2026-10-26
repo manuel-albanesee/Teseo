@@ -6,13 +6,13 @@ writers. They cannot exclude editors: automatic application stays disabled.
 from pathlib import Path
 import difflib
 import random
-import sqlite3
 import threading
 import time
 import unicodedata
 from uuid import uuid4
 
-from .contracts import ContractError, canonical_json, parse_json
+from .contracts import ContractError, canonical_json, parse_json, stamp_schema
+from .diagnostics import log_unexpected as _log_unexpected
 from .shared_migration import _connection
 from .storage import (Journal, VaultLock, _ensure_ignored, _local_directory,
                       _no_link, assert_receiver_complete, capture_snapshot,
@@ -54,6 +54,12 @@ def _preview(base, candidate):
     return dict(files=files,total_files=len(paths),diff=''.join(chunks),truncated=truncated,complete=not truncated)
 
 
+_PUBLIC_KEYS = frozenset({
+    'state', 'enabled', 'paused', 'interval_seconds', 'automatic', 'last_seen_remote_oid', 'last_applied_oid',
+    'pending_oid', 'last_fetch_at', 'backoff', 'next_check_at', 'error', 'operation_id', 'candidate_digest',
+    'preview', 'base_head', 'base_digest', 'revision', 'service_active', 'detection_only', 'notice', 'update_event'})
+
+
 class Receiver:
     def __init__(self, registry, sync_service, *, clock=time.time, jitter=None,
                  repo_factory=None):
@@ -64,6 +70,7 @@ class Receiver:
         self.repo_factory = repo_factory
         self._stop = threading.Event()
         self._wake = threading.Event()
+        self._poll_errors = {}  # vault_id -> (tipo, codice) già loggato: niente log a 1 Hz
         self._thread = None
         self._lifecycle = threading.Lock()
 
@@ -105,6 +112,7 @@ class Receiver:
         record['automatic'] = False
         with _connection(self._path(root)) as db:
             db.execute('PRAGMA synchronous=FULL')
+            stamp_schema(db)
             db.execute('CREATE TABLE IF NOT EXISTS receiver(id INTEGER PRIMARY KEY CHECK(id=1),data BLOB NOT NULL)')
             db.execute('INSERT OR REPLACE INTO receiver VALUES(1,?)', (canonical_json(record),))
 
@@ -117,8 +125,8 @@ class Receiver:
 
     @staticmethod
     def _public(record):
-        return {key: value for key, value in record.items()
-                if key not in ('candidate', 'config')}
+        # Allow-list: un campo nuovo del record resta interno finché non viene esposto di proposito.
+        return {key: value for key, value in record.items() if key in _PUBLIC_KEYS}
 
     def status(self, vault_id, parameters=None):
         if parameters:
@@ -312,9 +320,15 @@ class Receiver:
                                 self.check(vault_id)
                         finally:
                             self.sync._mutex.release()
-            except (ContractError, OSError, sqlite3.Error):
-                # A busy/inaccessible vault must not terminate other poll targets.
+            except Exception as error:
+                # Un vault occupato/inaccessibile non ferma gli altri target né il thread, ma il guasto va reso visibile (una volta per cambio).
+                key = (type(error).__name__, getattr(error, 'code', None))
+                if self._poll_errors.get(vault_id) != key:
+                    self._poll_errors[vault_id] = key
+                    _log_unexpected(error)
                 continue
+            else:
+                self._poll_errors.pop(vault_id, None)
 
     def _run(self):
         while not self._stop.is_set():

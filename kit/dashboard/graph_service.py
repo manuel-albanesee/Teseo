@@ -7,7 +7,7 @@ import tempfile
 import time
 from uuid import uuid4
 
-from .contracts import ContractError, canonical_json, content_hash, resolve_path, file_hash
+from .contracts import ContractError, canonical_json, content_hash, graph_name, resolve_path, file_hash
 from .storage import VaultLock, capture_snapshot, _no_link
 
 try:  # sorgenti del kit / pacchetto installato in .graph/dashboard
@@ -95,7 +95,7 @@ def rebuild(root, *, lock=None, cancelled=None, validating=None, operation_id=No
         graphs = resolve_path(root, ".teseo/local/graphs")
         _no_link(root / ".teseo/local/graphs")
         graphs.mkdir(exist_ok=True)
-        destination = graphs / f"{generation}.sqlite"
+        destination = graphs / graph_name(generation)
         _no_link(destination)
         # Ricostruire anche gli orfani: non fidarsi dei soli metadati locali.
         with tempfile.TemporaryDirectory(prefix="build-", dir=local) as temporary:

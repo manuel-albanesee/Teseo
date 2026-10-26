@@ -298,7 +298,8 @@ def build_candidate(snapshot, out):
     problemi = validate_snapshot(snapshot)
     if problemi:
         raise GraphValidationError(problemi)
-    fd, name = tempfile.mkstemp(prefix=f".{out.name}-", suffix=".tmp", dir=out.parent)
+    # Nome breve: SQLite aggiunge "-journal" e su Windows il percorso resta sotto MAX_PATH (260).
+    fd, name = tempfile.mkstemp(prefix=".cand-", suffix=".tmp", dir=out.parent)
     os.close(fd)
     tmp = Path(name)
     db = None

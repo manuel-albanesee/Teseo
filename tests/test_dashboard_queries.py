@@ -1,4 +1,5 @@
 """API readonly su generazioni reali: coerenza revisioni, pagine e sicurezza."""
+import _shortpath  # noqa: F401
 import json
 from urllib.parse import quote, urlencode
 

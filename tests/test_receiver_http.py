@@ -1,4 +1,5 @@
 """Receiver HTTP: nessuna azione prima dei guard e adozione distinta dal fetch."""
+import _shortpath  # noqa: F401
 import json
 import sqlite3
 import unittest

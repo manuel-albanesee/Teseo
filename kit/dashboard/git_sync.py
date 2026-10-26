@@ -14,7 +14,7 @@ import subprocess
 import sys
 from uuid import UUID, uuid4
 
-from .contracts import (ContractError, PathKind, classify_path, parse_manifest,
+from .contracts import (ContractError, PathKind, classify_path, is_junction, parse_manifest,
                         portable_path, resolve_path, validate_paths)
 from .storage import _no_link, capture_snapshot
 
@@ -84,6 +84,8 @@ def _env():
     keys = ('PATH', 'SystemRoot', 'WINDIR', 'COMSPEC', 'PATHEXT', 'TEMP', 'TMP',
             'HOME', 'USERPROFILE', 'HOMEDRIVE', 'HOMEPATH', 'SSH_AUTH_SOCK', 'APPDATA', 'LOCALAPPDATA')
     env = {k: os.environ[k] for k in keys if k in os.environ}
+    # Voci PATH vuote o relative farebbero cercare sotto-comandi git-* nella cwd.
+    env['PATH'] = os.pathsep.join(d for d in env.get('PATH', '').split(os.pathsep) if d and os.path.isabs(d))
     ssh = _executable('ssh')
     ssh_command = (shlex.quote(ssh.replace('\\', '/')) if ssh else
                    shlex.quote(sys.executable.replace('\\', '/')) + " -c 'raise SystemExit(1)'")
@@ -191,7 +193,11 @@ class GitRepository:
         data = self.run('config', '--local', '--null', '--list')
         for pair in data.split('\x00'):
             key = pair.partition('\n')[0].lower()
-            if (key.startswith(('filter.', 'include.', 'includeif.', 'extensions.', 'credential.', 'url.', 'http.', 'https.'))
+            if (key.startswith(('filter.', 'include.', 'includeif.', 'extensions.', 'credential.', 'url.', 'http.', 'https.',
+                                'gpg.', 'pager.', 'alias.', 'submodule.', 'maintenance.', 'fsck.'))
+                    or (key.startswith('diff.') and key.rsplit('.', 1)[-1] in ('textconv', 'command'))
+                    or key in ('core.askpass', 'core.editor', 'core.pager', 'core.hookspath', 'core.protectntfs',
+                               'sequence.editor', 'uploadpack.packobjectshook')
                     or (key.startswith('merge.') and key.endswith('.driver'))
                     or key == 'diff.external'
                     or key in ('core.worktree', 'core.sshcommand', 'core.fsmonitor', 'core.attributesfile',
@@ -349,7 +355,7 @@ class GitRepository:
         for directory, dirs, names in os.walk(self.root, followlinks=False):
             parent = Path(directory)
             dirs[:] = [d for d in dirs if d != '.git' and not (parent / d).is_symlink()
-                       and not getattr(parent / d, 'is_junction', lambda: False)()
+                       and not is_junction(parent / d)
                        and (parent / d) != self.root / '.teseo/local']
             for name in names:
                 path = parent / name
@@ -421,7 +427,13 @@ class GitRepository:
         if info['tracked_violations']:
             raise ContractError('git_tracked_policy', 'File tracked vietati: pulizia esplicita richiesta')
         existing = self.find_checkpoint(operation_id, expected_head, files)
-        if existing and self.head() == existing and self.clean():
+        if existing and self.head() == existing:
+            if not self.clean():
+                # Crash fra update-ref e read-tree: il commit esiste, l'indice è ancora quello vecchio.
+                # read-tree senza -u riallinea solo l'indice e non tocca i file di lavoro.
+                self.run('read-tree', existing)
+                if not self.clean():
+                    raise ContractError('git_post_commit_change', 'Checkpoint conservato; scritture esterne bloccano la pubblicazione')
             return existing
         if self.head() != expected_head:
             raise ContractError('git_head_changed', 'HEAD è cambiato; checkpoint conservati')
@@ -495,7 +507,13 @@ class GitRepository:
         ref = 'refs/teseo/fetch/' + str(uuid4())
         self._bytes('fetch', '--no-tags', '--no-recurse-submodules', remote, branch + ':' + ref,
                     file_transport=self.allow_local_remote)
-        return _oid(self.run('rev-parse', '--verify', ref).strip())
+        oid = _oid(self.run('rev-parse', '--verify', ref).strip())
+        # Un riferimento per fetch si accumulerebbe senza fine: conservo solo l'ultimo. Gli oggetti restano
+        # nel database Git (Git non li elimina prima della sua finestra di grazia).
+        for old in self.run('for-each-ref', '--format=%(refname)', 'refs/teseo/fetch/').split():
+            if old != ref:
+                self._bytes('update-ref', '-d', old, check=False)
+        return oid
 
     def merge_base(self, local, remote):
         result = self._bytes('merge-base', _oid(local), _oid(remote), check=False)
@@ -698,6 +716,52 @@ class GitRepository:
         if self.head() != oid or not self.clean():
             raise ContractError('git_adoption_blocked', 'Verifica finale non convergente; candidato conservato')
 
+    def resume_adoption(self, expected_local: str, candidate: dict) -> bool:
+        """Completa un fast-forward interrotto; False se c'è qualunque modifica non attribuibile ad esso.
+
+        Git rifiuta di ripetere il merge su file già portati al contenuto del candidato. Qui ogni file
+        della differenza L->C deve contenere esattamente la versione L o la versione C: altrimenti è
+        una modifica esterna e non si scrive nulla.
+        """
+        _oid(expected_local)
+        oid = _oid(candidate['oid'])
+        self._safe_config()
+        if self.head() != expected_local or not self.is_ancestor(expected_local, oid):
+            return False
+        self.tree(oid)
+        old, new = self._entries(expected_local), self._entries(oid)
+        delta = {p for p in set(old) | set(new) if old.get(p) != new.get(p)}
+        try:
+            dirty = self._changes()
+        except ContractError:
+            return False
+        if not dirty or not dirty <= delta:
+            return False
+        versions = {}
+        for path in delta:
+            target = resolve_path(self.root, path)
+            _no_link(target)
+            actual = target.read_bytes() if target.is_file() else None
+            if target.exists() and not target.is_file():
+                return False
+            allowed = [self._blob(entry) if entry else None for entry in (old.get(path), new.get(path))]
+            if actual not in allowed:
+                return False
+            versions[path] = allowed[1]
+        for path, data in versions.items():
+            target = resolve_path(self.root, path)
+            if data is None:
+                target.unlink(missing_ok=True)
+            else:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                # Atomico: un secondo crash non deve lasciare un file né L né C, che bloccherebbe ogni resume.
+                temporary = target.with_name('.' + target.name + '.' + uuid4().hex[:8] + '.tmp')
+                temporary.write_bytes(data)
+                os.replace(temporary, target)
+        self.run('update-ref', 'refs/heads/' + self.inspect()['branch'], oid, expected_local)
+        self.run('read-tree', oid)
+        return self.head() == oid and self.clean()
+
     def cleanup_candidate(self, candidate):
         target = self._candidate_root(candidate['root'])
         shutil.rmtree(target)
@@ -710,6 +774,32 @@ def preview_data_repository(root, selection=None):
     reader = object.__new__(GitRepository)
     reader.root = root
     return reader._preview_files(selection)
+
+
+_INIT_PENDING = 'teseo-init-pending'
+
+
+def _remove_tree(folder: Path) -> None:
+    def writable(function, path, error):
+        if not isinstance(error[1], PermissionError):
+            raise error[1]
+        os.chmod(path, 0o600)
+        function(path)
+    shutil.rmtree(folder, onerror=writable)
+
+
+def _discard_interrupted_init(root: Path) -> None:
+    """Rimuove solo una .git creata da una inizializzazione Teseo interrotta prima del commit iniziale."""
+    git = root / '.git'
+    _no_link(git)
+    marker = git / _INIT_PENDING
+    empty = git.is_dir() and not any(git.iterdir())  # crash fra mkdir e marker: nessun dato da conservare
+    if not empty and (not marker.is_file() or any(f.is_file() for f in (git / 'refs/heads').rglob('*'))):
+        return
+    packed = git / 'packed-refs'
+    if packed.exists() and any(line and not line.startswith(('#', '^')) for line in packed.read_text(encoding='utf-8').splitlines()):
+        return
+    _remove_tree(git)
 
 
 def initialize_data_repository(root, branch, remote_url, selection, *, author,
@@ -734,8 +824,23 @@ def initialize_data_repository(root, branch, remote_url, selection, *, author,
         raise ContractError('git_preview_changed', 'Confermare gli hash della preview attuale prima di inizializzare Git')
     # A parent kit/data repository must never be implicitly adopted or nested.
     if (root / '.git').exists():
+        _discard_interrupted_init(root)
+    if (root / '.git').exists():
         raise ContractError('git_repository_exists', 'La cartella appartiene già a un repository Git')
     (root / '.git').mkdir(exist_ok=False)
+    (root / '.git' / _INIT_PENDING).write_bytes(b'')
+    try:
+        return _initialize(root, branch, remote_url, selection, author, hashes, preview)
+    except BaseException:
+        # Prima del commit iniziale non c'è nulla da conservare: il retry deve poter ripartire.
+        try:
+            _discard_interrupted_init(root)
+        except Exception:
+            pass  # l'errore originale è più utile del fallimento della pulizia
+        raise
+
+
+def _initialize(root, branch, remote_url, selection, author, hashes, preview):
     _invoke(root, ['init', '--quiet', '-b', branch])
     for field, value in author.items():
         _invoke(root, ['config', '--local', 'user.' + field, value])
@@ -755,6 +860,7 @@ def initialize_data_repository(root, branch, remote_url, selection, *, author,
         raise ContractError('git_preview_changed', 'Preview cambiata prima del commit iniziale')
     oid = _invoke(root, ['commit-tree', tree], input=b'Teseo: selezione dati iniziale approvata\n').stdout.decode().strip()
     _invoke(root, ['update-ref', 'refs/heads/' + branch, oid, '0' * len(oid)])
+    (root / '.git' / _INIT_PENDING).unlink(missing_ok=True)
     repo = GitRepository(root)
     repo.tree(oid)
     return {'head': oid, 'branch': branch, 'remote_url': remote_url,

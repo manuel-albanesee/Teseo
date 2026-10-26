@@ -1,4 +1,5 @@
 """Storage su vault sacrificabili: concorrenza reale, crash e fault injection."""
+import _shortpath  # noqa: F401
 from dataclasses import replace
 import os
 from pathlib import Path
@@ -7,12 +8,13 @@ import sys
 import tempfile
 import time
 import unittest
+import uuid
 from types import SimpleNamespace
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from kit.dashboard import storage
+from kit.dashboard import contracts, storage
 from kit.dashboard.contracts import ContractError
 from kit.dashboard.storage import (
     Journal, Snapshot, SnapshotFile, VaultLock, capture_snapshot, validate_raw_unchanged,
@@ -68,6 +70,29 @@ class Storage(unittest.TestCase):
             if time.monotonic() >= deadline:
                 self.fail("Processo figlio non pronto")
             time.sleep(0.02)
+
+    def test_create_refuses_initial_fields_that_would_override_identity_or_base(self):
+        with VaultLock(self.root) as lock, Journal(lock) as journal:
+            base = capture_snapshot(self.root)
+            for field in ("vault_id", "before", "operation_id", "kind", "base_content_digest"):
+                with self.subTest(field=field):
+                    self.assert_code("invalid_operation", journal.create, "rebuild", {"n": field}, "key-" + field,
+                                     base, initial={field: "x"})
+
+    def test_local_database_is_versioned_and_newer_versions_are_refused(self):
+        import sqlite3
+        from contextlib import closing
+        with VaultLock(self.root) as lock, Journal(lock):
+            pass
+        path = self.root / ".teseo/local/operations.sqlite"
+        with closing(sqlite3.connect(path)) as db:
+            self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0], 1)
+            db.execute("PRAGMA user_version=99")
+            db.commit()
+        with VaultLock(self.root) as lock:
+            self.assert_code("storage_version", Journal, lock)
+        with closing(sqlite3.connect(path)) as db:
+            self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0], 99)
 
     def test_legacy_has_no_implicit_storage(self):
         (self.root / ".teseo/project.json").unlink()
@@ -225,6 +250,98 @@ class Storage(unittest.TestCase):
             self.assertEqual(recovered["after"], prepared["after"])
             self.assertEqual(journal.orphan_snapshots(), [])
         self.assertEqual(capture_snapshot(self.root).digest, base.digest)
+
+    def test_snapshot_directories_use_short_tokens_while_ids_stay_uuids(self):
+        base = capture_snapshot(self.root)
+        with VaultLock(self.root) as lock, Journal(lock) as journal:
+            record = self.validating(journal, base)
+            operation, token = record["operation_id"], record["operation_id"].replace("-", "")[:16]
+            self.assertEqual(uuid.UUID(operation).version, 4)
+            self.assertEqual(record["snapshot_path"], f".teseo/local/snapshots/{token}/base")
+            prepared = journal.prepare(operation, self.candidate(base))
+            checkpoint = prepared["checkpoint"]["checkpoint_id"]
+            self.assertEqual(uuid.UUID(checkpoint).version, 4)
+            self.assertEqual(prepared["checkpoint"]["candidate_path"],
+                             f".teseo/local/snapshots/{token}/candidates/{checkpoint.replace('-', '')[:16]}")
+
+    def test_path_budget_equals_longest_real_path_of_a_nested_rebuild(self):
+        from kit.dashboard.graph_service import rebuild
+        base = capture_snapshot(self.root)
+        with VaultLock(self.root) as lock, Journal(lock) as journal:
+            prepared = journal.prepare(self.validating(journal, base)["operation_id"], self.candidate(base))
+        rebuild(self.root / prepared["checkpoint"]["candidate_path"])
+        graphs = [path for path in (self.root / ".teseo/local/snapshots").rglob("*.sqlite")]
+        self.assertEqual(len(graphs), 1)
+        measured = len(graphs[0].relative_to(self.root).as_posix()) + 1 + len("-journal")
+        self.assertEqual(measured, contracts._LONGEST_INTERNAL_PATH)
+
+    def test_vault_root_limit_leaves_room_on_limited_windows(self):
+        with mock.patch("kit.dashboard.contracts.os.name", "nt"), \
+                mock.patch("kit.dashboard.contracts._long_paths_enabled", return_value=False):
+            self.assertGreaterEqual(contracts.max_vault_path_length(), 90)
+
+    def test_create_retries_when_directory_token_collides(self):
+        base = capture_snapshot(self.root)
+        first, clash, fresh = (uuid.UUID(value) for value in (
+            "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "aaaaaaaa-aaaa-aaaa-bbbb-bbbbbbbbbbbb",
+            "cccccccc-cccc-4ccc-8ccc-cccccccccccc"))
+        with VaultLock(self.root) as lock, Journal(lock) as journal:
+            with mock.patch.object(storage, "uuid4", side_effect=[first]):
+                one = journal.create("rebuild", {"n": 1}, "one", base)
+            marker = self.root / one["snapshot_path"] / "wiki/Anna.md"
+            before = marker.read_bytes()
+            with mock.patch.object(storage, "uuid4", side_effect=[clash, fresh]):
+                two = journal.create("rebuild", {"n": 2}, "two", base)
+            self.assertEqual(two["operation_id"], str(fresh))
+            self.assertNotEqual(one["snapshot_path"], two["snapshot_path"])
+            self.assertEqual(marker.read_bytes(), before)
+
+    def test_prepare_never_reuses_a_colliding_checkpoint_directory(self):
+        base = capture_snapshot(self.root)
+        with VaultLock(self.root) as lock, Journal(lock) as journal:
+            record = self.validating(journal, base)
+            operation = record["operation_id"]
+            token = operation.replace("-", "")[:16]
+            taken = self.root / f".teseo/local/snapshots/{token}/candidates/{'d' * 16}"
+            taken.mkdir(parents=True)
+            (taken / "keep.txt").write_bytes(b"gia presente")
+            supplied = "dddddddd-dddd-dddd-dddd-dddddddddddd"
+            self.assert_code("snapshot_exists", journal.prepare, operation, self.candidate(base),
+                             checkpoint_id=supplied)
+            self.assertEqual((taken / "keep.txt").read_bytes(), b"gia presente")
+            self.assertEqual(journal.get(operation)["state"], "validating")
+            generated = [uuid.UUID(supplied), uuid.UUID("eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee")]
+            with mock.patch.object(storage, "uuid4", side_effect=generated):
+                prepared = journal.prepare(operation, self.candidate(base))
+            self.assertEqual(prepared["checkpoint"]["checkpoint_id"], str(generated[1]))
+            self.assertEqual((taken / "keep.txt").read_bytes(), b"gia presente")
+
+    def test_orphans_follow_recorded_paths_for_token_legacy_and_mixed_layouts(self):
+        base = capture_snapshot(self.root)
+        with VaultLock(self.root) as lock, Journal(lock) as journal:
+            modern = self.validating(journal, base)
+            self.assertEqual(journal.orphan_snapshots(), [])
+            legacy = journal.create("rebuild", {"legacy": True}, "legacy", base)
+            old = f".teseo/local/snapshots/{legacy['operation_id']}/base"
+            (self.root / old).parent.mkdir()
+            os.rename(self.root / legacy["snapshot_path"], self.root / old)
+            os.rmdir((self.root / legacy["snapshot_path"]).parent)
+            legacy["snapshot_path"] = old
+            journal._save(legacy)
+            self.assertEqual(journal.orphan_snapshots(), [])
+            stray = self.root / ".teseo/local/snapshots" / ("f" * 16)
+            stray.mkdir()
+            self.assertEqual(journal.orphan_snapshots(), [stray.relative_to(self.root).as_posix()])
+            stray.rmdir()
+            for step in ("waiting_lock", "running", "validating"):
+                journal.transition(legacy["operation_id"], step)
+            prepared = journal.prepare(legacy["operation_id"], self.candidate(base))
+            self.assertEqual(journal.orphan_snapshots(), [])
+            extra = self.root / prepared["checkpoint"]["candidate_path"]
+            extra.with_name("stale").mkdir()
+            self.assertEqual(journal.orphan_snapshots(),
+                             [extra.with_name("stale").relative_to(self.root).as_posix()])
+            self.assertEqual(modern["state"], "validating")
 
     def test_prepare_records_external_change(self):
         base = capture_snapshot(self.root)

@@ -14,7 +14,7 @@ Scope: servizio di ricezione mentre il processo locale è attivo, import di chec
 
 La chiusura del tab lascia attivo il processo avviato dal launcher; l'arresto esplicito ferma poll e import. UI mostra servizio attivo, ultimo controllo, commit visto/applicato, aggiornamento in attesa e motivo del rinvio. Una notifica non implica che i file siano già stati applicati. Non sovrascrivere `last_applied_oid` fino al checkpoint completo.
 
-Rilevamento: `idle → fetching → up_to_date|local_ahead|pending|waiting_idle`. Adozione esplicita: `applying → rebuilding → current`, oppure `recovery_required`; rollback concluso: `rolled_back`. Errori `offline`, `auth_required`, `incompatible`, `diverged`, `needs_resolution`, `recovery_required`. Un nuovo OID sostituisce il pending soltanto se ne include la storia; cambi di branch remoto o rewind remoto richiedono attenzione invece di import automatico.
+Rilevamento: `idle → fetching → up_to_date|local_ahead|pending|waiting_idle`. Adozione esplicita: `applying → rebuilding → current`, oppure `recovery_required`; rollback concluso: `rolled_back`. Ripetere la stessa richiesta dopo `current` restituisce il risultato già registrato (idempotente); dopo `rolled_back` è rifiutata con `receiver_stale`, perché il rollback scarta candidato e revisione: occorre rileggere il candidato. Errori `offline`, `auth_required`, `incompatible`, `diverged`, `needs_resolution`, `recovery_required`. Un nuovo OID sostituisce il pending soltanto se ne include la storia; cambi di branch remoto o rewind remoto richiedono attenzione invece di import automatico.
 
 ## Condizione di vault libero e algoritmo
 

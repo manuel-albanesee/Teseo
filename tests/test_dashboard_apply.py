@@ -1,6 +1,5 @@
 """Apply/recovery Windows reale: snapshot, crash, race e preservazione delle note."""
-from concurrent.futures import ThreadPoolExecutor
-import hashlib
+import _shortpath  # noqa: F401
 import json
 import os
 from pathlib import Path
@@ -15,7 +14,7 @@ from kit.dashboard import ontology_apply
 from kit.dashboard.contracts import ContractError
 from kit.dashboard.graph_service import rebuild
 from kit.dashboard.ontology_migrations import migrate
-from kit.dashboard.storage import capture_snapshot, Journal, VaultLock
+from kit.dashboard.storage import capture_snapshot, VaultLock
 
 
 @unittest.skipUnless(os.name == 'nt', 'Apply manuale Windows')

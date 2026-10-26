@@ -15,10 +15,13 @@ import time
 from uuid import uuid4
 
 from .contracts import (
-    ContractError, DEFAULT_SHARED_PATHS, PathKind, canonical_json, classify_path,
+    ContractError, DEFAULT_SHARED_PATHS, PathKind, canonical_json, classify_path, is_junction, stamp_schema,
     content_hash, inspect_vault, parse_json, resolve_path, validate_paths,
-    parse_manifest,
+    parse_manifest, SNAPSHOTS_REL, candidate_rel, snapshot_base_rel,
 )
+
+# Un token da 64 bit non collide in pratica: i tentativi servono solo a non sovrascrivere mai nulla.
+_TOKEN_ATTEMPTS = 5
 
 
 def _compatible_root(root, allow_missing_schema=False):
@@ -38,7 +41,7 @@ def _compatible_root(root, allow_missing_schema=False):
 
 
 def _no_link(path):
-    if path.is_symlink() or getattr(path, "is_junction", lambda: False)():
+    if path.is_symlink() or is_junction(path):
         raise ContractError("linked_path", "Symlink e junction non ammessi nello storage", path.name)
 
 
@@ -255,6 +258,8 @@ _NEXT = {
     "running": {"validating"}, "validating": {"prepared"},
     "prepared": {"applying"}, "applying": {"succeeded"},
 }
+# Campi che un chiamante può fissare alla creazione; identità, base e snapshot restano del journal.
+_INITIAL_KEYS = {"state", "request", "phases", "receipts", "publication_eligible", "expires_at"}
 _EXITS = {"failed", "cancelled", "blocked_external_change", "recovery_required"}
 
 
@@ -275,6 +280,7 @@ class Journal(AbstractContextManager):
         self.db = sqlite3.connect(path)
         try:
             self.db.execute("PRAGMA synchronous=FULL")
+            stamp_schema(self.db)
             self.db.execute("CREATE TABLE IF NOT EXISTS operations ("
                             "operation_id TEXT PRIMARY KEY, idempotency_key TEXT UNIQUE NOT NULL, "
                             "request_digest TEXT NOT NULL, record BLOB NOT NULL)")
@@ -310,14 +316,25 @@ class Journal(AbstractContextManager):
             return self.get(row[0])
         # Non attribuire un vecchio snapshot a una nuova operazione.
         snapshot.assert_unchanged(self.lock.root)
-        operation_id = str(uuid4())
-        relative = f".teseo/local/snapshots/{operation_id}/base"
-        self._persist_snapshot(relative, snapshot)
+        for _ in range(_TOKEN_ATTEMPTS):
+            operation_id = str(uuid4())
+            relative = snapshot_base_rel(operation_id)
+            try:
+                self._persist_snapshot(relative, snapshot)
+                break
+            except ContractError as error:
+                if error.code != "snapshot_exists":
+                    raise
+        else:
+            raise ContractError("snapshot_exists", "Cartella snapshot già presente: nessuna sovrascrittura")
         record = {"operation_id": operation_id, "vault_id": self.lock.vault_id, "kind": kind,
                   "base_git_revision": base_git_revision, "base_content_digest": snapshot.digest,
                   "schema_digest": snapshot.schema_digest, "reads": sorted(snapshot.hashes),
                   "before": snapshot.hashes, "after": {}, "state": "created", "error": None,
                   "checkpoint": None, "snapshot_path": relative}
+        unknown = set(initial or {}) - _INITIAL_KEYS
+        if unknown:
+            raise ContractError("invalid_operation", "Campi iniziali non ammessi per l'operazione")
         record.update(initial or {})
         with self.db:
             self.db.execute("INSERT INTO operations VALUES (?,?,?,?)",
@@ -373,10 +390,17 @@ class Journal(AbstractContextManager):
     def _persist_snapshot(self, relative, snapshot):
         destination = resolve_path(self.lock.root, relative)
         parent = self.lock.root
-        for component in Path(relative).parts:
+        *shared, _ = Path(relative).parts
+        for component in shared:
             parent = parent / component
             _no_link(parent)
             parent.mkdir(exist_ok=True)
+        # La cartella foglia è sempre nuova: un token in collisione non deve riusare né mescolare copie.
+        _no_link(destination)
+        try:
+            destination.mkdir()
+        except FileExistsError as error:
+            raise ContractError("snapshot_exists", "Cartella snapshot già presente: nessuna sovrascrittura") from error
         (destination / "wiki").mkdir(exist_ok=True)
         for entry in snapshot.files:
             target = destination / entry.path
@@ -411,9 +435,22 @@ class Journal(AbstractContextManager):
             self.transition(operation_id, "blocked_external_change", error=error.as_dict())
             raise
         validate_raw_unchanged(base, candidate)
-        checkpoint_id = checkpoint_id or str(uuid4())
-        relative = f".teseo/local/snapshots/{operation_id}/candidates/{checkpoint_id}"
-        self._persist_snapshot(relative, candidate)
+        # Un id imposto dal chiamante che collide è un errore; uno generato qui si rigenera.
+        supplied = bool(checkpoint_id)
+        for _ in range(1 if supplied else _TOKEN_ATTEMPTS):
+            checkpoint_id = checkpoint_id or str(uuid4())
+            relative = candidate_rel(operation_id, checkpoint_id)
+            try:
+                self._persist_snapshot(relative, candidate)
+                break
+            except ContractError as error:
+                if error.code != "snapshot_exists":
+                    raise
+                if supplied:
+                    raise
+                checkpoint_id = None
+        else:
+            raise ContractError("snapshot_exists", "Cartella candidato già presente: nessuna sovrascrittura")
         try:
             base.assert_unchanged(self.lock.root)
         except ContractError as error:
@@ -429,7 +466,7 @@ class Journal(AbstractContextManager):
         self._require_lock()
         record = self.get(operation_id)
         if state in ("applying", "succeeded"):
-            raise ContractError("apply_unavailable", "Apply protetto non ancora implementato")
+            raise ContractError("apply_unavailable", "Gli stati applying e succeeded si scrivono solo dal percorso di apply protetto")
         if state == "prepared":
             raise ContractError("prepare_required", "Usare prepare per verificare base e raw")
         if state == record["state"]:
@@ -485,22 +522,30 @@ class Journal(AbstractContextManager):
         _no_link(directory)
         if not directory.exists():
             return []
-        records = {row[0]: self.get(row[0]) for row in
-                   self.db.execute("SELECT operation_id FROM operations").fetchall()}
+        # Il nome della cartella non è l'operation_id (token corto, o UUID intero nei vault precedenti):
+        # fanno fede i percorsi salvati nei record.
+        referenced, known = set(), set()
+        for (operation_id,) in self.db.execute("SELECT operation_id FROM operations").fetchall():
+            record = self.get(operation_id)
+            for path in (record.get("snapshot_path"), record.get("client_snapshot_path"),
+                         (record.get("checkpoint") or {}).get("candidate_path")):
+                parts = path.split("/") if isinstance(path, str) else []
+                if len(parts) > 4 and path.startswith(SNAPSHOTS_REL + "/"):
+                    referenced.add(path)
+                    known.add(parts[3])
         orphans = []
         for operation in sorted(directory.iterdir()):
             _no_link(operation)
-            if operation.name not in records:
+            if operation.name not in known:
                 orphans.append(operation.relative_to(self.lock.root).as_posix())
                 continue
-            record = records[operation.name]
-            candidates = operation / "candidates"
-            _no_link(candidates)
-            if candidates.exists():
-                checkpoint = record["checkpoint"] or {}
-                for candidate in sorted(candidates.iterdir()):
-                    _no_link(candidate)
-                    relative = candidate.relative_to(self.lock.root).as_posix()
-                    if relative != checkpoint.get("candidate_path"):
-                        orphans.append(relative)
+            for kind in ("candidates", "rebased"):
+                group = operation / kind
+                _no_link(group)
+                if group.exists():
+                    for copy in sorted(group.iterdir()):
+                        _no_link(copy)
+                        relative = copy.relative_to(self.lock.root).as_posix()
+                        if relative not in referenced:
+                            orphans.append(relative)
         return orphans

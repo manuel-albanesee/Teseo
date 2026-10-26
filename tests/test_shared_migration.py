@@ -1,4 +1,5 @@
 """Selective legacy migration: preserve original databases and local identity."""
+import _shortpath  # noqa: F401
 from pathlib import Path
 import shutil
 import sqlite3

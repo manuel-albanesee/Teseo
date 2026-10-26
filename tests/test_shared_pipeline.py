@@ -1,4 +1,5 @@
 """Checkpoint note/eventi: UUID espliciti, risposte sopraggiunte e recovery."""
+import _shortpath  # noqa: F401
 import json
 from contextlib import closing
 import os
