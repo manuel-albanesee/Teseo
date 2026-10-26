@@ -1,3 +1,36 @@
+# Python
 __pycache__/
 *.pyc
 .venv/
+venv/
+*.egg-info/
+build/
+dist/
+
+# Cache degli strumenti di sviluppo
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Configurazioni locali di agenti ed editor
+.claude/settings.local.json
+.claude/.headroom_wrap_marker.json
+.serena/
+.vscode/
+.idea/
+
+# Avanzi dei test interrotti (tests/test_sync_pipeline.py crea qui le cartelle temporanee)
+/teseo-publisher-*/
+
+# Script e output temporanei delle verifiche manuali
+/.step*-*
+
+# Log di regressione: contengono percorsi locali
+doc/evidence/*/regression-logs/
+
+# Sistema operativo
+Thumbs.db
+Desktop.ini
+.DS_Store
