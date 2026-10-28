@@ -11,6 +11,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -46,14 +47,21 @@ class CopilotIntegration(unittest.TestCase):
         path = self.vault / ".github/hooks/teseo.json"
         data = json.loads(path.read_text(encoding="utf-8"))
         self.assertEqual(data["version"], 1)
-        self.assertEqual(len(data["hooks"]), 6)
+        self.assertEqual(len(data["hooks"]), 8)
+        script_per_evento = {"sessionStart": ["copilot_hook.py"], "userPromptSubmitted": ["copilot_hook.py"],
+                             "userPromptTransformed": ["copilot_hook.py"],
+                             "postToolUse": ["copilot_hook.py", "copilot_timing_hook.py"],
+                             "agentStop": ["copilot_hook.py"], "sessionEnd": ["copilot_hook.py"],
+                             "preToolUse": ["copilot_timing_hook.py"],
+                             "postToolUseFailure": ["copilot_timing_hook.py"]}
+        self.assertEqual(set(data["hooks"]), set(script_per_evento))
         for event, handlers in data["hooks"].items():
-            self.assertEqual(len(handlers), 1)
-            handler = handlers[0]
-            self.assertEqual(handler["exec"], sys.executable)
-            self.assertEqual(handler["args"], [str(self.vault / ".graph/copilot_hook.py"), event])
-            self.assertEqual(handler["cwd"], str(self.vault))
-            self.assertNotIn("command", handler)
+            self.assertEqual(len(handlers), len(script_per_evento[event]))
+            for handler, script in zip(handlers, script_per_evento[event]):
+                self.assertEqual(handler["exec"], sys.executable)
+                self.assertEqual(handler["args"], [str(self.vault / ".graph" / script), event])
+                self.assertEqual(handler["cwd"], str(self.vault))
+                self.assertNotIn("command", handler)
         foreign = {"type": "command", "command": "echo mio-hook", "timeoutSec": 2}
         data["hooks"]["sessionStart"].insert(0, foreign)
         data["metadata"] = "conservare"
@@ -126,6 +134,58 @@ class CopilotIntegration(unittest.TestCase):
         self.assertTrue(out["modifiedTransformedPrompt"].startswith("originale\n\n"))
         self.assertIn("index.md", out["modifiedTransformedPrompt"])
         self.assertEqual(self.run_hook("copilot_hook.py", [], "postToolUse"), {})
+
+    def run_timing(self, event, **fields):
+        payload = {"sessionId": "test", "timestamp": 1792400000000, "cwd": str(self.vault),
+                   "toolName": "sql", "toolArgs": {"query": "SELECT nome FROM persone"}, **fields}
+        result = subprocess.run([sys.executable, "-B", str(self.vault / ".graph" / "copilot_timing_hook.py"), event],
+                                input=json.dumps(payload).encode("utf-8"), cwd=self.vault,
+                                capture_output=True, timeout=60,
+                                env={**os.environ, "PYTHONIOENCODING": "utf-8"})
+        self.assertEqual(result.returncode, 0, result.stderr.decode("utf-8", "replace"))
+        return [json.loads(riga) for riga in result.stdout.decode("utf-8").splitlines() if riga.strip()]
+
+    def test_timing_measures_logs_and_shows_progress(self):
+        self.assertEqual(self.run_timing("preToolUse"), [{}])
+        time.sleep(0.05)
+        righe = self.run_timing("postToolUse", toolResult={
+            "resultType": "success", "textResultForLlm": "id | nome\n1 | Anna Rossi"})
+        self.assertEqual(righe[0]["type"], "progress")
+        self.assertIn("⏱ sql", righe[0]["message"])
+        self.assertIn("ms", righe[0]["message"])
+        self.assertNotIn("ERRORE", righe[0]["message"])
+        self.assertEqual(righe[1], {})
+        log = self.vault / ".graph" / "timing.jsonl"
+        voce = json.loads(log.read_text(encoding="utf-8").strip())
+        self.assertEqual(voce["tool"], "sql")
+        self.assertIsInstance(voce["ms"], int)
+        self.assertGreaterEqual(voce["ms"], 0)
+        self.assertTrue(voce["ok"])
+        self.assertIn("Anna Rossi", voce["risultato"])
+        self.assertIn("SELECT", voce["args"])
+        self.assertFalse(list((self.vault / ".graph" / "timing-stato").glob("*.json")))
+
+    def test_timing_failure_and_unknown_start(self):
+        righe = self.run_timing("postToolUseFailure", error="query non valida")
+        self.assertIn("ERRORE", righe[0]["message"])
+        self.assertIn("ms n/d", righe[0]["message"])
+        self.assertEqual(righe[1], {})
+        righe = self.run_timing("postToolUse", toolResult={"resultType": "success", "textResultForLlm": "ok"})
+        self.assertIn("ms n/d", righe[0]["message"])
+        voci = [json.loads(riga) for riga in
+                (self.vault / ".graph" / "timing.jsonl").read_text(encoding="utf-8").splitlines()]
+        self.assertEqual([(v["ok"], v["ms"]) for v in voci], [(False, None), (True, None)])
+        self.assertEqual(voci[0]["errore"], "query non valida")
+
+    def test_timing_never_blocks_tool_calls(self):
+        for stdin in (b"", b"non json", b"[]"):
+            with self.subTest(stdin=stdin):
+                result = subprocess.run(
+                    [sys.executable, "-B", str(self.vault / ".graph" / "copilot_timing_hook.py"), "preToolUse"],
+                    input=stdin, cwd=self.vault, capture_output=True, timeout=60,
+                    env={**os.environ, "PYTHONIOENCODING": "utf-8"})
+                self.assertEqual(result.returncode, 0)
+                self.assertEqual(json.loads(result.stdout.decode("utf-8").splitlines()[-1]), {})
 
     def test_claude_wrapper_skips_imported_copilot_and_forwards_claude(self):
         stub = "import sys\nsys.stdout.buffer.write(sys.stdin.buffer.read())\n"

@@ -12,7 +12,7 @@ Sempre, dopo la tabella del recall, i casi negativi (NEGATIVI): per ognuno i sem
 (testo incollato, parole comuni che sono nomi di pagina, titoli con parole sparse); exit 1 se ce n'è qualcuno
 o se manca un seme atteso: un seme spurio inietta fatti e domande aperte fuori tema.
 Poi il ripiego sul testo delle pagine (TESTO), misurato come lo usa recall_hook.py (recall_hook.ripiego_testo: niente
-semi dal grafo, memoria.e_domanda, poi recall.per_testo; la memoria qui non c'è): prompt che il grafo non riconosce per
+semi dal grafo, memoria.e_domanda, poi recall.per_testo_a_cascata; la memoria qui non c'è): prompt che il grafo non riconosce per
 nome ma le cui parole, identificatori o date sono nel corpo delle pagine, con le pagine attese tra quelle trovate; e
 prompt di conversazione, di lavoro, sul sistema o generici che devono dare 0 pagine. Controlla anche che le DOMANDE abbiano semi per nome (il ripiego non scatta); exit 1 se un caso fallisce.
 Infine la memoria (MEMORIA, memoria.sospendi su un db in memoria): le domande sul contenuto restano in sospeso, i

@@ -42,6 +42,9 @@ Le sole parole comuni (nessun identificatore) devono anche stare vicine nella pa
 (il minimo) in una finestra di FINESTRA_TESTO parole. Parole rare ma sparse in pagine lunghe («il collega mi ha chiesto
 il report settimanale»: chiesto e settimanale a 58 parole in una pagina, a 144 in un'altra) non dicono che la pagina
 parli di quello; le pagine giuste le hanno a 4-16 parole.
+Se il primo giro non trova nulla, un secondo giro (per_testo_a_cascata) allarga finestra e soglia
+(FINESTRA_TESTO_LARGA, SOGLIA_FREQUENTE_LARGA) e porta al più MAX_TESTO_LARGO pagine: le domande parafrasate hanno le
+parole un po' più lontane o un po' più frequenti di quelle che nominano la pagina.
 
 Uso: python .graph/recall.py "il file delle fatture non arriva, a chi scrivo?" [--menziona 10] [--tipizzate 30] [--json]
 """
@@ -78,6 +81,13 @@ MAX_TESTO = 3          # pagine al più dal ripiego sul testo
 MIN_SCORE_TESTO = 5.0  # bm25 (positivo = migliore) minimo di una pagina trovata solo da parole comuni; sotto è rumore
 SOGLIA_FREQUENTE = 0.20  # una parola comune in più di questa quota delle pagine non distingue (stess, query, error, server)
 FINESTRA_TESTO = 30    # parole: finestra in cui devono stare le parole comuni prese da una pagina trovata senza identificatori
+# Secondo giro del ripiego (per_testo_a_cascata), solo se il primo non trova nulla: finestra e soglia più larghe, meno
+# pagine. Su un vault reale (213 pagine, banco di 106 domande) 88 → 102 pagine attese su 134, 0 domande peggiorate
+# (doc/analisi-retrieval-ecc.md). Con 60 parole o soglia 0.30 «come gestisco un errore di timeout sul server?» porta una
+# pagina fuori tema.
+FINESTRA_TESTO_LARGA = 45
+SOGLIA_FREQUENTE_LARGA = 0.25
+MAX_TESTO_LARGO = 2
 MIN_PREFISSO = 5       # identificatori: sotto questa lunghezza si cercano interi, non come prefisso («acme0» non è «acme01»)
 SOGLIA_RARA = 2        # una parola in al più questo numero di pagine (e dall'aspetto di un nome: sembra_nome) è un identificatore
 MIN_RARA = 5           # lettere minime di una parola rara per valere da identificatore
@@ -289,11 +299,12 @@ def frequenze_testo(db, termini, escluse):
     return totale, frequenze
 
 
-def frequenti_testo(db, termini, escluse):
-    """Chiavi (t.chiave) delle parole comuni di `termini` presenti in più di SOGLIA_FREQUENTE delle pagine non
-    `escluse` (rowid di `testo`): stesso, query, error non distinguono nessuna pagina (vedi frequenze_testo)."""
+def frequenti_testo(db, termini, escluse, soglia=None):
+    """Chiavi (t.chiave) delle parole comuni di `termini` presenti in più di `soglia` (di norma SOGLIA_FREQUENTE) delle
+    pagine non `escluse` (rowid di `testo`): stesso, query, error non distinguono nessuna pagina (vedi frequenze_testo)."""
+    soglia = SOGLIA_FREQUENTE if soglia is None else soglia
     totale, frequenze = frequenze_testo(db, termini, escluse)
-    return {k for k, n in frequenze.items() if n / totale > SOGLIA_FREQUENTE}
+    return {k for k, n in frequenze.items() if n / totale > soglia}
 
 
 def rare_testo(db, termini, escluse):
@@ -305,19 +316,20 @@ def rare_testo(db, termini, escluse):
             and len(t.parola) >= MIN_RARA and sembra_nome(t.parola)}
 
 
-def vicine(pagina, chiavi, minimo):
+def vicine(pagina, chiavi, minimo, finestra=None):
     """True se almeno `minimo` chiavi distinte (forma di termini_testo: `" radice "`, parola intera) stanno in
-    FINESTRA_TESTO parole consecutive di `pagina` (la pagina ridotta a radici, con spazi ai bordi: le chiavi sono
-    radici e si confrontano con radici)."""
+    `finestra` (di norma FINESTRA_TESTO) parole consecutive di `pagina` (la pagina ridotta a radici, con spazi ai bordi:
+    le chiavi sono radici e si confrontano con radici)."""
+    finestra = FINESTRA_TESTO if finestra is None else finestra
     parole = pagina.split()
     posizioni = sorted((i, k) for k in chiavi for i, w in enumerate(parole) if w == k.strip())
     for a, (inizio, _) in enumerate(posizioni):
-        if len({k for i, k in posizioni[a:] if i < inizio + FINESTRA_TESTO}) >= minimo:
+        if len({k for i, k in posizioni[a:] if i < inizio + finestra}) >= minimo:
             return True
     return False
 
 
-def per_testo(db, domanda, n=MAX_TESTO, tolte=()):
+def per_testo(db, domanda, n=MAX_TESTO, tolte=(), finestra=None, soglia_frequente=None):
     """Ripiego quando il grafo non riconosce nulla: [pagine] trovate nel corpo (FTS5 `testo`), al più n.
 
     Prima le pagine delle fonti delle date citate, poi la ricerca per parole (bm25, titolo pesa più del corpo, nelle
@@ -330,7 +342,8 @@ def per_testo(db, domanda, n=MAX_TESTO, tolte=()):
     (frequenti_testo) sono tolte prima di tutto: dalla query, dalle parole prese e dal minimo; se ne restano meno di
     due e non c'è un identificatore, la ricerca per parole non dà nulla (le date e gli identificatori funzionano come
     prima). Una parola comune molto rara che sembra un nome (rare_testo: «fatturix») conta invece come un
-    identificatore. `tolte`: pagine da non ripetere (già semi)."""
+    identificatore. `tolte`: pagine da non ripetere (già semi). `finestra` e `soglia_frequente` sostituiscono
+    FINESTRA_TESTO e SOGLIA_FREQUENTE (il secondo giro di per_testo_a_cascata)."""
     testo = scritto(domanda)
     entropia = {id_ for id_, tags in db.execute("SELECT id, tags FROM entities")
                 if TAG_ENTROPIA in (tags or "").split(", ")}
@@ -340,7 +353,7 @@ def per_testo(db, domanda, n=MAX_TESTO, tolte=()):
         termini = termini_testo(testo)
         escluse_rowid = {r for (r,) in db.execute(f"SELECT rowid FROM testo WHERE id IN ({','.join('?' * len(entropia))})",
                                                   sorted(entropia))}
-        frequenti = frequenti_testo(db, termini, escluse_rowid)
+        frequenti = frequenti_testo(db, termini, escluse_rowid, soglia_frequente)
         rare = rare_testo(db, termini, escluse_rowid)
         # fuori le parole comuni troppo frequenti; le rare con aspetto di nome diventano identificatori
         utili = [t._replace(forte=True) if t.chiave in rare else t for t in termini if t.chiave not in frequenti]
@@ -359,13 +372,24 @@ def per_testo(db, domanda, n=MAX_TESTO, tolte=()):
                 pagina_radici = f" {rtitolo} {rcorpo} "
                 presi = [t for t in utili if t.chiave in (pagina_radici if t.radice else pagina)]
                 if any(t.forte for t in presi) or (score >= MIN_SCORE_TESTO and len(presi) >= minimo
-                                                   and vicine(pagina_radici, [t.chiave for t in presi], minimo)):
+                                                   and vicine(pagina_radici, [t.chiave for t in presi], minimo,
+                                                              finestra)):
                     trovate.append(id_)
                     if len(trovate) == n:
                         break
         return trovate
     except sqlite3.OperationalError:  # graph.sqlite di una versione senza la tabella `testo` o senza le colonne radici_*
         return []
+
+
+def per_testo_a_cascata(db, domanda, tolte=()):
+    """Il ripiego sul testo in due giri: per_testo; se non trova nulla, un secondo giro con FINESTRA_TESTO_LARGA e
+    SOGLIA_FREQUENTE_LARGA, al più MAX_TESTO_LARGO pagine. Recupera le domande parafrasate («il manifesto di
+    collaudo», «il codice della settimana») con le parole un po' più lontane nella pagina o un po' più frequenti nel
+    vault, senza toccare le domande che il primo giro già serve. Al più due giri: lo stop è fisso, non dipende
+    dalle pagine trovate."""
+    return (per_testo(db, domanda, tolte=tolte)
+            or per_testo(db, domanda, MAX_TESTO_LARGO, tolte, FINESTRA_TESTO_LARGA, SOGLIA_FREQUENTE_LARGA))
 
 
 def archi(db, nodi, solo_tipizzate, colonne=("source_id", "target_id")):

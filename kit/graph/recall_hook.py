@@ -7,8 +7,9 @@ punti di partenza, non cercano nella memoria, non restano in sospeso e non fanno
 Fatti: tutte le relazioni tipizzate e al più 10 link generici (limiti per tipo in recall.py); se qualcosa resta fuori,
 l'ultima riga dei fatti lo dice («N link generici omessi»).
 Alle pagine nominate nel prompt aggiunge quelle lette in passato per domande simili (memoria.py).
-Se né il grafo né la memoria danno punti di partenza, ripiego sul testo delle pagine (recall.per_testo, FTS5):
-fino a 3 pagine che contengono le parole o le date del prompt, solo se è una domanda sul contenuto (memoria.e_domanda:
+Se né il grafo né la memoria danno punti di partenza, ripiego sul testo delle pagine (recall.per_testo_a_cascata, FTS5):
+fino a 3 pagine che contengono le parole o le date del prompt, e se non ce ne sono un secondo giro più largo con al più
+2 pagine; solo se è una domanda sul contenuto (memoria.e_domanda:
 non per comandi, conferme, richieste di modifica o domande sul sistema), aggiunte come punti di partenza e dichiarate nel
 contesto «trovate nel testo, non per nome» (aggancio debole: il modello le verifica), nel systemMessage con
 «N pagine dal testo». La condizione sta in ripiego_testo, usata anche da misura.py. Non vale con la memoria: le pagine lette in passato per domande simili sono un segnale più
@@ -52,7 +53,7 @@ from build_graph import costruisci
 import domande
 from build_graph import norm
 from memoria import apri, e_domanda, registra_turno, ricorda, sospendi
-from recall import formatta, nodi, per_testo, per_titolo, punti_di_partenza, richiama, scritto
+from recall import formatta, nodi, per_testo_a_cascata, per_titolo, punti_di_partenza, richiama, scritto
 
 AVVISO = "Fatti calcolati da frontmatter e wikilink: verificarli sulle pagine di wiki/ prima di citarli."
 MAX_ERRORE = 200  # caratteri di un errore nei messaggi
@@ -79,8 +80,8 @@ def ripiego_testo(db, testo, dal_grafo, ricordate=()):
     """Le pagine del ripiego sul testo, o [] se non scatta. Una sola condizione per l'hook e per misura.py: ripiego solo
     senza grafo e senza memoria, e solo per le domande sul contenuto (comandi, conferme e domande sul sistema darebbero
     pagine fuori tema; le date esplicite passano e_domanda, non sono comandi). Grafo e memoria li calcola il chiamante:
-    misura.py non ha la memoria e passa `ricordate` vuoto."""
-    return per_testo(db, testo) if not dal_grafo and not ricordate and e_domanda(testo) else []
+    misura.py non ha la memoria e passa `ricordate` vuoto. Il ripiego è a due giri (recall.per_testo_a_cascata)."""
+    return per_testo_a_cascata(db, testo) if not dal_grafo and not ricordate and e_domanda(testo) else []
 
 
 def origine_semi(db, testo, dal_grafo, ricordate, dal_testo, semi):
