@@ -117,6 +117,41 @@ class IntegrationValidation(unittest.TestCase):
         self.write(self.candidate, 'Anna', 'Remoto')
         self.assertEqual(self.validate()['state'], 'needs_decision')
 
+    def _append(self, root, path, text):
+        with (root / path).open('a', encoding='utf-8', newline='\n') as stream:
+            stream.write(text)
+
+    def _logs(self, local_text, remote_text, candidate_text, path='log.md', base='# Log\n'):
+        for root in (self.base, self.local, self.remote, self.candidate):
+            (root / path).write_text(base, encoding='utf-8')
+        for root, text in ((self.local, local_text), (self.remote, remote_text), (self.candidate, candidate_text)):
+            self._append(root, path, text)
+
+    def test_append_only_log_and_index_on_both_branches_need_no_decision(self):
+        for path, local_line, remote_line in (('log.md', '## lint | locale\n', '## ingest | remoto\n'),
+                                              ('index.md', '- [[Anna]]\n', '- [[Bruno]]\n')):
+            self._logs(local_line, remote_line, local_line + remote_line, path, '# Titolo\n')
+            self.assertEqual(self.validate()['state'], 'validated', path)
+
+    def test_append_only_log_does_not_correlate_with_unrelated_notes(self):
+        self._logs('## lint | locale\n', '', '## lint | locale\n')
+        self.write(self.remote, 'Bruno', 'Remoto')
+        self.write(self.candidate, 'Bruno', 'Remoto')
+        self.assertEqual(self.validate()['state'], 'validated')
+
+    def test_rewriting_or_deleting_log_and_index_lines_still_needs_a_decision(self):
+        self._logs('', '## ingest | remoto\n', '## ingest | remoto\n', 'log.md', '# Log\n## prima\n')
+        (self.local / 'log.md').write_text('# Log\n## riscritta\n', encoding='utf-8')
+        self.assertEqual(self.validate()['state'], 'needs_decision')
+        self._logs('', '- [[Bruno]]\n', '- [[Bruno]]\n', 'index.md', '# Titolo\n- [[Anna]]\n')
+        (self.local / 'index.md').write_text('# Titolo\n', encoding='utf-8')
+        self.assertEqual(self.validate()['state'], 'needs_decision')
+
+    def test_additive_on_one_side_only_does_not_hide_a_rewrite_on_the_other(self):
+        self._logs('## lint | locale\n', '', '## lint | locale\n', 'log.md', '# Log\n## prima\n')
+        (self.remote / 'log.md').write_text('# Log\n## riscritta\n', encoding='utf-8')
+        self.assertEqual(self.validate()['state'], 'needs_decision')
+
     def test_same_change_on_both_branches_needs_no_decision(self):
         for root in (self.local, self.remote, self.candidate):
             self.write(root, 'Anna', 'Uguale', 'aliases: [Annetta]\n')

@@ -4,6 +4,7 @@ The optional callback belongs to the trusted service, never to vault data. It
 attests an already reviewed, frozen candidate and cannot authorize new bytes.
 Lexical/neighborhood overlap is conservative evidence, not semantic proof.
 """
+from collections import Counter
 from pathlib import Path
 from copy import deepcopy
 import subprocess
@@ -111,11 +112,28 @@ def _scope(base, local, remote, parsed_roots):
                     values.update(neighborhoods.get(f'wiki/{page}.md', {'entity:' + _parser().norm(page)}))
     scope = set()
     global_paths = {'Wiki reference.md', 'index.md', 'log.md'}
+    contents = {name: {item.path: item.data for item in snapshot.files}
+                for name, snapshot in (('base', base), ('local', local), ('remote', remote))}
+
+    def additive(path, side):
+        # Ogni skill aggiunge righe a log.md/index.md: se un lato non cancella né riscrive nulla, l'unione
+        # dei due lati non può perdere informazione e il file non è più un punto di contatto semantico.
+        if path not in ('log.md', 'index.md'):
+            return False
+        old, new = contents['base'].get(path, b''), contents[side].get(path, b'')
+        if path == 'log.md':
+            return new.startswith(old)
+        return not Counter(old.splitlines()) - Counter(new.splitlines())
+
     for left in local_paths:
         for right in remote_paths:
             if left == right and local.hashes.get(left) == remote.hashes.get(right):
                 continue
-            if (left == right or left in global_paths or right in global_paths
+            if left == right and additive(left, 'local') and additive(right, 'remote'):
+                continue
+            left_global = left in global_paths and not additive(left, 'local')
+            right_global = right in global_paths and not additive(right, 'remote')
+            if (left == right or left_global or right_global
                     or neighborhoods.get(left, set()) & neighborhoods.get(right, set())):
                 scope.update((left, right))
     return sorted(scope)

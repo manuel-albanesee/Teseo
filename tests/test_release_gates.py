@@ -117,47 +117,85 @@ class IndexLogMerge(Env):
         self.assertEqual((self.root / 'index.md').read_text(encoding='utf-8'), final + '\n' if not final.endswith('\n') else final)
         self.assertTrue(self.ancestor(before, self.tip()))  # fast-forward del remoto, nessuna riscrittura
 
-    def test_concurrent_log_appends_conflict_and_both_sides_bytes_survive(self):
+    def test_concurrent_log_appends_are_unioned_and_both_sides_survive(self):
         self.edit('log.md', '- avvio\n', '- avvio\n- locale\n')
         body = self.p.validated()
         remote_commit = self.peer_write('log.md', (LOG + '- remoto\n').encode())
         result = self.service.publish(self.vault, body)
-        self.assertEqual((result['state'], result['error']['code']), ('needs_resolution', 'git_conflict'), result)
-        self.assertEqual(self.tip(), remote_commit)  # nessun push, nessun force
-        self.assertEqual((self.root / 'log.md').read_text(encoding='utf-8'), LOG + '- locale\n')
-        self.assertEqual(self.git('rev-parse', 'HEAD'), result['L'])
-        stage = (Path(result['error']['path']) / 'log.md').read_text(encoding='utf-8')
-        self.assertTrue('- locale' in stage and '- remoto' in stage and '<<<<<<<' in stage)
-        self.assertEqual(self.git('show', remote_commit + ':log.md', cwd=self.remote), (LOG + '- remoto').rstrip())
-        # La risoluzione revisionata (unione) è validata e pubblicata senza perdere nessuna riga.
-        (Path(result['error']['path']) / 'log.md').write_text(LOG + '- locale\n- remoto\n', encoding='utf-8', newline='\n')
-        digest = capture_snapshot(result['error']['path']).digest
-        resume = dict(idempotency_key=body['idempotency_key'], exclusive_confirmed=True, resolution_digest=digest)
-        result = self.service.resolve(self.vault, resume)
-        self.assertEqual(result['state'], 'needs_decision', result)
-        done = self.service.resolve(self.vault, dict(resume, human_decision_key=result['validation']['key']))
-        self.assertEqual(done['state'], 'converged', done)
+        # Entrambi i lati aggiungono soltanto righe: l'unione non perde nulla e non serve revisione (D3).
+        self.assertEqual((result['state'], result['error']), ('converged', None), result)
+        self.assertEqual(result['validation']['scope'], [])
         final = self.git('show', 'refs/heads/team:log.md', cwd=self.remote)
-        self.assertEqual(final.splitlines(), ['# Log', '- avvio', '- locale', '- remoto'])
-        self.assertTrue(self.ancestor(remote_commit, self.tip()))
+        self.assertEqual(final.splitlines(), ['# Log', '- avvio', '- locale', '- remoto'])  # log cronologico: ordine fisso
+        self.assertNotIn('<<<<<<<', final)
+        self.assertTrue(self.ancestor(remote_commit, self.tip()))  # fast-forward del remoto, nessun force
 
-    def test_same_line_index_conflict_preserves_local_remote_and_candidate_variants(self):
+    def test_non_additive_log_edit_is_not_unioned_silently(self):
+        self.edit('log.md', '- avvio\n', '- avvio riscritto\n')
+        body = self.p.validated()
+        remote_commit = self.peer_write('log.md', (LOG + '- remoto\n').encode())
+        result = self.service.publish(self.vault, body)
+        self.assertEqual((result['state'], result['error']), ('needs_decision', None), result)  # riscrittura: mai auto-pubblicata
+        self.assertIn('log.md', result['validation']['scope'])
+        self.assertEqual(self.tip(), remote_commit)
+        self.assertEqual((self.root / 'log.md').read_text(encoding='utf-8'), '# Log\n- avvio riscritto\n')
+
+    def test_same_line_index_edit_keeps_both_variants_and_waits_for_human_decision(self):
         self.edit('index.md', 'Testa: uno', 'Testa: locale')
         body = self.p.validated()
         remote_commit = self.peer_write('index.md', INDEX.replace('Testa: uno', 'Testa: remota').encode())
         local_bytes = (self.root / 'index.md').read_bytes()
         result = self.service.publish(self.vault, body)
-        self.assertEqual((result['state'], result['error']['code']), ('needs_resolution', 'git_conflict'), result)
-        self.assertEqual(self.tip(), remote_commit)
-        self.assertEqual((self.root / 'index.md').read_bytes(), local_bytes)
-        stage = (Path(result['error']['path']) / 'index.md').read_text(encoding='utf-8')
-        self.assertTrue('Testa: locale' in stage and 'Testa: remota' in stage)
+        self.assertEqual((result['state'], result['error']), ('needs_decision', None), result)
+        self.assertIn('index.md', result['validation']['scope'])
+        self.assertEqual(self.tip(), remote_commit)  # nessun push finché l'umano non decide
+        self.assertEqual((self.root / 'index.md').read_bytes(), local_bytes)  # vault vivo intatto
+        candidate = (Path(result['candidate_path']) / 'index.md').read_text(encoding='utf-8')
+        self.assertTrue('Testa: locale' in candidate and 'Testa: remota' in candidate)
+        self.assertNotIn('<<<<<<<', candidate)
         self.assertEqual(self.git('show', remote_commit + ':index.md', cwd=self.remote), INDEX.replace('Testa: uno', 'Testa: remota').rstrip())
-        # Marker di conflitto lasciati nel candidato non superano mai la risoluzione.
-        digest = capture_snapshot(result['error']['path']).digest
-        failed = self.service.resolve(self.vault, dict(idempotency_key=body['idempotency_key'], exclusive_confirmed=True, resolution_digest=digest))
-        self.assertEqual((failed['state'], failed['error']['code']), ('needs_resolution', 'git_conflict'), failed)
+
+    def test_concurrent_index_appends_are_unioned_without_decision(self):
+        self.edit('index.md', 'Coda: uno\n', 'Coda: uno\nLocale\n')
+        body = self.p.validated()
+        remote_commit = self.peer_write('index.md', (INDEX + 'Remoto\n').encode())
+        result = self.service.publish(self.vault, body)
+        self.assertEqual((result['state'], result['error']), ('converged', None), result)
+        self.assertEqual(result['validation']['scope'], [])  # entrambi additivi: nessun punto di contatto
+        final = self.git('show', 'refs/heads/team:index.md', cwd=self.remote)
+        self.assertEqual(final.splitlines(), INDEX.splitlines() + ['Locale', 'Remoto'])
+        self.assertNotIn('<<<<<<<', final)
+        self.assertTrue(self.ancestor(remote_commit, self.tip()))
+
+    def test_distant_log_rewrite_with_remote_append_needs_decision_and_survives_it(self):
+        self.edit('log.md', '# Log\n', '# Registro\n')  # lontano dall'append remoto: Git unisce da solo, senza _union_resolve
+        body = self.p.validated()
+        remote_commit = self.peer_write('log.md', (LOG + '- remoto\n').encode())
+        result = self.service.publish(self.vault, body)
+        self.assertEqual((result['state'], result['error']), ('needs_decision', None), result)
+        self.assertIn('log.md', result['validation']['scope'])  # il titolo riscritto non è additivo
         self.assertEqual(self.tip(), remote_commit)
+        candidate = (Path(result['candidate_path']) / 'log.md').read_text(encoding='utf-8')
+        self.assertTrue('# Registro' in candidate and '- remoto' in candidate)
+        done = self.decide(body, result)
+        self.assertEqual(done['state'], 'converged', done)
+        final = self.git('show', 'refs/heads/team:log.md', cwd=self.remote)
+        self.assertEqual(final.splitlines(), ['# Registro', '- avvio', '- remoto'])
+        self.assertTrue(self.ancestor(remote_commit, self.tip()))
+
+    def test_non_additive_log_decision_publishes_every_line_of_both_sides(self):
+        self.edit('log.md', '- avvio\n', '- avvio riscritto\n')
+        body = self.p.validated()
+        remote_commit = self.peer_write('log.md', (LOG + '- remoto\n').encode())
+        result = self.service.publish(self.vault, body)
+        self.assertEqual(result['state'], 'needs_decision', result)
+        self.assertEqual(self.tip(), remote_commit)  # nessun push prima della decisione
+        done = self.decide(body, result)
+        self.assertEqual(done['state'], 'converged', done)
+        final = self.git('show', 'refs/heads/team:log.md', cwd=self.remote)
+        self.assertNotIn('<<<<<<<', final)
+        self.assertTrue(all(line in final.splitlines() for line in ('# Log', '- avvio riscritto', '- remoto')), final)
+        self.assertTrue(self.ancestor(remote_commit, self.tip()))
 
     def test_isolated_merge_is_deterministic_and_validator_sees_all_lines(self):
         self.edit('index.md', 'Testa: uno', 'Testa: locale')

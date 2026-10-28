@@ -19,6 +19,10 @@ Alla fine controlla PyYAML e FTS5, lancia build_graph.py --check e, su un vault 
 Uso:
   python installa.py <vault> [--client claude|codex|copilot|entrambi|tutti] [--skill utente|vault|no] [--aggiorna] [--esempio]
   python installa.py <vault> --client codex --skill vault --solo-integrazione
+  python installa.py <vault> --collabora https://github.com/<org>/<repo>.git [--crea-remote] [--branch main] [--si]
+                    repository dati condiviso e autosync: crea il repository (anteprima dei file condivisi e conferma,
+                    primo push) oppure, se il remoto è già popolato e <vault> è vuoto, lo clona; poi le skill fanno
+                    pull all'inizio (.graph/teseo_git.py pre) e commit+push alla fine (post). Ripetibile.
   python installa.py --prova        installa in una cartella temporanea con il vault d'esempio, verifica e cancella
 """
 import argparse
@@ -38,7 +42,7 @@ from uuid import uuid4
 KIT = Path(__file__).resolve().parent / "kit"
 SCHEMA = ["Wiki reference.md", "index.md", "log.md", "CLAUDE.md"]
 CODEX_SCRIPT = {"codex_hook.py", "chiedi_codex.py", "leggi.py"}
-COPILOT_SCRIPT = {"copilot_hook.py"}
+COPILOT_SCRIPT = {"copilot_hook.py", "copilot_timing_hook.py"}
 CLAUDE_SCRIPT = {"claude_hook.py"}
 CLAUDE_HANDLER = ("modello_hook.py", "learn_hook.py", "claude_hook.py")
 FACOLTATIVI = {"banco.py", "candidati.py"}
@@ -180,13 +184,14 @@ def unisci_hook_copilot(vault, rapporto):
     path = vault / ".github" / "hooks" / "teseo.json"
     eventi = {"sessionStart": 15, "userPromptSubmitted": 45, "userPromptTransformed": 45,
               "postToolUse": 10, "agentStop": 10, "sessionEnd": 10}
+    eventi_timing = {"preToolUse": 5, "postToolUse": 10, "postToolUseFailure": 10}
     try:
         attuale = json.loads(path.read_text(encoding="utf-8-sig")) if path.exists() else {"version": 1}
         if not isinstance(attuale, dict) or attuale.get("version") != 1:
             raise ValueError("version deve essere 1")
         if not isinstance(attuale.get("hooks", {}), dict):
             raise ValueError("hooks deve essere un oggetto JSON")
-        for evento in eventi:
+        for evento in eventi.keys() | eventi_timing.keys():
             handlers = attuale.get("hooks", {}).get(evento, [])
             if not isinstance(handlers, list) or any(not isinstance(h, dict) for h in handlers):
                 raise ValueError(f"hooks.{evento} deve essere una lista di handler")
@@ -200,6 +205,11 @@ def unisci_hook_copilot(vault, rapporto):
         altri = [h for h in hooks.get(evento, []) if "copilot_hook.py" not in json.dumps(h)]
         hooks[evento] = altri + [{"type": "command", "exec": sys.executable,
                                  "args": [script, evento], "cwd": str(vault), "timeoutSec": timeout}]
+    script_timing = str(vault / ".graph" / "copilot_timing_hook.py")
+    for evento, timeout in eventi_timing.items():
+        altri = [h for h in hooks.get(evento, []) if "copilot_timing_hook.py" not in json.dumps(h)]
+        hooks[evento] = altri + [{"type": "command", "exec": sys.executable,
+                                 "args": [script_timing, evento], "cwd": str(vault), "timeoutSec": timeout}]
     if prima == json.dumps(attuale, ensure_ascii=False, sort_keys=True):
         rapporto(".github/hooks/teseo.json", "hook già registrati")
         return True
@@ -207,7 +217,7 @@ def unisci_hook_copilot(vault, rapporto):
     if path.exists():
         shutil.copyfile(path, path.with_name(f"teseo.json.bak-{adesso()}"))
     path.write_text(json.dumps(attuale, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    rapporto(".github/hooks/teseo.json", "registrati 6 hook nativi Copilot CLI")
+    rapporto(".github/hooks/teseo.json", "registrati 6 hook nativi Copilot CLI e 3 di misurazione tool")
     return True
 
 
@@ -342,6 +352,118 @@ def controlla_vault(vault, rapporto):
         rapporto.avviso("index.md senza «## Punti aperti nel vault»: le domande aperte di tipo «punto» non si calcolano")
 
 
+LOCALI = [".graph/", ".graph_backup/", ".claude/", ".codex/", ".agents/", ".github/", ".obsidian/", ".trash/",
+          "CLAUDE.md", "AGENTS.md"]
+
+
+def _conferma(domanda, si):
+    if si:
+        return True
+    if not sys.stdin.isatty():
+        raise ValueError("conferma richiesta: rilanciare da un terminale oppure con --si")
+    return input(f"{domanda} [s/N] ").strip().lower() in ("s", "si", "sì", "y", "yes")
+
+
+def _crea_remoto(url, visibilita, si, rapporto):
+    from kit.dashboard.git_sync import github_repository_url
+    web = github_repository_url(url)
+    if not web:
+        raise ValueError("--crea-remote richiede un URL github.com")
+    nome = web.removeprefix("https://github.com/")
+    if not shutil.which("gh"):
+        raise ValueError("--crea-remote richiede la GitHub CLI (gh) installata e autenticata: gh auth login")
+    if subprocess.run(["gh", "auth", "status"], capture_output=True).returncode:
+        raise ValueError("gh non è autenticato: eseguire gh auth login")
+    if not _conferma(f"Creare il repository {visibilita} {nome} su GitHub?", si):
+        raise ValueError("creazione del repository annullata")
+    fatto = subprocess.run(["gh", "repo", "create", nome, f"--{visibilita}"], capture_output=True)
+    if fatto.returncode:
+        raise ValueError("gh repo create non riuscito: " + fatto.stderr.decode("utf-8", "replace").strip()[:300])
+    rapporto("repository remoto", f"creato {visibilita}: {web}")
+
+
+def collabora_clona(vault, opzioni, rapporto):
+    """Vault vuoto o nuovo e repository dati già popolato: lo clona al posto di crearne uno. True se clonato."""
+    from kit.dashboard.contracts import ContractError
+    from kit.dashboard.git_sync import clone_data_repository, remote_branch_oid
+    if vault.exists() and any(vault.iterdir()):
+        return False
+    try:
+        presente = remote_branch_oid(opzioni["url"], opzioni["branch"], allow_local_remote=opzioni["locale"])
+    except ContractError as errore:
+        if opzioni["crea_remote"]:
+            return False
+        raise ValueError(f"repository dati non raggiungibile ({errore.code}): crearlo su GitHub, "
+                         "oppure usare --crea-remote") from errore
+    if presente is None:
+        return False
+    try:
+        clone_data_repository(opzioni["url"], opzioni["branch"], vault, allow_local_remote=opzioni["locale"])
+    except ContractError as errore:
+        raise ValueError(f"clone del repository dati rifiutato: {errore}") from errore
+    rapporto("repository dati", f"clonato da {opzioni['url']} (branch {opzioni['branch']})")
+    return True
+
+
+def collabora_imposta(vault, opzioni, clonato, rapporto):
+    """Repository dati e autosync: clone già fatto, aggancio a un .git esistente, oppure creazione con primo push."""
+    from kit.dashboard.autosync import Autosync
+    from kit.dashboard.contracts import ContractError
+    from kit.dashboard.git_sync import (GitRepository, global_author, initialize_data_repository, is_local_only,
+                                        preview_data_repository, read_local_excludes, remote_branch_oid,
+                                        write_local_excludes)
+    url, branch, locale = opzioni["url"], opzioni["branch"], opzioni["locale"]
+    nuovo = False
+    # Fonti testuali di raw/: condivise. Le binarie restano sul disco (is_local_only) e vengono escluse a parte.
+    testuali = sorted(p.relative_to(vault).as_posix() for p in (vault / "raw").rglob("*")
+                      if p.is_file() and not is_local_only(p.relative_to(vault).as_posix()))
+    try:
+        if not (vault / ".git").exists():
+            autore = global_author()
+            if not autore:
+                raise ValueError("identità Git mancante: git config --global user.name \"Nome\" "
+                                 "e git config --global user.email \"mail\"")
+            anteprima = preview_data_repository(vault, testuali)
+            print(f"\nDati che verranno condivisi su {url} ({branch}): {len(anteprima['files'])} file")
+            for riga in anteprima["files"][:15]:
+                print(f"  + {riga['path']}")
+            if len(anteprima["files"]) > 15:
+                print(f"  … e altri {len(anteprima['files']) - 15}")
+            print(f"Restano solo sul tuo disco: {len(anteprima['excluded'])} file (script, configurazioni, fonti binarie)")
+            if not _conferma("Pubblicare questi file e attivare pull/push automatici?", opzioni["si"]):
+                raise ValueError("installazione collaborativa annullata: nulla è stato pubblicato")
+            try:
+                esiste = remote_branch_oid(url, branch, allow_local_remote=locale)
+            except ContractError:
+                esiste = None
+                if not opzioni["crea_remote"]:
+                    raise ValueError("repository dati non raggiungibile: crearlo su GitHub oppure usare --crea-remote")
+                _crea_remoto(url, opzioni["visibilita"], opzioni["si"], rapporto)
+            if esiste:
+                raise ValueError("il repository dati ha già contenuti: installare in una cartella vuota per clonarlo")
+            hashes = {r["path"]: r["sha256"] for r in anteprima["files"]}
+            initialize_data_repository(vault, branch, url, testuali, author=autore, share_confirmed=True,
+                                       expected_files=hashes, allow_local_remote=locale)
+            rapporto("repository dati", "inizializzato con la sola selezione approvata")
+            nuovo = True
+        repo = GitRepository(vault, allow_local_remote=locale)
+        if repo.remote_url() != url:
+            raise ValueError("la cartella è già un repository Git con un remote diverso da quello indicato")
+        escluse = [p for p in repo.preview(testuali)["excluded"] if not any(p.startswith(voce) for voce in LOCALI)]
+        write_local_excludes(vault, sorted({*LOCALI, *read_local_excludes(vault), *escluse}))
+        if repo.branch() != branch:
+            raise ValueError(f"il branch locale è {repo.branch()}, non {branch}")
+        if not clonato and remote_branch_oid(url, branch, allow_local_remote=locale) is None:
+            repo.push(repo.head(), url, branch)
+            rapporto("push iniziale", f"{branch} pubblicato")
+        Autosync(vault, allow_local_remote=locale).enable(visibility=opzioni["visibilita"])
+    except ContractError as errore:
+        raise ValueError(f"collaborazione non attivata ({errore.code}): {errore}. "
+                         "Correggere e rilanciare lo stesso comando: è ripetibile.") from errore
+    rapporto("autosync", "attivo: le skill fanno pull all'inizio e commit+push alla fine"
+                         + (" (primo push eseguito)" if nuovo else ""))
+
+
 def esegui(vault, *argomenti):
     p = subprocess.run([sys.executable, *argomenti], cwd=vault, capture_output=True,
                        env={**os.environ, "PYTHONIOENCODING": "utf-8"})
@@ -349,19 +471,26 @@ def esegui(vault, *argomenti):
 
 
 def installa(vault, skill="vault", aggiorna=False, esempio=False, client="tutti", solo_integrazione=False,
-             dashboard=False):
+             dashboard=False, collabora=None):
+    """collabora: None, oppure dict(url, branch, visibilita, crea_remote, si, locale) per repository dati e autosync."""
     vault = vault.resolve()
+    if collabora:
+        if solo_integrazione:
+            raise ValueError("--collabora richiede installazione completa")
+        dashboard = True  # il runtime della dashboard serve a pull e push delle skill
     if dashboard:
         from kit.dashboard.contracts import inspect_vault
         if solo_integrazione:
             raise ValueError("--dashboard richiede installazione completa")
-        if vault.exists() and any(vault.iterdir()) and inspect_vault(vault).mode != "compatible":
+        # Con --collabora un vault già in uso è ammesso: il manifest si crea dopo la conferma esplicita dei file condivisi.
+        if not collabora and vault.exists() and any(vault.iterdir()) and inspect_vault(vault).mode != "compatible":
             raise ValueError("--dashboard inizializza solo cartelle vuote; nessuna adozione automatica dei legacy")
     if solo_integrazione and not (vault / ".graph" / "recall_hook.py").is_file():
         raise ValueError("--solo-integrazione richiede un vault con Teseo già installato")
-    gia_in_uso = vault.exists() and any(vault.rglob("*.md"))
     rapporto = Rapporto()
-    print(f"Teseo → {vault}  ({'vault già in uso' if gia_in_uso else 'vault nuovo'})")
+    clonato = bool(collabora) and collabora_clona(vault, collabora, rapporto)
+    gia_in_uso = vault.exists() and any(vault.rglob("*.md")) and not clonato
+    print(f"Teseo → {vault}  ({'repository dati clonato' if clonato else 'vault già in uso' if gia_in_uso else 'vault nuovo'})")
     for cartella in ((".graph",) if solo_integrazione else ("raw", "wiki", ".graph")):
         (vault / cartella).mkdir(parents=True, exist_ok=True)
 
@@ -444,6 +573,12 @@ def installa(vault, skill="vault", aggiorna=False, esempio=False, client="tutti"
                 "event_version": 1, "minimum_kit_version": KIT_VERSION,
                 "vault_id": str(uuid4()), "shared_paths": list(DEFAULT_SHARED_PATHS)}))
         rapporto(".teseo/project.json", "nuovo vault dashboard v1; nessuna migrazione")
+    if collabora:
+        try:
+            collabora_imposta(vault, collabora, clonato, rapporto)
+        except ValueError:
+            rapporto.stampa()  # ciò che è già stato installato resta visibile; l'errore spiega come proseguire
+            raise
     controlla_ambiente(rapporto, client)
     if gia_in_uso and not solo_integrazione:
         controlla_vault(vault, rapporto)
@@ -533,20 +668,37 @@ def main():
                     help="aggiunge il supporto client a Teseo già installato, senza aggiornare grafo o pagine")
     ap.add_argument("--aggiorna", action="store_true", help="sostituisce script e skill diversi dal kit, con copia di sicurezza")
     ap.add_argument("--dashboard", action="store_true", help="inizializza formato dashboard solo per un vault nuovo; non adotta legacy")
+    ap.add_argument("--collabora", metavar="URL", help="repository dati GitHub del vault: lo crea (o clona, se popolato) e attiva "
+                    "pull all'inizio e commit+push alla fine di ingest, lint e lacune")
+    ap.add_argument("--branch", default="main", help="branch condiviso del repository dati (predefinito: main)")
+    ap.add_argument("--visibilita", choices=("private", "public"), default="private",
+                    help="visibilità dichiarata del repository dati (predefinito: private)")
+    ap.add_argument("--crea-remote", action="store_true", help="con --collabora: crea il repository su GitHub con gh, dopo conferma")
+    ap.add_argument("--si", action="store_true", help="con --collabora: conferma senza chiedere (anteprima dei file stampata comunque)")
     ap.add_argument("--esempio", action="store_true", help="aggiunge il vault d'esempio (solo se wiki/ è vuota)")
     ap.add_argument("--prova", action="store_true", help="prova completa in una cartella temporanea, poi la cancella")
     args = ap.parse_args()
     if sys.version_info < (3, 10):
         ap.error("Teseo richiede Python 3.10 o successivo")
     if args.prova:
+        if args.collabora:
+            ap.error("--prova non è compatibile con --collabora: non pubblica mai nulla")
         sys.exit(prova(args.client, args.dashboard))
     if not args.vault:
         ap.error("indicare la cartella del vault, oppure --prova")
     if args.solo_integrazione and args.esempio:
         ap.error("--solo-integrazione non è compatibile con --esempio")
+    if args.collabora and args.solo_integrazione:
+        ap.error("--collabora richiede installazione completa (non è compatibile con --solo-integrazione)")
+    if (args.crea_remote or args.si) and not args.collabora:
+        ap.error("--crea-remote e --si valgono solo con --collabora")
+    collabora = None
+    if args.collabora:
+        collabora = dict(url=args.collabora, branch=args.branch, visibilita=args.visibilita,
+                         crea_remote=args.crea_remote, si=args.si, locale=False)
     try:
         result = installa(args.vault, args.skill, args.aggiorna, args.esempio, args.client, args.solo_integrazione,
-                         args.dashboard)
+                         args.dashboard, collabora)
     except ValueError as error:
         ap.error(str(error))
     sys.exit(result)

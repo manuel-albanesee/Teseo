@@ -7,3 +7,4 @@
 - Dopo modifiche a frontmatter o link esegui `python .graph/build_graph.py --check` e correggi i problemi.
 - Nelle istruzioni condivise `AGENTS.md` e `CLAUDE.md`, le indicazioni su `.codex/`, `.graph/codex.json`, `.graph/leggi.py`, Sol/Astra/Luna e `@sol`/`@astra` riguardano il client Codex. In Copilot usa questa procedura e il modello attivo della sessione, senza avviare Claude Code o altri modelli e senza delegare automaticamente.
 - Gli hook richiedono il normale consenso di Copilot per il workspace. L'installatore prepara i file locali e non modifica permessi, account o impostazioni globali.
+- Vault collaborativo (esiste `.graph/teseo_git.py`): `pre` e `post` li eseguono le skill ingest, lint e lacune. Le modifiche fatte a mano fuori da una skill (per esempio in Obsidian) si pubblicano con `python .graph/teseo_git.py post --skill manuale --agente umano`. Non usare `git` direttamente nel vault.

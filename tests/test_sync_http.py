@@ -32,10 +32,25 @@ class SyncHTTP(unittest.TestCase):
                 self.assertEqual(status, 200, body)
                 method.assert_called_once_with(vault, payload)
 
+    def test_automatic_consent_routes_to_the_selected_vault(self):
+        vault = self.attach()['vault_id']
+        base = f'/api/v1/vaults/{vault}/sync/'
+        service = mock.Mock()
+        self.server.sync = service
+        service.enable_automatic.return_value = {'automatic': True}
+        payload = {'consent': True, 'expected_head': 'a'*40}
+        status, _, body = self.request('POST', base+'automatic-enable', payload)
+        self.assertEqual(status, 200, body)
+        service.enable_automatic.assert_called_once_with(vault, payload)
+        service.disable_automatic.return_value = {'automatic': False}
+        status, _, body = self.request('POST', base+'automatic-disable', {})
+        self.assertEqual((status, json.loads(body)['automatic']), (200, False), body)
+        service.disable_automatic.assert_called_once_with(vault)
+
     def test_no_sync_mutation_before_session_origin_and_csrf_guards(self):
         service = mock.Mock()
         self.server.sync = service
-        for action in ('preview', 'initialize', 'configure', 'publish', 'resolve'):
+        for action in ('preview', 'initialize', 'configure', 'publish', 'resolve', 'automatic-enable', 'automatic-disable'):
             route = '/api/v1/vaults/fixture/sync/'+action
             for kwargs in ({'authenticated': False}, {'csrf': False},
                            {'headers': {'Origin': 'https://other.invalid'}}):

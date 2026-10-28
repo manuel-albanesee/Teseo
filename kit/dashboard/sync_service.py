@@ -3,6 +3,7 @@
 La configurazione non autorizza l'automazione: ogni tentativo richiede conferma
 di sospensione degli scrittori esterni. Credenziali gestite soltanto da Git.
 """
+from datetime import date
 from pathlib import Path
 import hashlib
 import re
@@ -92,7 +93,8 @@ class SyncService:
         with _connection(path.as_uri()+'?mode=ro',uri=True) as db:
             config=self._config(db)
             jobs=[self._public(parse_json(row[0])) for row in db.execute('SELECT data FROM jobs ORDER BY rowid DESC LIMIT 30')]
-        result.update(configured=True,config=config,operations=jobs,state=jobs[0]['state'] if jobs else 'ready',current_operation=jobs[0] if jobs else None)
+        result.update(configured=True,config=config,automatic=config.get('automatic') is True,operations=jobs,
+                      state=jobs[0]['state'] if jobs else 'ready',current_operation=jobs[0] if jobs else None)
         return result
 
     def preview(self,vault_id,body):
@@ -239,6 +241,123 @@ class SyncService:
             raise ContractError('sync_identity_changed','Branch o destinazione remota cambiati: nessuna pubblicazione')
         if git.get('tracked_violations'):raise ContractError('sync_tracked_private','File tracked fuori policy')
 
+    @staticmethod
+    def _pending(db):
+        return [j for j in (parse_json(row[0]) for row in db.execute('SELECT data FROM jobs')) if j['state'] not in ('converged','noop')]
+
+    def enable_automatic(self,vault_id,body):
+        """Consenso una tantum dell'autosync: pull e push partono dalle skill, non da questa chiamata."""
+        _fields(body,('consent','expected_head'))
+        if body['consent'] is not True:raise ContractError('sync_consent','Confermare esplicitamente l’autosync di questo vault')
+        _oid(body['expected_head'])
+        root=self.registry.root(vault_id)
+        with self._mutex,VaultLock(root):
+            repo=self._repo(root)
+            with self._db(root) as db:
+                self._schema(db);config=self._config(db)
+                if config['mode']!='direct':raise ContractError('sync_config','L’autosync richiede la modalità direct')
+                if repo.head()!=body['expected_head'] or repo.head()!=config['B'] or not repo.clean():
+                    raise ContractError('sync_baseline','Occorre il checkpoint condiviso con index e working tree puliti')
+                if self._pending(db):raise ContractError('sync_pending','Conservare e risolvere il checkpoint pendente prima di attivare l’autosync')
+                config.update(automatic=True,automatic_consent_at=date.today().isoformat())
+                with db:db.execute('UPDATE config SET data=? WHERE id=1',(canonical_json(config),))
+            return config
+
+    def disable_automatic(self,vault_id):
+        root=self.registry.root(vault_id)
+        with self._mutex,VaultLock(root):
+            with self._db(root) as db:
+                self._schema(db);config=self._config(db)
+                config.update(automatic=False)
+                with db:db.execute('UPDATE config SET data=? WHERE id=1',(canonical_json(config),))
+            return config
+
+    def sync_down(self,vault_id):
+        """Pull dell'autosync: solo fast-forward del branch condiviso, mai un merge nel vault vivo."""
+        root=self.registry.root(vault_id)
+        with self._mutex,VaultLock(root) as lock:
+            from .storage import assert_receiver_complete
+            assert_receiver_complete(root)
+            with self._db(root) as db:
+                self._schema(db);config=self._config(db)
+                if config.get('automatic') is not True:raise ContractError('sync_automatic_off','Autosync non attivo per questo vault')
+                if self._pending(db):return dict(state='pending',received=0)
+                repo=self._repo(root);self._identity(repo,config)
+                if not repo.clean():raise ContractError('autosync_unpublished','Modifiche non pubblicate: eseguire teseo_git.py post --skill manuale')
+                head=repo.head()
+                if head!=config['B']:raise ContractError('sync_baseline','HEAD non corrisponde al checkpoint condiviso')
+                try:remote=repo.fetch(config['remote_url'],config['branch'])
+                except ContractError as error:
+                    if error.code in ('git_network','git_timeout','git_auth'):return dict(state='offline',received=0,error=error.as_dict())
+                    raise
+                if remote==head or repo.is_ancestor(remote,head):return dict(state='current',received=0,head=head)
+                if not repo.is_ancestor(head,remote):return dict(state='diverged',received=0,head=head,remote=remote)
+                received=int(repo.run('rev-list','--count',head+'..'+remote).strip())
+                candidate=repo.integrate(head,remote)
+                try:
+                    self._assert_candidate(repo,candidate)
+                    repo.adopt(head,candidate)
+                finally:
+                    # Best effort: un candidato rimasto sul disco (scanner, lock) non deve far fallire un pull riuscito.
+                    try:repo.cleanup_candidate(candidate)
+                    except (OSError,ContractError):pass
+                result=dict(state='received',received=received,head=repo.head())
+                # B avanza subito: l'adozione è avvenuta. Il digest è best effort (snapshot oltre il tetto o file in uso):
+                # senza di esso HEAD resterebbe fuori dal checkpoint condiviso e ogni pull successivo si fermerebbe.
+                config.update(B=repo.head())
+                try:config.update(base_digest=capture_snapshot(root).digest)
+                except (ContractError,OSError):result['warning']={'code':'sync_digest','message':'Digest di base da ricalcolare'}
+                with db:db.execute('UPDATE config SET data=? WHERE id=1',(canonical_json(config),))
+                try:self._refresh_projections(root,config['vault_id'],lock)
+                except Exception as error:
+                    result['warning']=error.as_dict() if isinstance(error,ContractError) else {'code':'sync_projection','message':'Grafo o proiezione da ricostruire dalla dashboard'}
+                return result
+
+    def publish_session(self,vault_id,*,operation_id,files,message,trailers):
+        """Pubblica una sessione skill dell'autosync: stesso motore di publish, senza evento della dashboard."""
+        identifier=_uuid(operation_id)
+        if not isinstance(files,dict) or not files or len(files)>10000:raise ContractError('sync_request','Elenco file della sessione non valido')
+        if not isinstance(message,str) or not message or len(message)>500 or any(ord(c)<32 for c in message):
+            raise ContractError('sync_request','Messaggio commit non valido')
+        from .git_sync import _trailers
+        _trailers(trailers)
+        root=self.registry.root(vault_id)
+        with self._mutex,VaultLock(root) as lock:
+            with self._db(root) as db:
+                self._schema(db);config=self._config(db)
+                if config.get('automatic') is not True:raise ContractError('sync_automatic_off','Autosync non attivo per questo vault')
+                digest=content_hash(dict(files=files,message=message,trailers=trailers))
+                old=db.execute('SELECT request_hash,data FROM jobs WHERE operation_id=?',(identifier,)).fetchone()
+                if old:
+                    if old[0]!=digest:raise ContractError('idempotency_conflict','Richiesta diversa dalla sessione registrata')
+                    return self._public(parse_json(old[1]))
+                if self._pending(db):raise ContractError('sync_pending','Un checkpoint precedente richiede risoluzione')
+                repo=self._repo(root);self._identity(repo,config)
+                if repo.head()!=config['B']:raise ContractError('sync_baseline','HEAD non corrisponde al checkpoint condiviso di partenza')
+                snapshot=capture_snapshot(root)
+                record=dict(operation_id=identifier,idempotency_key='auto-'+identifier,state='ready',B=config['B'],L=None,R=None,C=None,
+                            attempts=0,error=None,config=config,files=files,expected_digest=snapshot.digest,
+                            manifest_digest=None,checkpoint_id=None,message=message,trailers=trailers)
+                with db:db.execute('INSERT INTO jobs VALUES (?,?,?,?)',(identifier,record['idempotency_key'],digest,canonical_json(record)))
+                return self._public(self._advance(root,repo,db,record,lock=lock))
+
+    def resume_session(self,vault_id,operation_id):
+        """Riprende dopo rete o autenticazione assenti; i conflitti restano alla dashboard (resolve)."""
+        identifier=_uuid(operation_id)
+        root=self.registry.root(vault_id)
+        with self._mutex,VaultLock(root) as lock:
+            with self._db(root) as db:
+                self._schema(db)
+                row=db.execute('SELECT data FROM jobs WHERE operation_id=?',(identifier,)).fetchone()
+                if not row:raise ContractError('sync_missing','Nessuna sessione con questo identificativo')
+                record=parse_json(row[0])
+                if record['state'] in ('converged','noop'):return self._public(record)
+                if record['state'] not in ('waiting_auth','waiting_network','retry_exhausted','published_pending_local_adoption'):
+                    raise ContractError('sync_resolution','Sessione non riprendibile automaticamente: usare la dashboard')
+                # La ripresa è una richiesta esplicita dell'utente: il tetto di tentativi serve a non ciclare da soli.
+                if record['state'] in ('waiting_auth','waiting_network','retry_exhausted'):record['attempts']=0
+                return self._public(self._advance(root,self._repo(root),db,record,lock=lock))
+
     def _advance(self,root,repo,db,record,human_decision_key=None,*,lock=None):
         config=record['config']
         def state(value):record.update(state=value,error=None);self._save(db,record)
@@ -259,7 +378,8 @@ class SyncService:
                     if not found:raise ContractError('sync_head_changed','HEAD mosso fuori dal publisher')
                     record['L']=found
                 else:
-                    record['L']=repo.checkpoint(record['operation_id'],record['B'],record['files'])
+                    record['L']=repo.checkpoint(record['operation_id'],record['B'],record['files'],
+                                                **{k:record[k] for k in ('message','trailers') if record.get(k)})
                 self._save(db,record)
                 if record['L']==record['B']:
                     state('noop');return record
@@ -325,7 +445,7 @@ class SyncService:
                     if url:record['proposal_compare_url']=url+'/compare/'+config['branch']+'...'+destination
                 record['push_intent_oid']=record['C']
                 state('pushing')
-                try:repo.push(record['C'],config['remote_url'],destination)
+                try:repo.push(record['C'],config['remote_url'],destination,published=remote)
                 except ContractError as error:
                     if error.code in ('git_push_rejected','git_non_fast_forward'):
                         latest=repo.fetch(config['remote_url'],config['branch'])
@@ -344,9 +464,22 @@ class SyncService:
     @staticmethod
     def _assert_candidate(repo,candidate):
         if hasattr(repo,'tree'):
+            from .git_sync import is_local_only
             expected={p:hashlib.sha256(data).hexdigest() for p,data in repo.tree(candidate['oid']).items()}
-            if capture_snapshot(candidate['root']).hashes!=expected:
+            # Le fonti binarie locali stanno sul disco del vault ma mai nell'OID: non sono byte "da pubblicare".
+            actual={p:h for p,h in capture_snapshot(candidate['root']).hashes.items() if p in expected or not is_local_only(p)}
+            if actual!=expected:
                 raise ContractError('sync_candidate_changed','I byte del candidato non corrispondono all’OID da pubblicare')
+
+    def _refresh_projections(self,root,vault_id,lock):
+        """Dopo un'adozione locale: grafo e proiezione condivisa tornano coerenti con le note appena ricevute."""
+        if self.validator is not None:return
+        from .graph_service import rebuild
+        from .shared_state import rebuild_projection,snapshot_events
+        rebuild(root,lock=lock)
+        projection=root/'.teseo/local/shared-state.sqlite'
+        for suffix in ('','-journal','-wal','-shm'): _no_link(Path(str(projection)+suffix))
+        rebuild_projection(projection,snapshot_events(capture_snapshot(root),vault_id),vault_id)
 
     def _adopt(self,root,repo,db,record,*,lock=None):
         try:
@@ -362,13 +495,7 @@ class SyncService:
                 repo.adopt(record['L'],{'oid':record['C'],'root':record.get('candidate_path')})
             if repo.head()!=record['C'] or not repo.clean():raise ContractError('sync_adoption','Verificare HEAD e index dopo adozione')
             self._assert_candidate(repo,{'oid':record['C'],'root':str(root)})
-            if self.validator is None:
-                from .graph_service import rebuild
-                from .shared_state import rebuild_projection,snapshot_events
-                rebuild(root,lock=lock)
-                projection=root/'.teseo/local/shared-state.sqlite'
-                for suffix in ('','-journal','-wal','-shm'): _no_link(Path(str(projection)+suffix))
-                rebuild_projection(projection,snapshot_events(capture_snapshot(root),record['config']['vault_id']),record['config']['vault_id'])
+            self._refresh_projections(root,record['config']['vault_id'],lock)
             config=self._config(db);config.update(B=record['C'],base_digest=capture_snapshot(root).digest)
             with db:db.execute('UPDATE config SET data=? WHERE id=1',(canonical_json(config),))
             record.update(state='converged',error=None);self._save(db,record)

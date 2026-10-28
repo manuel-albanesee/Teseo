@@ -30,6 +30,12 @@ a generazioni restano prerequisiti per attivare la dashboard e le automazioni.
 | 6 | Publisher esplicito disponibile: onboarding, allowlist, checkpoint, integrazione isolata, gate/riconciliazione, push/recovery e UI; creazione remota e apertura PR manuali, automatico disabilitato |
 | 7 | Rilevamento opt-in, staging isolato, adozione manuale Windows e recovery disponibili; UI pausa/ripresa, nessun apply automatico; collaudo integrato e limiti nelle evidenze del passo |
 
+## Autosync collaborativo (documento 9)
+
+`installa.py --collabora <url>` crea il repository dati con anteprima e conferma, lo clona se è già popolato o lo aggancia, e registra il consenso per vault. Le skill ingest, lint e lacune chiamano `.graph/teseo_git.py pre` (fetch, fast-forward isolato, ricostruzione) e `post` (controllo del grafo, commit attribuito con `Teseo-Agent`/`Teseo-Skill`, integrazione isolata, push, adozione). Stesso motore del publisher esplicito: allowlist, segreti, checkpoint per hash, nessun merge nel vault vivo.
+
+Modifiche al motore: audit di storia incrementale (il tetto di 128 vale sui commit non pubblicati), unione di `log.md`/`index.md`, regola additiva nella validazione d'integrazione, fonti binarie escluse dal confronto con l'OID, `cleanup_candidate` che rimuove i pack in sola lettura su Windows. Il pannello della dashboard espone `automatic` nello stato; rotte `sync/automatic-enable` e `sync/automatic-disable` disponibili, pulsante nel pannello da aggiungere. Limiti e collaudo mancante nel [documento 9](09-autosync-collaborativo.md).
+
 ## Passo 7 — rilevamento e adozione manuale
 
 Receiver persistente opt-in con intervallo, jitter, backoff e sospensione dopo

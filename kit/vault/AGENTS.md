@@ -9,3 +9,4 @@
 - Dopo modifiche a frontmatter o link: `python .graph/build_graph.py --check` finché non restano problemi.
 - Ruoli Codex configurabili in `.graph/codex.json`: Sol per ricerca/lavoro, Astra per analisi profonda, Luna per domande puntuali. Gli hook non cambiano il modello della chat e non avviano altri modelli. Non delegare automaticamente.
 - Solo in Codex, per una query autonoma con scelta effettiva del modello: `python .graph/chiedi_codex.py "domanda"`; `@sol` e `@astra` forzano i rispettivi ruoli. Il comando è di sola lettura e richiede Codex CLI autenticata; le operazioni di ingest/lint/lacune si eseguono nella chat con le skill.
+- Vault collaborativo (esiste `.graph/teseo_git.py`): `pre` e `post` li eseguono le skill ingest, lint e lacune. Le modifiche fatte a mano fuori da una skill (per esempio in Obsidian) si pubblicano con `python .graph/teseo_git.py post --skill manuale --agente umano`. Non usare `git` direttamente nel vault.

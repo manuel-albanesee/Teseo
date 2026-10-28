@@ -267,7 +267,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
                         'publish':self.server.sync.publish,'resolve':self.server.sync.resolve,
                         'check':self.server.receiver.check,'pause':self.server.receiver.pause,
                         'resume':self.server.receiver.resume,'receive':self.server.receiver_apply.apply,
-                        'receive-recover':self.server.receiver_apply.recover}.get(parts[6])
+                        'receive-recover':self.server.receiver_apply.recover,
+                        'automatic-enable':self.server.sync.enable_automatic,
+                        'automatic-disable':lambda vault,_body:self.server.sync.disable_automatic(vault)}.get(parts[6])
                 if method:
                     self._reply(200,method(parts[4],body))
                     return

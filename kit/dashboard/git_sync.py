@@ -4,6 +4,7 @@ Callers own the vault lock and must explicitly pause external writers before
 checkpoint/adoption. Git locks and hash preconditions detect, not exclude, editors.
 No credentials or raw subprocess output are persisted or returned on failures.
 """
+from collections import Counter
 import hashlib
 import os
 from pathlib import Path
@@ -12,6 +13,7 @@ import shutil
 import shlex
 import subprocess
 import sys
+import tempfile
 from uuid import UUID, uuid4
 
 from .contracts import (ContractError, PathKind, classify_path, is_junction, parse_manifest,
@@ -24,7 +26,10 @@ MAX_FILE = 8 * 1024 * 1024
 MAX_TREE = 64 * 1024 * 1024
 _SECRET = re.compile(rb'(?:-----BEGIN (?:RSA |EC |DSA |OPENSSH |ENCRYPTED )?PRIVATE KEY-----'
                      rb'|\bgh[pousr]_[A-Za-z0-9_]{20,}|\bgithub_pat_[A-Za-z0-9_]{20,}'
-                     rb'|\bsk-proj-[A-Za-z0-9_-]{20,})')
+                     rb'|\bsk-proj-[A-Za-z0-9_-]{20,}|\bsk-ant-[A-Za-z0-9_-]{20,}'
+                     rb'|\b(?:AKIA|ASIA)[0-9A-Z]{16}\b|\bxox[abprs]-[A-Za-z0-9-]{10,}'
+                     rb'|\bAIza[0-9A-Za-z_-]{35}\b'
+                     rb'|\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})')
 
 
 def _executable(name):
@@ -53,6 +58,86 @@ def _branch(value):
             or value.endswith('/')):
         raise ContractError('git_invalid_branch', 'Branch Git non valido')
     return value
+
+
+def _global_values(*keys):
+    """Valori scalari di ~/.gitconfig (senza include): `_invoke` ignora volutamente la configurazione globale."""
+    config = Path.home() / '.gitconfig'
+    found = {}
+    if config.is_file() and config.stat().st_size <= 1024 * 1024:
+        for key in keys:
+            result = _invoke(Path.home(), ['config', '--file', str(config), '--no-includes', '--get-all', key], check=False)
+            values = result.stdout.decode('utf-8').strip().splitlines()
+            if not result.returncode and len(values) == 1:
+                found[key] = values[0]
+    return found
+
+
+def global_author():
+    """{'name','email'} da ~/.gitconfig, oppure {} se mancano o non sono accettabili."""
+    values = _global_values('user.name', 'user.email')
+    author = {key.removeprefix('user.'): value for key, value in values.items()
+              if value and len(value) <= 256 and not any(ord(c) < 32 for c in value)}
+    return author if set(author) == {'name', 'email'} and '@' in author['email'] else {}
+
+
+def _global_helper():
+    value = _global_values('credential.helper').get('credential.helper')
+    return value if value in ('manager', 'manager-core') else None
+
+
+def remote_branch_oid(url, branch, *, allow_local_remote=False):
+    """OID del branch sul remoto, None se il remoto è vuoto o non ha quel branch; errore se irraggiungibile."""
+    url = validate_remote(url, allow_local_remote=allow_local_remote)
+    branch = _branch(branch)
+    listing = _invoke(Path(tempfile.gettempdir()), ['ls-remote', '--heads', url, 'refs/heads/' + branch],
+                      credential_helper=_global_helper(), file_transport=allow_local_remote).stdout.decode('utf-8')
+    for line in listing.splitlines():
+        oid, _, ref = line.partition('\t')
+        if ref == 'refs/heads/' + branch:
+            return _oid(oid)
+    return None
+
+
+def clone_data_repository(url, branch, destination, *, allow_local_remote=False):
+    """Clona il repository dati in una cartella vuota o nuova, rifiutando alberi fuori policy."""
+    url = validate_remote(url, allow_local_remote=allow_local_remote)
+    branch = _branch(branch)
+    destination = Path(destination)
+    if destination.exists() and (not destination.is_dir() or any(destination.iterdir())):
+        raise ContractError('git_clone_target', 'La destinazione del clone deve essere una cartella vuota o nuova')
+    existed = destination.exists()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        _invoke(destination.parent, ['clone', '--quiet', '--no-tags', '--no-recurse-submodules', '--branch', branch,
+                                     url, str(destination)],
+                credential_helper=_global_helper(), file_transport=allow_local_remote)
+        repo = GitRepository(destination, allow_local_remote=allow_local_remote)
+        repo.tree(repo.head())
+        return repo.head()
+    except BaseException:
+        # Solo ciò che ha creato questa chiamata: una cartella già esistente (vuota) resta, svuotata.
+        if destination.exists():
+            if existed:
+                for child in destination.iterdir():
+                    _remove_tree(child) if child.is_dir() else child.unlink()
+            else:
+                _remove_tree(destination)
+        raise
+
+
+_UNION_FILES = frozenset({'log.md', 'index.md'})
+_TRAILER_KEYS = ('Teseo-Agent', 'Teseo-Skill')
+
+
+def _trailers(values):
+    """Trailer di attribuzione (agente, skill): chiavi fisse e valori brevi, mai testo libero."""
+    if values is None:
+        return ''
+    if (not isinstance(values, dict) or set(values) - set(_TRAILER_KEYS)
+            or any(not isinstance(v, str) or not re.fullmatch(r'[a-z][a-z0-9-]{0,31}', v) for v in values.values())):
+        raise ContractError('git_invalid_message', 'Trailer commit non valido')
+    return ''.join(f'{key}: {values[key]}\n' for key in _TRAILER_KEYS if key in values)
 
 
 def validate_remote(value, *, allow_local_remote=False):
@@ -416,7 +501,7 @@ class GitRepository:
             if path.startswith(('raw/', '.teseo/shared/events/')) and path in old and self._blob(old[path]) != data:
                 raise ContractError('git_immutable_changed', 'Fonte o evento preesistente modificato', path)
 
-    def checkpoint(self, operation_id, expected_head, files, message='Teseo: checkpoint validato'):
+    def checkpoint(self, operation_id, expected_head, files, message='Teseo: checkpoint validato', trailers=None):
         try:
             if str(UUID(operation_id)) != operation_id:
                 raise ValueError()
@@ -446,6 +531,7 @@ class GitRepository:
             raise ContractError('git_author_required', 'Configurare identità autore Git locale')
         if not isinstance(message, str) or len(message) > 500 or any(ord(c) < 32 for c in message):
             raise ContractError('git_invalid_message', 'Messaggio commit non valido')
+        extra = _trailers(trailers)
         local = self.root / '.teseo/local'
         _no_link(local)
         local.mkdir(exist_ok=True)
@@ -469,7 +555,7 @@ class GitRepository:
             self._check_files(files, expected_head)
             if self.head() != expected_head or not self._changes() <= set(files):
                 raise ContractError('git_foreign_changes', 'File o HEAD cambiati prima del checkpoint')
-            body = f'{message}\n\nTeseo-Operation: {operation_id}\nTeseo-Base: {expected_head}\n'
+            body = f'{message}\n\nTeseo-Operation: {operation_id}\nTeseo-Base: {expected_head}\n{extra}'
             oid = self.run('commit-tree', tree, '-p', expected_head, input=body).strip()
             ref = 'refs/heads/' + info['branch']
             self.run('update-ref', ref, oid, expected_head)
@@ -566,7 +652,7 @@ class GitRepository:
         else:
             result = _invoke(stage, ['-c', 'user.name=Teseo', '-c', 'user.email=teseo@localhost',
                                     'merge', '--no-commit', '--no-ff', '--no-edit', remote_oid], check=False)
-            if result.returncode:
+            if result.returncode and not self._union_resolve(stage):
                 raise ContractError('git_conflict', 'Conflitto conservato nel candidato isolato', str(stage))
             tree = _invoke(stage, ['write-tree']).stdout.decode().strip()
             oid = _invoke(stage, ['-c', 'user.name=Teseo', '-c', 'user.email=teseo@localhost',
@@ -582,27 +668,81 @@ class GitRepository:
                     raise ContractError('git_immutable_changed', 'Fonte o evento immutabile alterato dal merge', path)
         return {'oid': oid, 'root': str(stage)}
 
-    def push(self, oid, remote, branch):
+    @staticmethod
+    def _union_resolve(stage):
+        """Risolve i soli conflitti su log.md/index.md tenendo le righe di entrambi i lati.
+
+        Ogni skill vi aggiunge righe, quindi due clone confliggono a ogni ciclo. Se è in conflitto
+        qualunque altro file, o un lato ha cancellato il file, non si tocca nulla e il conflitto
+        resta nel candidato isolato per la revisione. Mai sul vault vivo.
+        """
+        listing = _invoke(stage, ['diff', '--name-only', '--diff-filter=U', '-z']).stdout.decode('utf-8')
+        paths = [p for p in listing.split('\x00') if p]
+        if not paths or set(paths) - _UNION_FILES:
+            return False
+        work = stage / '.git/teseo-union'
+        work.mkdir(exist_ok=True)
+        merged = {}
+        try:
+            for path in paths:
+                sides = {}
+                for number, name in ((1, 'base'), (2, 'ours'), (3, 'theirs')):
+                    shown = _invoke(stage, ['show', f':{number}:{path}'], check=False)
+                    if shown.returncode and name != 'base':
+                        return False
+                    sides[name] = b'' if shown.returncode else shown.stdout
+                    (work / name).write_bytes(sides[name])
+                out = _invoke(stage, ['merge-file', '--union', '-p', str(work / 'ours'), str(work / 'base'),
+                                      str(work / 'theirs')], check=False)
+                if out.returncode or b'<<<<<<<' in out.stdout or b'>>>>>>>' in out.stdout:
+                    return False
+                # L'unione deve conservare ogni riga di entrambi i lati: se un lato ne ha cancellate, l'unione
+                # le farebbe sparire in silenzio. Una riga riscritta invece resta accanto alla vecchia: la ferma
+                # sync_validation._scope (additive), non questo controllo.
+                kept = Counter(out.stdout.splitlines())
+                if any(Counter(sides[name].splitlines()) - kept for name in ('ours', 'theirs')):
+                    return False
+                merged[path] = out.stdout
+            for path, data in merged.items():
+                (stage / path).write_bytes(data)
+                _invoke(stage, ['add', '--', path])
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
+        return True
+
+    def push(self, oid, remote, branch, published=None):
         remote = validate_remote(remote, allow_local_remote=self.allow_local_remote)
         branch = _branch(branch)
         self._safe_config()
         self.tree(_oid(oid))
-        self.audit_history(oid)
+        self.audit_history(oid, published)
         self._bytes('push', '--porcelain', '--no-verify', remote, oid + ':refs/heads/' + branch,
                     file_transport=self.allow_local_remote)
 
-    def audit_history(self, oid):
+    def audit_history(self, oid, published=None):
         """Bounded reachable-history scan before sending *any* objects.
 
         Deleting a private file from HEAD does not delete its historic bytes.
         Never rewrite history: require an explicitly reviewed clean data repo
         when historic policy or these conservative audit limits block a push.
+        With ``published`` (an OID already audited and sent, ancestor of ``oid``)
+        only the commits not yet published are scanned and counted.
         """
-        commits = self.run('rev-list', '--max-count=129', _oid(oid)).splitlines()
+        base = None
+        if published is not None and published != oid and self.is_ancestor(_oid(published), oid):
+            base = published
+        args = ('--not', base) if base else ()
+        commits = self.run('rev-list', '--max-count=129', _oid(oid), *args).splitlines()
         if len(commits) > 128:
             raise ContractError('git_history_limit', 'Oltre 128 commit raggiungibili: revisione manuale della storia richiesta')
         blobs, total = set(), 0
         vault_id = None
+        if base:
+            # L'identità resta quella già pubblicata: un manifest cambiato nei commit nuovi è una violazione.
+            known = self._entries(base).get('.teseo/project.json')
+            if known is None:
+                raise ContractError('git_history_policy', 'Storia priva del manifest dati: revisione esplicita richiesta')
+            vault_id = parse_manifest(self._blob(known))['vault_id']
         try:
             for commit in commits:
                 entries = self._entries(commit)
@@ -764,7 +904,67 @@ class GitRepository:
 
     def cleanup_candidate(self, candidate):
         target = self._candidate_root(candidate['root'])
-        shutil.rmtree(target)
+        _remove_tree(target)  # i pack di Git sono in sola lettura su Windows
+
+
+def is_local_only(path):
+    """Fonte raw non testuale: resta sul disco e non entra mai nel repository dati."""
+    return path.startswith('raw/') and Path(path).suffix.lower() not in _TEXT_RAW
+
+
+_EXCLUDE_BEGIN, _EXCLUDE_END = '# teseo:begin', '# teseo:end'
+
+
+def _exclude_file(root):
+    root = Path(root).resolve(strict=True)
+    info = root / '.git/info'
+    _no_link(root / '.git')
+    _no_link(info)
+    path = info / 'exclude'
+    _no_link(path)
+    return info, path
+
+
+def _split_excludes(path):
+    """(righe dell'utente, righe del blocco Teseo) di .git/info/exclude."""
+    lines = path.read_text(encoding='utf-8').splitlines() if path.exists() else []
+    kept, block, skipping = [], [], False
+    for line in lines:
+        if line == _EXCLUDE_BEGIN:
+            skipping = True
+        elif line == _EXCLUDE_END:
+            skipping = False
+        elif skipping:
+            block.append(line)
+        else:
+            kept.append(line)
+    if skipping:
+        raise ContractError('git_unsafe_config', 'Blocco di esclusione Teseo non chiuso: revisione manuale')
+    return kept, block
+
+
+_GLOB_SPECIAL = re.compile(r'([\[\]!#])')
+
+
+def read_local_excludes(root):
+    """Percorsi del blocco Teseo in .git/info/exclude (vuoto se assente), senza gli escape di Git."""
+    return [re.sub(r'\\([\[\]!#])', r'\1', line) for line in _split_excludes(_exclude_file(root)[1])[1]]
+
+
+def write_local_excludes(root, patterns):
+    """Sostituisce il blocco Teseo in .git/info/exclude; le righe dell'utente restano intatte.
+
+    Solo percorsi relativi portabili (con '/' finale per le cartelle). L'esclusione è locale
+    e non viaggia con il repository: non nasconde nulla a chi ispeziona il clone.
+    """
+    info, path = _exclude_file(root)
+    clean = sorted({portable_path(p) for p in patterns})
+    kept, _ = _split_excludes(path)
+    info.mkdir(exist_ok=True)
+    # Un nome con [ ] ! # sarebbe un glob o un commento per Git e il file resterebbe "sporco": si scrive letterale.
+    block = [_EXCLUDE_BEGIN, *(_GLOB_SPECIAL.sub(r'\\\1', p) for p in clean), _EXCLUDE_END] if clean else []
+    path.write_text('\n'.join([*kept, *block]) + '\n', encoding='utf-8', newline='\n')
+    return clean
 
 
 def preview_data_repository(root, selection=None):
@@ -803,7 +1003,7 @@ def _discard_interrupted_init(root: Path) -> None:
 
 
 def initialize_data_repository(root, branch, remote_url, selection, *, author,
-                               share_confirmed, expected_files=None):
+                               share_confirmed, expected_files=None, allow_local_remote=False):
     """Initialize an explicitly approved data selection; never create/push a remote.
 
     Excluded existing files remain visible as untracked changes: initialization
@@ -811,7 +1011,7 @@ def initialize_data_repository(root, branch, remote_url, selection, *, author,
     On failure any created Git checkpoint is retained for explicit recovery.
     """
     root = Path(root).resolve(strict=True)
-    branch, remote_url = _branch(branch), validate_remote(remote_url)
+    branch, remote_url = _branch(branch), validate_remote(remote_url, allow_local_remote=allow_local_remote)
     if share_confirmed is not True:
         raise ContractError('git_share_confirmation', 'Confermare esplicitamente i dati da pubblicare')
     if (not isinstance(author, dict) or set(author) != {'name', 'email'}

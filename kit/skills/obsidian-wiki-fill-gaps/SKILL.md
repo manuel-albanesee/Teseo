@@ -31,6 +31,8 @@ resto del vault e al grafo.
 
 ## Procedura
 
+0. **Sincronizza.** Se esiste `.graph/teseo_git.py` (vault collaborativo): `python .graph/teseo_git.py pre --skill lacune --agente <claude|codex|copilot>` (il client che stai usando). Exit 0: prosegui e riporta all'utente quanto ricevuto (campo `message`). Exit 2: **fermati senza toccare il vault** e riporta il messaggio: serve un'azione dell'utente (modifiche non pubblicate, storie divergenti, pubblicazione da risolvere nella dashboard). Exit 3: la rete manca; prosegui e avvisa che la pubblicazione avverrà dopo. Se lo script non c'è o risponde «Autosync non attivo», salta il passo. Non eseguire mai `git` a mano nel vault.
+
 1. **Prepara l'elenco.** Dalla radice del vault:
    `python .graph/build_graph.py > /dev/null && python .graph/domande.py --json --strutturali`
    Ogni voce ha `chiave`, `segnale`, `testo`, `pagine` e `rinvii`. L'ordine è già quello giusto: prima le domande
@@ -98,6 +100,7 @@ resto del vault e al grafo.
 6. **Chiudi la sessione.**
    - Appendi un'entry al log (es. `log.md`): `## [AAAA-MM-GG] lacune | <ambito>`, con le domande chiuse (chiave e
      pagina), le rinviate, le pagine toccate e create.
+   - **Pubblica.** Una sola volta a fine sessione (non dopo ogni risposta), con `--check` pulito e il log scritto, se esiste `.graph/teseo_git.py`: `python .graph/teseo_git.py post --skill lacune --agente <claude|codex|copilot>`. Exit 0: riporta l'esito (`message`: commit pubblicato, oppure nulla da pubblicare). Exit 3: la rete manca e il commit è conservato; dillo e ricorda `python .graph/teseo_git.py riprendi`. Exit 2: pubblicazione bloccata (conflitto sulla stessa nota, grafo non valido, file fuori policy): riporta il messaggio e indica la dashboard (Pubblicazione Git → Risolvi), senza tentare altro con Git. Con «Autosync non attivo» non fare nulla.
    Scrivi l'entry anche se la sessione si interrompe senza «basta così» (l'autore cambia argomento o chiude): il
    log è l'unico diario delle risposte oltre alla tabella `risposte`.
    - Riporta all'autore: domande chiuse, rinviate, saltate, rimaste per segnale, pagine toccate, e le pagine generate

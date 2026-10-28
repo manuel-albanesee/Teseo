@@ -15,7 +15,9 @@ from unittest import mock
 from kit.dashboard.contracts import ContractError, DEFAULT_SHARED_PATHS, canonical_json
 from kit.dashboard.storage import capture_snapshot
 from kit.dashboard.git_sync import (GitRepository, validate_remote, initialize_data_repository,
-                                    preview_data_repository, github_repository_url, _invoke, _oid, _branch)
+                                    preview_data_repository, github_repository_url, read_local_excludes,
+                                    write_local_excludes,
+                                    _invoke, _oid, _branch)
 
 
 NL = chr(10)
@@ -110,6 +112,18 @@ class GitPolicy(unittest.TestCase):
             with self.subTest(prefix=secret[:10]):
                 self.assertFalse(GitRepository._allowed('wiki/secret.md', manifest, b'# Note\n' + secret + b'\n'))
         self.assertTrue(GitRepository._allowed('wiki/safe.md', manifest, b'# Public reference\n'))
+
+    def test_common_cloud_and_provider_tokens_are_rejected_without_flagging_ordinary_text(self):
+        manifest = {'shared_paths': list(DEFAULT_SHARED_PATHS)}
+        for secret in (b'AKIA' + b'ABCDEFGHIJKLMNOP', b'ASIA' + b'ABCDEFGHIJKLMNOP', b'sk-ant-' + b'a' * 30,
+                       b'xoxb-' + b'1234567890-abcdef', b'AIza' + b'A' * 35,
+                       b'eyJ' + b'a' * 12 + b'.' + b'b' * 12 + b'.' + b'c' * 12):
+            with self.subTest(prefix=secret[:6]):
+                self.assertFalse(GitRepository._allowed('wiki/secret.md', manifest, b'# Note\n' + secret + b'\n'))
+        for text in (b'# Mappa\nAKIA e ASIA sono prefissi.\n', b'# Sigle\nxox, sk-ant e AIza nominati.\n',
+                     b'# Token\neyJ non basta senza due punti.\n'):
+            with self.subTest(text=text[:12]):
+                self.assertTrue(GitRepository._allowed('wiki/safe.md', manifest, text))
 
     def test_transport_errors_are_classified_without_leaking_output(self):
         for stderr, code in ((b'Authentication failed secret', 'git_auth'),
@@ -480,6 +494,169 @@ class GitSync(unittest.TestCase):
         self.assertEqual((Path(candidate['root']) / 'wiki/A.md').read_text(), 'reviewed resolution\n')
         self.assertTrue(self.repo.is_ancestor(local, candidate['oid']))
         self.assertTrue(self.repo.is_ancestor(remote, candidate['oid']))
+
+    def test_checkpoint_trailers_are_recorded_validated_and_do_not_break_recovery(self):
+        base = self.repo.head()
+        (self.root / 'wiki/A.md').write_text('# A\nchanged\n', encoding='utf-8')
+        operation = str(uuid4())
+        files = self.hashes('wiki/A.md')
+        oid = self.repo.checkpoint(operation, base, files, trailers={'Teseo-Skill': 'ingest', 'Teseo-Agent': 'claude'})
+        body = self.git('show', '-s', '--format=%B', oid)
+        self.assertIn(f'Teseo-Operation: {operation}', body)
+        self.assertIn('Teseo-Agent: claude\nTeseo-Skill: ingest', body)
+        self.assertEqual(self.git('show', '-s', '--format=%(trailers:key=Teseo-Agent,valueonly)', oid).strip(), 'claude')
+        self.assertEqual(self.repo.find_checkpoint(operation, base, files), oid)
+
+    def test_invalid_trailers_are_rejected_before_any_commit(self):
+        base = self.repo.head()
+        (self.root / 'wiki/A.md').write_text('# A\nchanged\n', encoding='utf-8')
+        files = self.hashes('wiki/A.md')
+        for bad in ({'Co-Authored-By': 'x'}, {'Teseo-Agent': 'Claude'}, {'Teseo-Agent': 'a\nTeseo-Skill: b'},
+                    {'Teseo-Skill': ''}, {'Teseo-Skill': 'x' * 40}, ['Teseo-Agent']):
+            with self.assertRaises(ContractError) as raised:
+                self.repo.checkpoint(str(uuid4()), base, files, trailers=bad)
+            self.assertEqual(raised.exception.code, 'git_invalid_message')
+        self.assertEqual(self.repo.head(), base)
+
+    def test_incremental_audit_counts_only_unpublished_commits(self):
+        published = self.repo.head()
+        for index in range(129):
+            self.git('commit', '--allow-empty', '-m', f'c{index}')
+        head = self.repo.head()
+        with self.assertRaises(ContractError) as raised:
+            self.repo.audit_history(head)
+        self.assertEqual(raised.exception.code, 'git_history_limit')
+        with self.assertRaises(ContractError) as raised:
+            self.repo.audit_history(head, published)
+        self.assertEqual(raised.exception.code, 'git_history_limit')
+        recent = self.git('rev-parse', 'HEAD~2')
+        result = self.repo.audit_history(head, recent)
+        self.assertEqual(result['commits'], 2)
+        self.assertTrue(result['history_audited'])
+
+    def test_incremental_audit_still_rejects_new_forbidden_content_and_unrelated_published(self):
+        published = self.repo.head()
+        (self.root / '.graph').mkdir()
+        (self.root / '.graph/domande.sqlite').write_bytes(b'private')
+        self.git('add', '--', '.graph/domande.sqlite')
+        self.git('commit', '-m', 'private')
+        with self.assertRaises(ContractError) as raised:
+            self.repo.audit_history(self.repo.head(), published)
+        self.assertEqual(raised.exception.code, 'git_history_policy')
+        # Un "published" non antenato non riduce l'audit: ricade su quello completo.
+        self.git('checkout', '-q', '-b', 'side', published)
+        self.git('commit', '--allow-empty', '-m', 'side')
+        side = self.repo.head()
+        self.git('checkout', '-q', 'shared')
+        with self.assertRaises(ContractError) as raised:
+            self.repo.audit_history(self.repo.head(), side)
+        self.assertEqual(raised.exception.code, 'git_history_policy')
+
+    def _diverged_with_logs(self, note_conflict=False, logs=None):
+        """Base con log.md/index.md; locale e remoto aggiungono righe diverse ai due file.
+
+        logs=(base, locale, remoto) sostituisce i testi di log.md."""
+        base_log, local_log, remote_log = logs or ('# Log\n', '# Log\n## [2026-10-27] ingest | locale\n',
+                                                   '# Log\n## [2026-10-27] lint | remoto\n')
+        (self.root / 'log.md').write_text(base_log, encoding='utf-8')
+        (self.root / 'index.md').write_text('# Indice\n', encoding='utf-8')
+        self.git('add', '--', 'log.md', 'index.md')
+        self.git('commit', '-m', 'schema files')
+        base = self.repo.head()
+        other = self.fixture / 'other'
+        self.git('clone', str(self.root), str(other), cwd=self.fixture)
+        self.git('config', 'user.name', 'Other', cwd=other)
+        self.git('config', 'user.email', 'other@example.invalid', cwd=other)
+        self.git('checkout', '--detach', base, cwd=other)
+        (self.root / 'log.md').write_text(local_log, encoding='utf-8')
+        (self.root / 'index.md').write_text('# Indice\n- [[Locale]]\n', encoding='utf-8')
+        (self.root / 'wiki/A.md').write_text('# A\nlocal\n', encoding='utf-8')
+        local = self.repo.checkpoint(str(uuid4()), base, self.hashes('log.md', 'index.md', 'wiki/A.md'))
+        (other / 'log.md').write_text(remote_log, encoding='utf-8')
+        (other / 'index.md').write_text('# Indice\n- [[Remoto]]\n', encoding='utf-8')
+        (other / 'wiki/A.md' if note_conflict else other / 'wiki/B.md').write_text('# X\nremote\n', encoding='utf-8')
+        self.git('add', '--', 'log.md', 'index.md', 'wiki', cwd=other)
+        self.git('commit', '-m', 'remote', cwd=other)
+        return local, self.repo.fetch(str(other), 'HEAD')
+
+    def test_log_and_index_concurrent_appends_are_unioned_in_the_isolated_candidate(self):
+        local, remote = self._diverged_with_logs()
+        candidate = self.repo.integrate(local, remote)
+        stage = Path(candidate['root'])
+        log = (stage / 'log.md').read_text(encoding='utf-8')
+        index = (stage / 'index.md').read_text(encoding='utf-8')
+        for text, lines in ((log, ('locale', 'remoto')), (index, ('[[Locale]]', '[[Remoto]]'))):
+            for line in lines:
+                self.assertIn(line, text)
+            self.assertNotIn('<<<<<<<', text)
+        self.assertTrue((stage / 'wiki/B.md').is_file())
+        self.assertTrue(self.repo.is_ancestor(local, candidate['oid']))
+        self.assertTrue(self.repo.is_ancestor(remote, candidate['oid']))
+        self.assertEqual(self.repo.head(), local)
+        self.assertNotIn('remoto', (self.root / 'log.md').read_text(encoding='utf-8'))
+        self.assertFalse((stage / '.git/teseo-union').exists())
+        self.assertEqual(self.git('status', '--porcelain', cwd=stage), '')
+
+    def test_union_never_hides_a_conflict_on_a_real_note(self):
+        local, remote = self._diverged_with_logs(note_conflict=True)
+        with self.assertRaises(ContractError) as raised:
+            self.repo.integrate(local, remote)
+        self.assertEqual(raised.exception.code, 'git_conflict')
+        stage = Path(raised.exception.path)
+        self.assertIn('<<<<<<<', (stage / 'wiki/A.md').read_text(encoding='utf-8'))
+        self.assertIn('<<<<<<<', (stage / 'log.md').read_text(encoding='utf-8'))
+        self.assertEqual(self.repo.head(), local)
+        self.assertEqual((self.root / 'wiki/A.md').read_text(encoding='utf-8'), '# A\nlocal\n')
+
+    def test_local_excludes_replace_only_the_teseo_block_and_reject_unsafe_patterns(self):
+        exclude = self.root / '.git/info/exclude'
+        exclude.parent.mkdir(exist_ok=True)
+        exclude.write_text('# mio\nnotes-privati/\n', encoding='utf-8')
+        self.assertEqual(write_local_excludes(self.root, ['.graph/', 'CLAUDE.md', '.graph/']), ['.graph/', 'CLAUDE.md'])
+        first = exclude.read_text(encoding='utf-8')
+        self.assertEqual(first, '# mio\nnotes-privati/\n# teseo:begin\n.graph/\nCLAUDE.md\n# teseo:end\n')
+        write_local_excludes(self.root, ['.graph/', 'CLAUDE.md'])
+        self.assertEqual(exclude.read_text(encoding='utf-8'), first)
+        write_local_excludes(self.root, ['.obsidian/'])
+        self.assertEqual(exclude.read_text(encoding='utf-8'), '# mio\nnotes-privati/\n# teseo:begin\n.obsidian/\n# teseo:end\n')
+        (self.root / '.graph').mkdir()
+        (self.root / '.obsidian').mkdir()
+        (self.root / '.obsidian/app.json').write_text('{}', encoding='utf-8')
+        self.assertNotIn('.obsidian', self.git('status', '--porcelain', '--untracked-files=all'))
+        for bad in ('../x', '/abs', 'a\\b', ''):
+            with self.assertRaises(ContractError):
+                write_local_excludes(self.root, [bad])
+        write_local_excludes(self.root, [])
+        self.assertEqual(exclude.read_text(encoding='utf-8'), '# mio\nnotes-privati/\n')
+
+    def test_union_is_refused_when_a_side_deleted_lines_that_the_merge_would_silently_drop(self):
+        logs = ('# Log\nA\nB\n', '# Log\nB\nC\n', '# Log\nA\nB\nD\n')
+        local, remote = self._diverged_with_logs(logs=logs)
+        with self.assertRaises(ContractError) as raised:
+            self.repo.integrate(local, remote)
+        self.assertEqual(raised.exception.code, 'git_conflict')
+        self.assertEqual(self.repo.head(), local)
+
+    def test_local_excludes_are_literal_for_names_git_would_read_as_globs_or_comments(self):
+        names = ['raw/[v2].pdf', 'raw/#nota.pdf', 'raw/!urgente.pdf', 'raw/normale.pdf']
+        for name in names:
+            (self.root / name).write_bytes(b'%PDF\x00')
+        self.assertEqual(len([line for line in self.git('status', '--porcelain', '--untracked-files=all').splitlines()
+                              if line.startswith('??')]), 4)
+        write_local_excludes(self.root, names)
+        self.assertEqual(self.git('status', '--porcelain', '--untracked-files=all'), '')
+        self.assertEqual(read_local_excludes(self.root), sorted(names))
+        write_local_excludes(self.root, [*read_local_excludes(self.root), 'raw/altro.pdf'])
+        self.assertEqual(read_local_excludes(self.root), sorted([*names, 'raw/altro.pdf']))
+
+    def test_local_excludes_refuse_an_unclosed_block_without_writing(self):
+        exclude = self.root / '.git/info/exclude'
+        exclude.parent.mkdir(exist_ok=True)
+        exclude.write_text('# teseo:begin\n.graph/\n', encoding='utf-8')
+        with self.assertRaises(ContractError) as raised:
+            write_local_excludes(self.root, ['x/'])
+        self.assertEqual(raised.exception.code, 'git_unsafe_config')
+        self.assertEqual(exclude.read_text(encoding='utf-8'), '# teseo:begin\n.graph/\n')
 
 
 if __name__ == '__main__':
