@@ -1,6 +1,6 @@
 # 7 — Ricezione automatica, recovery e prove multi-clone
 
-Stato: rilevamento periodico opt-in e adozione manuale con recovery implementati. Apply automatico disabilitato. Richiede [1](01-contratto-dati-operazioni.md), [2](02-dashboard-consultazione.md), [5](05-stato-condiviso.md), [6](06-pubblicazione-github.md). Ogni clone può rilevare una pubblicazione remota, preparare un candidato isolato e adottarlo dopo la conferma esplicita di sospensione degli scrittori esterni. La ricezione ricostruisce grafo e proiezione senza avviare ingest/lint mutanti. La condizione filesystem libero non abilita applicazioni automatiche.
+Stato: rilevamento periodico opt-in e adozione manuale con recovery implementati (Windows e, dal [passo 10](10-editor-grafo-e-autori.md), POSIX). Apply automatico disabilitato. Richiede [1](01-contratto-dati-operazioni.md), [2](02-dashboard-consultazione.md), [5](05-stato-condiviso.md), [6](06-pubblicazione-github.md). Ogni clone può rilevare una pubblicazione remota, preparare un candidato isolato e adottarlo dopo la conferma esplicita di sospensione degli scrittori esterni. La ricezione ricostruisce grafo e proiezione senza avviare ingest/lint mutanti. La condizione filesystem libero non abilita applicazioni automatiche.
 
 ## Contesto e confini
 

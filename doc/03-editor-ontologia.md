@@ -128,7 +128,7 @@ impilato su mobile. Verifiche browser riproducibili in
 
 ## Apply manuale e recovery disponibili (3.4 locale)
 
-Il percorso verificato è Windows locale, in modalità `manual_paused`: l'utente
+Il percorso verificato è Windows locale e, dal [passo 10](10-editor-grafo-e-autori.md), Linux/macOS su filesystem locale (suite Linux), in modalità `manual_paused`: l'utente
 deve sospendere editor e hook esterni e revisionare schema, diff delle note e
 significato prima di confermare. Il lock coordina soltanto il servizio e i client
 cooperanti. Il test con un processo esterno dimostra che non offre esclusione:

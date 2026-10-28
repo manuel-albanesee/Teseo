@@ -2,7 +2,6 @@
 import _shortpath  # noqa: F401
 import json
 from contextlib import closing
-import os
 from pathlib import Path
 import subprocess
 import sqlite3
@@ -60,7 +59,6 @@ class SharedPipeline(unittest.TestCase):
             time.sleep(.1)
         return self.get('operations/'+job['operation_id'])[2]
 
-    @unittest.skipUnless(os.name=='nt','Apply manuale Windows')
     def test_new_answer_during_lint_stays_pending_and_checkpoint_binds_selected_uuid(self):
         first=self.answer()
         job=self.submit(kind='lint')
@@ -118,7 +116,6 @@ class SharedPipeline(unittest.TestCase):
         result=self.complete(job,self.selected_receipt(job,[str(uuid4())]),status=422)
         self.assertEqual(result['error']['code'],'invalid_response_ids')
 
-    @unittest.skipUnless(os.name=='nt','Apply manuale Windows')
     def test_crash_before_checkpoint_never_marks_answers_applied_and_rollback_rebuilds_cache(self):
         first=self.answer();before=capture_snapshot(self.root).digest
         job=self.submit(kind='lint');self.candidate(job,first['text'])
@@ -133,7 +130,6 @@ class SharedPipeline(unittest.TestCase):
         self.assertEqual(self.server.shared.answers(self.vault_id)['answers'][0]['state'],'archived')
         self.assertEqual(self.server.shared.import_state(self.vault_id,{})['event_count'],2)
 
-    @unittest.skipUnless(os.name=='nt','Apply manuale Windows')
     def test_projection_failure_after_marker_can_replay_without_reapplying_notes(self):
         first=self.answer();job=self.submit(kind='lint');self.candidate(job,first['text'])
         ready=self.complete(job,self.selected_receipt(job,[first['entity_id']]))
@@ -170,7 +166,6 @@ class SharedPipeline(unittest.TestCase):
         self.assertIn(b'consolida-id',result.stderr)
         self.assertFalse((self.root/'does-not-exist.sqlite').exists())
 
-    @unittest.skipUnless(os.name=='nt','Apply manuale Windows')
     def test_competing_consolidations_require_causal_review_and_new_validated_checkpoint(self):
         first=self.answer()
         original=next(e for e in snapshot_events(capture_snapshot(self.root),self.vault_id) if e['kind']=='answer.recorded')
@@ -191,7 +186,6 @@ class SharedPipeline(unittest.TestCase):
         self.assertEqual(final['answers'][0]['state'],'consolidated')
         self.assertFalse(final['conflicts'])
 
-    @unittest.skipUnless(os.name=='nt','Apply manuale Windows')
     def test_clean_clone_rebuilds_same_shared_state_and_graph_without_personal_databases(self):
         first=self.answer();job=self.submit(kind='lint');self.candidate(job,first['text'])
         ready=self.complete(job,self.selected_receipt(job,[first['entity_id']]))

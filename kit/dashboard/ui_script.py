@@ -3,10 +3,12 @@ from .ontology_ui import EDITOR_SCRIPT
 from .skill_ui import SKILL_SCRIPT
 from .shared_ui import SHARED_SCRIPT
 from .sync_ui import SYNC_SCRIPT
+from .graph_ui import GRAPH_SCRIPT
+from .node_ui import NODE_SCRIPT
 SCRIPT = r"""
 (() => {
  'use strict';
-""" + EDITOR_SCRIPT + SKILL_SCRIPT + SHARED_SCRIPT + SYNC_SCRIPT + r"""
+""" + EDITOR_SCRIPT + SKILL_SCRIPT + SHARED_SCRIPT + SYNC_SCRIPT + GRAPH_SCRIPT + NODE_SCRIPT + r"""
  const $ = id => document.getElementById(id);
  const token = new URLSearchParams(location.hash.slice(1)).get('session');
  history.replaceState(null, '', location.pathname);
@@ -17,7 +19,7 @@ SCRIPT = r"""
  // counters additionally protect independent selections within that view.
  let csrf = '', epoch = 0, graphRequest = 0, detailRequest = 0, state = null;
  let nodes = [], edges = [], cursor = null, filters = {}, invalid = false, loadingGraph = false;
- let stopping = false, operationPoll = 0;
+ let stopping = false, operationPoll = 0, vocabulary = {relations:[], types:[]};
  const pendingRebuild = new Map();
  async function api(path, data, extraHeaders={}) {
    const headers = {'X-Teseo-Session':token,...extraHeaders}, options = {headers,cache:'no-store'};
@@ -29,6 +31,9 @@ SCRIPT = r"""
  const editor=createOntologyEditor({api,plain,element,getEpoch:()=>epoch,stopped:()=>stopping,onOperation:(vault,id)=>watchOperation(vault,id)});
  const skills=createSkillPanel({api,element,getEpoch:()=>epoch,getVault:()=>$('vault').value,stopped:()=>stopping,onOperation:(vault,id)=>watchOperation(vault,id),reload:()=>$('list-operations').click()});
  const shared=createSharedPanel({api,element,getEpoch:()=>epoch,getVault:()=>$('vault').value,stopped:()=>stopping,reload:()=>$('list-operations').click()});
+ const graphView=createGraphView({element,onOpen:id=>openNode(id)});
+ const nodeTools=createNodeTools({api,element,plain,url:(endpoint,parameters)=>url(endpoint,parameters),getState:()=>state,getVault:()=>$('vault').value,getEpoch:()=>epoch,
+   stopped:()=>stopping,graphView,getVocabulary:()=>({...vocabulary,nodes:nodes.map(node=>node.id)}),onOperation:(vault,id)=>watchOperation(vault,id)});
  const sync=createSyncPanel({api,element,getEpoch:()=>epoch,getVault:()=>$('vault').value,stopped:()=>stopping});
  $('skill-dispatch').addEventListener('click',async()=>{const vault=$('vault').value;if(!vault||stopping)return;try{await api('/api/v1/vaults/'+encodeURIComponent(vault)+'/dispatch',{});if(vault===$('vault').value)$('list-operations').click();}catch(error){$('operation').textContent=error.code+': '+error.message;}});
  $('list-operations').addEventListener('click',async()=>{
@@ -71,9 +76,10 @@ SCRIPT = r"""
        const job=await api('/api/v1/vaults/'+encodeURIComponent(vaultId)+'/operations/'+encodeURIComponent(identifier));
        if(run!==epoch || poll!==operationPoll || stopping)return;
        const terminal=['succeeded','rolled_back','failed','cancelled','blocked_external_change','recovery_required'].includes(job.state);
-       $('operation').textContent=(job.kind==='rebuild'?'Rebuild ':'Operazione note ')+identifier+' · '+job.state;
+       $('operation').textContent=(job.kind==='rebuild'?'Rebuild ':job.kind==='graph_edit'?'Modifica del grafo ':'Operazione note ')+identifier+' · '+job.state;
        if(['succeeded','rolled_back'].includes(job.state))$('operation').textContent+=' · Completato. File cambiati: '+(job.checkpoint?.changed_files||[]).join(', ')+'. Premi Aggiorna vista per caricare la generazione pubblicata.';
        if(job.state==='recovery_required')$('operation').textContent+=' · Conserva base, candidato e backup. Sospendi gli editor e scegli recovery esplicito; nessun rollback automatico.';
+       if(job.publication)$('operation').textContent+=' · Pubblicazione: '+job.publication.state+(job.publication.message?' ('+job.publication.message+')':'');
        if(job.error)$('operation').textContent+=' · '+job.error.code+': '+job.error.message+' '+(job.error.details||[]).join(' · ')+' · Correggi il problema e aggiorna la vista prima di riprovare.';
        if(terminal){$('rebuild').disabled=!state?.capabilities.rebuild;return;}
      } catch(error) {
@@ -109,26 +115,7 @@ SCRIPT = r"""
  function relationList(parent, list) {
    for(const edge of list) {const li=element('li',undefined,parent);nodeButton(li,edge.source_id);element('span',' → '+edge.type+' → ',li);nodeButton(li,edge.target_id);}
  }
- function graphMap(list) {
-   $('map').replaceChildren();
-   if(!list.length) return;
-   const visible=list.slice(0,12), positions=new Map();
-   const svgElement=(tag,attrs,parent)=>{const el=document.createElementNS('http://www.w3.org/2000/svg',tag);for(const [key,value] of Object.entries(attrs))el.setAttribute(key,value);parent.append(el);return el;};
-   const svg=svgElement('svg',{viewBox:'0 0 900 350',role:'group','aria-label':'Grafo diretto. Stessi nodi disponibili nella lista seguente.'},$('map'));
-   const defs=svgElement('defs',{},svg), marker=svgElement('marker',{id:'arrow',viewBox:'0 0 10 10',refX:'9',refY:'5',markerWidth:'7',markerHeight:'7',orient:'auto-start-reverse'},defs);
-   svgElement('path',{d:'M 0 0 L 10 5 L 0 10 z',fill:'#73827a'},marker);
-   visible.forEach((node,i)=>{const angle=2*Math.PI*i/visible.length;positions.set(node.id,[450+345*Math.cos(angle),175+125*Math.sin(angle)]);});
-   const links=edges.filter(edge=>positions.has(edge.source_id)&&positions.has(edge.target_id)).slice(0,80);
-   for(const edge of links) {const a=positions.get(edge.source_id),b=positions.get(edge.target_id),distance=Math.hypot(b[0]-a[0],b[1]-a[1]);if(!distance)continue;
-     const line=svgElement('line',{x1:a[0],y1:a[1],x2:b[0]-(b[0]-a[0])*17/distance,y2:b[1]-(b[1]-a[1])*17/distance,stroke:'#73827a','marker-end':'url(#arrow)'},svg);
-     svgElement('title',{},line).textContent=edge.source_id+' → '+edge.type+' → '+edge.target_id;
-   }
-   for(const node of visible) {const [x,y]=positions.get(node.id),group=svgElement('g',{tabindex:'0',role:'button','aria-label':'Apri '+node.id},svg);
-     svgElement('circle',{cx:x,cy:y,r:'29',fill:'transparent'},group);svgElement('circle',{cx:x,cy:y,r:'13',class:'dot'},group);const label=svgElement('text',{x:x,y:y+28,'text-anchor':'middle'},group);label.textContent=node.id.length>18?node.id.slice(0,16)+'…':node.id;
-     svgElement('title',{},group).textContent=node.id;group.addEventListener('click',()=>openNode(node.id));group.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();openNode(node.id);}});
-   }
-   element('p','Il grafo scorre orizzontalmente su schermi stretti. Frecce: sorgente → destinazione. Disegno limitato a 12 nodi e 80 archi; etichette complete e tipi nelle liste.', $('map')).className='hint';
- }
+ function graphMap(list) {graphView.render(list,edges,Number($('map-limit').value)||200);}
  function renderGraph() {
    const query=$('search').value.toLocaleLowerCase('it'), list=nodes.filter(node=>(node.id+' '+(node.descrizione||'')).toLocaleLowerCase('it').includes(query));
    $('counts').textContent=nodes.length+' nodi e '+edges.length+' archi caricati · '+list.length+' nodi corrispondenti'+(cursor?' · Dati parziali: altre pagine disponibili.':' · Fine delle pagine per questi filtri.');
@@ -161,6 +148,7 @@ SCRIPT = r"""
      if(!body.sources.length)element('li','Nessuna fonte dichiarata.',sources);
      element('h4','Relazioni · sorgente → destinazione',container);relationList(element('ul',undefined,container),body.relations);
      if(body.sources_truncated||body.relations_truncated)element('p','Fonti o relazioni limitate ai primi 200 risultati.',container);
+     nodeTools.mount(container,body);
      element('h4','Testo della nota · Markdown come testo',container);element('pre',body.text===null?'Nessun testo associato.':plain(body.text),container);
    } catch(error) {if(run===epoch&&request===detailRequest){element('p','Dettaglio non disponibile: '+error.message,$('detail'));failure(error);}}
  }
@@ -186,7 +174,8 @@ SCRIPT = r"""
    $('operation-list').replaceChildren();
    ++operationPoll;$('rebuild').disabled=true;$('operation').textContent='';
    const run=++epoch;++graphRequest;++detailRequest;state=null;invalid=false;loadingGraph=false;nodes=[];edges=[];cursor=null;filters={};
-   for(const id of ['type','relation','search','apply'])$(id).disabled=true;
+   for(const id of ['type','relation','author','search','map-limit','apply'])$(id).disabled=true;
+   vocabulary={relations:[],types:[]};$('author').replaceChildren(new Option('Tutti gli autori',''));
    $('type').replaceChildren(new Option('Tutti i tipi',''));$('relation').replaceChildren(new Option('Tutte le relazioni',''));$('search').value='';
    for(const id of ['nodes','edges','map','ontology-published','diagnostics'])$(id).replaceChildren();
    $('detail').replaceChildren();element('h3','Dettaglio nodo',$('detail'));element('p','Seleziona un nodo dalla lista o dal grafo.',$('detail'));
@@ -207,13 +196,14 @@ SCRIPT = r"""
      if(!status.capabilities.graph){$('counts').textContent='Grafo non disponibile. È necessario un rebuild esplicito con il kit aggiornato; questa vista non modifica il vault.';element('p','Vocabolario pubblicato non disponibile senza grafo. La preview usa la base corrente.',$('ontology-published'));renderDiagnostics({issues:status.issues});return;}
      if(status.stale)$('notice').textContent+=' · Stai consultando la revisione pubblicata; le modifiche del vault non sono ancora nel grafo.';
      const pin=url('ontology'),diagnostics=url('diagnostics');
-     const results=await Promise.allSettled([api(pin),api(diagnostics)]);if(run!==epoch)return;
-     if(results[0].status==='fulfilled') {const ontology=results[0].value;renderOntology(ontology);
+     const results=await Promise.allSettled([api(pin),api(diagnostics),api(url('authors'))]);if(run!==epoch)return;
+     if(results[0].status==='fulfilled') {const ontology=results[0].value;renderOntology(ontology);vocabulary={relations:ontology.relations.map(item=>item.name),types:ontology.types};
        for(const type of ontology.types)$('type').append(new Option(type,type));
        for(const relation of ontology.relations)$('relation').append(new Option(relation.name,relation.name));
      } else {element('p','Ontologia pubblicata non disponibile: '+results[0].reason.message,$('ontology-published'));failure(results[0].reason);}
      if(results[1].status==='fulfilled')renderDiagnostics(results[1].value);else{element('p','Diagnostica non disponibile: '+results[1].reason.message,$('diagnostics'));failure(results[1].reason);}
-     for(const key of ['type','relation','search','apply'])$(key).disabled=invalid;
+     if(results[2].status==='fulfilled')for(const author of results[2].value.authors)$('author').append(new Option(author.name+' ('+author.created+' create, '+author.modified+' modificate)',author.name));
+     for(const key of ['type','relation','author','search','map-limit','apply'])$(key).disabled=invalid;
      if(invalid)$('counts').textContent='Caricamento interrotto: aggiorna la vista per leggere la nuova generazione.';
      else await loadGraph();
    } catch(error){if(run===epoch){$('counts').textContent='Dati non disponibili.';failure(error);}}
@@ -227,8 +217,8 @@ SCRIPT = r"""
    $('vault').disabled=!body.vaults.length;await selectVault();
  }
  $('vault').addEventListener('change',selectVault);$('refresh').addEventListener('click',selectVault);
- $('search').addEventListener('input',renderGraph);$('more').addEventListener('click',()=>loadGraph(true));
- $('filters').addEventListener('submit',event=>{event.preventDefault();if(invalid)return;filters={};if($('type').value)filters.type=$('type').value;if($('relation').value)filters.relation=$('relation').value;nodes=[];edges=[];cursor=null;renderGraph();loadGraph();});
+ $('search').addEventListener('input',renderGraph);$('map-limit').addEventListener('change',renderGraph);$('more').addEventListener('click',()=>loadGraph(true));
+ $('filters').addEventListener('submit',event=>{event.preventDefault();if(invalid)return;filters={};if($('type').value)filters.type=$('type').value;if($('relation').value)filters.relation=$('relation').value;if($('author').value)filters.author=$('author').value;nodes=[];edges=[];cursor=null;renderGraph();loadGraph();});
  document.querySelectorAll('[data-view]').forEach(button=>button.addEventListener('click',()=>{for(const view of ['graph','ontology','diagnostics'])$(view).hidden=view!==button.dataset.view;document.querySelectorAll('[data-view]').forEach(item=>item.setAttribute('aria-pressed',String(item===button)));}));
  $('attach').addEventListener('submit',async event=>{event.preventDefault();$('connect').disabled=true;
    try {const vault=await api('/api/v1/vaults/attach',{path:$('path').value});await refreshVaults(vault.vault_id);$('message').textContent='Vault collegato. Nessun file modificato.';}

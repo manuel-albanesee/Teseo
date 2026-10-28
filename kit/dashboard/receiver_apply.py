@@ -1,4 +1,4 @@
-"""Explicit Windows receive: journal files, index and ref; never automatic apply."""
+"""Explicit receive (Windows and POSIX): journal files, index and ref; never automatic apply."""
 import hashlib
 import os
 from pathlib import Path
@@ -8,7 +8,7 @@ from .contracts import ContractError,canonical_json,parse_json,resolve_path,file
 from .diagnostics import log_unexpected as _log_unexpected
 from .storage import VaultLock,Journal,capture_snapshot,_local_directory,_ensure_ignored,_no_link
 from .shared_migration import _connection
-from .ontology_apply import _replace,_write_stage,_local_volume,_check_live
+from .ontology_apply import _replace,_move_new,_write_stage,_local_volume,_check_live
 from .sync_service import _fields,_oid
 
 
@@ -68,7 +68,6 @@ class ReceiverApplyService:
             or any(char not in '0123456789abcdef' for char in body['expected_digest'])):
             raise ContractError('receiver_request','Digest candidato non valido')
         if recovery and body['action'] not in ('finish','rollback'):raise ContractError('receiver_request','Scegliere finish oppure rollback')
-        if os.name!='nt':raise ContractError('apply_platform_unavailable','Ricezione manuale verificata soltanto su Windows locale')
 
     @staticmethod
     def _same_request(record,body):
@@ -227,7 +226,7 @@ class ReceiverApplyService:
                 self._check(root,repo,record,base,candidate)
                 if path not in values:os.rename(target,root/attempt['backup'])
                 elif target.exists():_replace(target,staged,root/attempt['backup'])
-                else:target.parent.mkdir(parents=True,exist_ok=True);os.rename(staged,target)
+                else:target.parent.mkdir(parents=True,exist_ok=True);_move_new(staged,target)
                 self._check(root,repo,record,base,candidate)
             if capture_snapshot(root).digest!=desired.digest:raise ContractError('recovery_conflict','Contenuto finale diverso dal candidato')
             wanted=record['index_target'] if action=='finish' else record['index_base']
@@ -241,7 +240,7 @@ class ReceiverApplyService:
                 record.setdefault('index_attempts',[]).append(item);self._save(root,record)
                 self._check(root,repo,record,base,candidate)
                 if (root/'.git/index').exists():_replace(root/'.git/index',staged,root/item['backup'])
-                else:os.rename(staged,root/'.git/index')
+                else:_move_new(staged,root/'.git/index')
                 self._check(root,repo,record,base,candidate)
             current=repo.head()
             if current not in (record['B'],record['R']):raise ContractError('recovery_conflict','HEAD esterno da preservare prima del CAS')

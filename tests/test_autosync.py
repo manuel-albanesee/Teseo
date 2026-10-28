@@ -117,6 +117,42 @@ class AutosyncFlow(unittest.TestCase):
         self.assertEqual(git(self.a, 'rev-parse', 'HEAD'), git(self.remote, 'rev-parse', 'main'))
         self.assertEqual(git(self.a, 'status', '--porcelain'), '')
 
+    def test_graph_check_can_be_skipped_so_the_dashboard_never_runs_vault_scripts(self):
+        script = self.a / '.graph/build_graph.py'
+        original = script.read_bytes()
+        marker = self.home / 'EXECUTED'  # fuori dal vault: un file nuovo nel vault farebbe fallire la policy del post
+        script.write_text('from pathlib import Path; Path(%r).touch()' % str(marker), encoding='utf-8')
+        try:
+            self.append(self.a, 'wiki/Gestionale.md', '\nNota senza controllo.\n')
+            result = self.sync_a.post('manuale', 'umano', graph_check=False)
+            self.assertEqual((result['state'], result['graph']), ('published', 'skipped'), result)
+            self.assertFalse(marker.exists())
+            self.append(self.a, 'wiki/Gestionale.md', '\nNota con controllo.\n')
+            again = self.sync_a.post('manuale', 'umano')
+            self.assertEqual(again.get('graph'), 'ok', again)
+            self.assertTrue(marker.exists())
+        finally:
+            script.write_bytes(original)
+            marker.unlink(missing_ok=True)
+
+    def test_updates_count_remote_commits_without_receiving_or_writing_anything(self):
+        self.assertEqual((self.sync_b.updates()['state'], self.sync_b.updates()['count']), ('current', 0))
+        self.sync_a.pre('ingest', 'claude')
+        self.append(self.a, 'wiki/Gestionale.md', '\nNota di Alice.\n')
+        self.assertEqual(self.sync_a.post('ingest', 'claude')['state'], 'published')
+        head, note = git(self.b, 'rev-parse', 'HEAD'), (self.b / 'wiki/Gestionale.md').read_bytes()
+        sessions = self.sync_b._sessions()
+        result = self.sync_b.updates()
+        self.assertEqual((result['state'], result['count'], result['exit']), ('behind', 1, 0), result)
+        self.assertEqual((git(self.b, 'rev-parse', 'HEAD'), (self.b / 'wiki/Gestionale.md').read_bytes()), (head, note))
+        self.assertEqual((git(self.b, 'status', '--porcelain'), self.sync_b._sessions()), ('', sessions))
+        self.assertEqual(self.sync_b.pre('lint', 'codex')['received'], 1)
+        self.assertEqual(self.sync_b.updates()['state'], 'current')
+
+    def test_updates_are_silent_when_the_vault_is_not_collaborative(self):
+        self.sync_a.service.disable_automatic(self.sync_a.vault_id)
+        self.assertEqual((self.sync_a.updates()['state'], self.sync_a.updates()['exit']), ('disabled', 0))
+
     def test_pre_receives_what_another_user_published(self):
         self.sync_a.pre('ingest', 'claude')
         self.append(self.a, 'wiki/Gestionale.md', '\nNota di Alice.\n')
@@ -321,6 +357,8 @@ class AutosyncFlow(unittest.TestCase):
         code, _, err = self.run_cli(self.a, 'pre')
         self.assertEqual(code, 2)
         self.assertIn('--skill', err)
+        code, out, _ = self.run_cli(plain, 'avvisi')
+        self.assertEqual((code, json.loads(out)['state']), (0, 'disabled'))
 
 
 if __name__ == '__main__':

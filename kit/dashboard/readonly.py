@@ -5,6 +5,7 @@ import threading
 from uuid import UUID, NAMESPACE_URL, uuid5
 
 from .contracts import ContractError, inspect_vault, VaultCompatibility, parse_manifest, parse_json
+from .storage import NOTE_KINDS
 
 
 class VaultRegistry:
@@ -58,7 +59,7 @@ class VaultRegistry:
                     records = [parse_json(row[0]) for row in db.execute('SELECT record FROM operations WHERE length(record)<=5242880 ORDER BY rowid DESC LIMIT 128')]
                 finally:
                     db.close()
-                if any(item.get('vault_id') == identifier and item.get('kind') in ('ontology_apply','ingest_lint','lint','fill_gaps')
+                if any(item.get('vault_id') == identifier and item.get('kind') in NOTE_KINDS
                        and item.get('state') in ('prepared', 'applying', 'recovery_required') for item in records):
                     with (root / '.teseo/project.json').open('rb') as stream:
                         manifest = parse_manifest(stream.read(65537))
@@ -77,7 +78,8 @@ class VaultRegistry:
                 "capabilities": {"attach_readonly": True, "graph": False, "rebuild": False,
                                  "ontology_preview": compatibility.mode == 'compatible',
                                  "shared_state": compatibility.mode == 'compatible',
-                                 "ontology_apply": compatibility.mode == 'compatible' and os.name == 'nt',
+                                 "ontology_apply": compatibility.mode == 'compatible',
+                                 "graph_edit": compatibility.mode == 'compatible',
                                  "ontology_apply_automatic": False, "external_writer_exclusion": False,
                                  "write_notes": False, "sync": compatibility.mode == 'compatible',
                                  "sync_automatic": False},

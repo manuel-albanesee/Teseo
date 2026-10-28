@@ -22,6 +22,7 @@ Se il vault ha un grafo tipizzato (es. `.graph/` con `build_graph.py` e `graph.s
 - **Problemi meccanici del grafo**: quelli segnalati da `python .graph/build_graph.py --check` (link non risolti, relazioni fuori vocabolario, tipi non ammessi, alias duplicati, fonti non censite).
 - **Relazioni non sostenute dal testo**: una relazione nel frontmatter che la pagina non afferma più, o che contraddice il testo (es. un `referente` che il testo dice cambiato, una relazione verso qualcosa ora marcato `⚠️ da verificare`).
 - **Relazioni mancanti**: il testo afferma chiaramente una relazione del vocabolario (chi è il referente, quale strumento si usa, di cosa è parte) ma il frontmatter non la dichiara. Priorità a processi e sistemi senza alcuna relazione tipizzata.
+- **Nessi causali non sostenuti**: una relazione `causa` (o la sua `confidenza`/`evidenza` in `relazioni_dettaglio`) che la fonte citata non afferma, o che nasce da una semplice sequenza di fatti: toglila o segnalala come punto aperto, senza inventare nessi.
 - **Alias mancanti**: sigle, nomi di codice o forme «Cognome Nome» con cui una pagina compare nelle altre pagine o nelle fonti, ma che non sono nei suoi `aliases`.
 
 ## Procedura

@@ -78,10 +78,14 @@ Limiti noti di `additive`, accettati perché la regola resta quella sopra:
 - Il pull (`SyncService.sync_down`) è un fast-forward tramite candidato isolato; storie divergenti non vengono toccate.
 - Le fonti binarie in `raw/` restano sul disco: il confronto fra i byte del vault e l'OID da pubblicare le ignora (`git_sync.is_local_only`).
 - Il limite di 128 commit vale sui soli commit non ancora pubblicati.
+- Prima verifica POSIX (Linux, Python 3.13): `tests/test_autosync.py` passa senza modifiche, con remoto bare locale. L'autosync non usa `ReplaceFileW` né l'apply manuale Windows; l'unica differenza di piattaforma è la riga di comando dei client (`shlex.join` fuori da Windows, `installa.py`, `codex_hook.py`).
 
 ## Limiti noti
 
 - `capture_snapshot` legge in memoria tutto il perimetro dati, fonti binarie comprese, con tetto di 64 MiB (`snapshot_too_large`). Un vault con molte fonti pesanti in `raw/` blocca l'autosync finché il tetto non viene reso selettivo. Da affrontare prima di un uso con PDF di grandi dimensioni.
 - Il controllo dell'integrazione è euristico e conservativo: il vicinato è l'intera componente connessa del grafo, quindi in una wiki molto collegata molte modifiche concorrenti richiedono una decisione.
 - Nessuna esclusione di Obsidian durante `post`: hash e HEAD rilevano una scrittura concorrente e fermano la pubblicazione.
+- Su POSIX resta non verificato il `cleanup_candidate` dei pack in sola lettura (descritto per Windows). L'apply manuale e la ricezione funzionano ora anche su POSIX ([documento 10](10-editor-grafo-e-autori.md)).
+- `teseo_git.py avvisi` (un solo fetch, mai pull né scritture) è chiamato dagli hook `SessionStart` di Claude e Codex per segnalare «N aggiornamenti remoti».
+- Le modifiche dalla dashboard (editor del grafo) pubblicano con `post --skill dashboard --agente umano` senza eseguire `.graph/build_graph.py` (`graph_check=False`): la sessione nasce con la pubblicazione, come per `manuale`.
 - Collaudo con un repository GitHub reale, credenziali reali e client AI autenticati non svolto; i test usano un remoto bare locale.

@@ -68,12 +68,14 @@ I wikilink nel testo dicono solo che due pagine sono collegate. Le relazioni che
 | `usa` | processo, sistema, progetto | sistema, entita | X si svolge o funziona tramite lo strumento Y | Rilascio in produzione → Console di rilascio |
 | `richiede` | processo, sistema | qualsiasi | X non parte o non si completa senza Y | Console di rilascio → Incident settimanale |
 | `precede` | processo, sistema | processo, sistema | Nella catena operativa X viene prima di Y | Censimento profili → Caricamento notturno |
+| `causa` | qualsiasi | qualsiasi | X è causa di Y: se la fonte lo afferma, X provoca o produce Y | Backup fallito → Report mensile incompleto |
 | `referente` | qualsiasi | persona | Y è la persona a cui ci si rivolge per X | Incident settimanale → Anna Rossi |
 | `variante_di` | qualsiasi | stesso tipo | X è un gemello di Y per un caso particolare | Rilascio d'emergenza → Rilascio in produzione |
 | `sostituisce` | sistema, progetto | sistema | X rifà o prende il posto di Y, anche se Y è ancora in uso | Portale 2026 → Portale 2019 |
 | `riguarda` | episodio, documento, riferimento, progetto | qualsiasi | X ha Y come oggetto | Errore del 3 marzo → Rilascio in produzione |
 | `da_non_confondere` | qualsiasi | stesso tipo | X e Y si scambiano facilmente ma sono diversi | Anna Rossi → Anna Rosso |
 
+- `causa` si dichiara solo se la fonte afferma il nesso causale, mai per semplice sequenza o correlazione. Se la fonte dà il grado di certezza o la frase che lo sostiene, si registra in `relazioni_dettaglio` sulla pagina della causa: `relazioni_dettaglio: {"[[Y]]": {confidenza: alta, evidenza: "frase della fonte"}}` (`confidenza`: `alta`, `media`, `bassa`; `evidenza`: testo breve; Y deve essere un effetto dichiarato con `causa`).
 - Una relazione si dichiara solo se la pagina la afferma. Se è incerta non si mette: resta il wikilink nel testo, con il suo `⚠️ da verificare`.
 - La relazione sta sulla pagina da cui parte la freccia; l'inversa («è referente di») non si scrive, la calcola il grafo.
 - **Alias** (`aliases`): altri nomi con cui una pagina compare nelle fonti — sigle sciolte, forme «Cognome Nome», errori di trascrizione già risolti. Mai un alias ambiguo (un nome di battesimo da solo) né uno non ancora verificato.

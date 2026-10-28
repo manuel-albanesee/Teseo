@@ -1,4 +1,4 @@
-"""Apply/recovery Windows reale: snapshot, crash, race e preservazione delle note."""
+"""Apply/recovery reale (Windows e POSIX): snapshot, crash, race e preservazione delle note."""
 import _shortpath  # noqa: F401
 import json
 import os
@@ -17,7 +17,6 @@ from kit.dashboard.ontology_migrations import migrate
 from kit.dashboard.storage import capture_snapshot, VaultLock
 
 
-@unittest.skipUnless(os.name == 'nt', 'Apply manuale Windows')
 class Apply(unittest.TestCase):
     setUp = fixture.Queries.setUp
     stop = fixture.Queries.stop

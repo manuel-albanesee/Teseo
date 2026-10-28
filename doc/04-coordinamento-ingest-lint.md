@@ -113,7 +113,7 @@ del client sottoposta a revisione umana; i controlli del servizio sono determini
 
 `POST /operations/{id}/apply` richiede `{mode: manual_paused,
 external_writers_paused: true, semantic_reviewed: true}` e If-Match della base.
-Usa il protocollo Windows locale e i backup nativi del 3.4, con supporto a nuove
+Usa il protocollo locale (Windows e POSIX) e i backup nativi del 3.4, con supporto a nuove
 note e rollback esplicito che conserva i byte rimossi nei backup. Nuovi file o
 modifiche estranee nella base impediscono l'applicazione; nessuna esclusione
 garantita degli editor e nessun apply automatico. `recover` mantiene le stesse

@@ -201,12 +201,14 @@ class Autosync:
                        session=session['id'], received=down.get('received', 0), offline=offline, head=head)
 
     # -- post -----------------------------------------------------------------------------------
-    def post(self, skill, agent):
+    def post(self, skill, agent, *, graph_check=True):
+        """graph_check=False salta `.graph/build_graph.py --check`: serve al servizio dashboard, che ha già validato il
+        candidato con il builder del runtime e non esegue script del vault."""
         def run():
             self._check_names(skill, agent)
             if not self.enabled():
                 return _result('disabled', 0, 'Autosync non attivo: nessuna pubblicazione')
-            return self._post(skill, agent)
+            return self._post(skill, agent, graph_check)
         return self._guard(run)
 
     def _graph_check(self):
@@ -248,19 +250,19 @@ class Autosync:
             write_local_excludes(self.root, [*read_local_excludes(self.root), *local_only])
         return files, local_only
 
-    def _post(self, skill, agent):
+    def _post(self, skill, agent, graph_check=True):
         repo = self._repository()
         opened = self._sessions(_OPEN)
         if opened:
             session = opened[0]
-        elif skill == 'manuale':
+        elif skill in ('manuale', 'dashboard'):  # modifiche fuori da una skill: la sessione nasce con la pubblicazione
             session = self._new_session(skill, agent, repo.head())
         else:
             raise ContractError('autosync_no_session', 'Nessuna sessione aperta: eseguire prima python .graph/teseo_git.py pre')
         if self._sessions('waiting'):
             raise ContractError('autosync_blocked', 'Una pubblicazione precedente attende la rete: eseguire riprendi a vault pulito, '
                                                     'oppure usare la dashboard (Pubblicazione Git → Risolvi)')
-        graph = self._graph_check()
+        graph = self._graph_check() if graph_check else 'skipped'
         if repo.head() != session['base']:
             raise ContractError('autosync_head_changed', 'HEAD è cambiato dopo pre: pubblicare con post --skill manuale')
         files, local_only = self._files(repo)
@@ -289,6 +291,30 @@ class Autosync:
         self._set(session, 'blocked', error=job.get('error'))
         return _result('blocked', 2, 'Pubblicazione da risolvere nella dashboard (Pubblicazione Git → Risolvi): stato '
                        + state, error=job.get('error'), job_state=state, **common)
+
+    # -- avvisi ---------------------------------------------------------------------------------
+    def updates(self):
+        """Aggiornamenti remoti non ancora ricevuti: solo fetch, mai pull né scritture su note, grafo o sessioni."""
+        def run():
+            if not self.enabled():
+                return _result('disabled', 0, 'Autosync non attivo', count=0)
+            config = self.service.status(self.vault_id).get('config') or {}
+            repo = self._repository()
+            head = repo.head()
+            try:
+                remote = repo.fetch(config['remote_url'], config['branch'])
+            except ContractError as error:
+                if error.code in _OFFLINE:
+                    return _result('offline', 0, 'Offline: aggiornamenti remoti non verificabili', count=0)
+                raise
+            if remote == head or repo.is_ancestor(remote, head):
+                return _result('current', 0, 'Allineato al repository condiviso', count=0, head=head)
+            if not repo.is_ancestor(head, remote):
+                return _result('diverged', 0, 'Storie divergenti: risolvere nella dashboard (Pubblicazione Git → Risolvi)', count=0, head=head)
+            count = int(repo.run('rev-list', '--count', head + '..' + remote).strip())
+            return _result('behind', 0, '%d aggiornamenti remoti da ricevere: la prossima skill li scarica con pre' % count,
+                           count=count, head=head)
+        return self._guard(run)
 
     # -- riprendi -------------------------------------------------------------------------------
     def resume(self):

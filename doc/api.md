@@ -61,6 +61,17 @@ Uso:
 | `prova(client='tutti', dashboard=False)` | Installazione di prova con il vault d'esempio in una cartella temporanea: niente esce da lì. |
 | `main()` | — |
 
+## `kit/graph/avvisi.py`
+
+Avvisi a inizio sessione per i vault collaborativi: aggiornamenti remoti non ancora ricevuti.
+
+Solo `teseo_git.py avvisi` (un fetch): nessun pull e nessuna scrittura su note, grafo o stato dell'autosync.
+Offline, tempo scaduto o qualunque guasto non disturbano l'avvio della sessione (si restituisce None).
+
+| Funzione | Descrizione |
+| --- | --- |
+| `remoti(vault, timeout=TIMEOUT)` | Frase da mostrare all'utente se il remoto ha aggiornamenti (o storie divergenti), altrimenti None. |
+
 ## `kit/graph/backup_personal.py`
 
 Backup consistente dei DB personali di un vault con manifest compatibile.
@@ -117,6 +128,8 @@ Archi:
   - [[link]] nel corpo della pagina                  → `menziona`
   - chiavi in `fonti`                                → `documentato_in`
 Alias: proprietà `aliases` del frontmatter.
+Attributi d'arco: `relazioni_dettaglio` è una mappa `"[[Y]]": {confidenza: alta|media|bassa, evidenza: testo}` e vale per
+l'arco `causa` della pagina verso Y, che deve essere dichiarato; finisce nella tabella `relation_attributes`.
 Testo: tabella FTS5 `testo` (id pagina, titolo, corpo senza frontmatter) per il ripiego di recall.per_testo, quando
 il grafo non riconosce nessuna pagina. Il corpo è intero, blocchi di codice compresi (nomi di tabelle e comandi stanno
 spesso in backtick: sono ciò che si cerca). Ci sono anche le pagine `entropia`: sono riassunti, ma escluderle qui
@@ -130,6 +143,8 @@ Varianti grafiche dei nomi (tabella `varianti`, generata): per ogni nome di pagi
 (ServiceDesk → «Service Desk», Web2Print → «Web 2 Print») e, per i nomi a più parole, quella attaccata («Modulo fatture» →
 «ModuloFatture»), così «service desk» trova ServiceDesk. Una variante che coincide con un nome, un alias o una variante
 di un'altra pagina si scarta (varianti_nomi).
+Autori (tabella `autori`): non li legge il builder, che lavora su copie senza .git; li inserisce chi lo chiama con
+snapshot["autori"] (dashboard/graph_service.rebuild, da dashboard/authors.collect). Vuota se non c'è storia Git.
 Vocabolario delle relazioni: tabella "## Relazioni tipizzate" in Wiki reference.md (se presente).
 
 Uso:
@@ -830,6 +845,7 @@ Avvia il servizio locale del kit installato, senza eseguire codice dei vault col
 ## `kit/graph/teseo_git.py`
 
 Autosync del vault: `pre` all'inizio di una skill (pull), `post` alla fine (commit e push).
+`avvisi` conta gli aggiornamenti remoti con un solo fetch (usato dall'hook SessionStart): mai pull, mai scritture.
 
 Codici di uscita: 0 eseguito, nulla da fare o collaborazione non attiva; 2 bloccato, serve
 un'azione umana (messaggio su stderr, dettagli JSON su stdout); 3 rete o autenticazione assenti,
@@ -876,6 +892,15 @@ Adapter manuali: versioni osservabili, nessun avvio AI o callback presunto.
 | --- | --- |
 | `phase_instructions(phase)` | — |
 | `default_adapters()` | — |
+
+## `kit/dashboard/authors.py`
+
+Autori delle note dalla storia Git: la persona è l'autore del commit, agente e skill vengono dai trailer Teseo-*.
+
+| Funzione | Descrizione |
+| --- | --- |
+| `history_head(root)` | OID di HEAD se root è un repository con almeno un commit, altrimenti None (copie isolate, vault senza Git). |
+| `collect(root, pages)` | [(entity_id, creato_da, creato_il, modificato_da, modificato_il, agente, modifiche)] per le pagine in `pages`. |
 
 ## `kit/dashboard/autosync.py`
 
@@ -981,6 +1006,23 @@ No credentials or raw subprocess output are persisted or returned on failures.
 | `preview_data_repository(root, selection=None)` | Read-only onboarding preview, including a vault not yet under Git. |
 | `initialize_data_repository(root, branch, remote_url, selection, *, author, share_confirmed, expected_files=None, allow_local_remote=False)` | Initialize an explicitly approved data selection; never create/push a remote. |
 
+## `kit/dashboard/graph_edit.py`
+
+Editor del grafo: modifiche atomiche al frontmatter di una pagina, con preview e candidato già validato.
+
+Sono modifiche di byte conservative (stesso criterio di ontology_migrations): si riscrive solo il blocco della chiave
+toccata e il risultato deve riparsare esattamente nel frontmatter atteso, altrimenti la modifica è manuale.
+Il corpo della pagina non si tocca mai. Nessuna scrittura sul vault: l'apply passa dal journal (ApplyService).
+
+| Classe | Descrizione |
+| --- | --- |
+| `GraphEditService` | Cache di sessione limitata di proposte: niente journal, lock persistente o scritture nel vault. |
+
+| Funzione | Descrizione |
+| --- | --- |
+| `edit_page(text, name, vocabulary, pages, operations, today)` | Nuovo testo della pagina `name` dopo le operazioni, oppure ContractError con codice edit_*. |
+| `analyze(snapshot, page, operations, today)` | Preview deterministica: diff del frontmatter, candidato e problemi del grafo candidato (nessuna scrittura). |
+
 ## `kit/dashboard/graph_service.py`
 
 Generazioni derivate: il solo manifest corrente viene sostituito atomicamente.
@@ -990,6 +1032,10 @@ Generazioni derivate: il solo manifest corrente viene sostituito atomicamente.
 | `rebuild(root, *, lock=None, cancelled=None, validating=None, operation_id=None)` | Build da copia dei byte, lock comune e controllo contenuti prima del marker. |
 | `backup_personal_databases(root, timeout=30)` | SQLite online backup: include dati WAL committati, mai semplice copia file. |
 
+## `kit/dashboard/graph_ui.py`
+
+Disegno del grafo: layout a forze, zoom e pan, colori per tipo, vicinato espandibile. Solo SVG e DOM, nessuna risorsa esterna.
+
 ## `kit/dashboard/jobs.py`
 
 Rebuild derivati espliciti: journal persistente, lock comune, nessun apply note.
@@ -998,9 +1044,13 @@ Rebuild derivati espliciti: journal persistente, lock comune, nessun apply note.
 | --- | --- |
 | `RebuildCoordinator` | — |
 
+## `kit/dashboard/node_ui.py`
+
+Strumenti del nodo selezionato: autori, catena causale, vicinato nel disegno ed editor del grafo (anteprima → applica).
+
 ## `kit/dashboard/ontology_apply.py`
 
-Apply manuale Windows con journal e recovery; nessuna esclusione editor promessa.
+Apply manuale (Windows e POSIX) con journal e recovery; nessuna esclusione editor promessa.
 
 | Classe | Descrizione |
 | --- | --- |
@@ -1081,7 +1131,7 @@ writers. They cannot exclude editors: automatic application stays disabled.
 
 ## `kit/dashboard/receiver_apply.py`
 
-Explicit Windows receive: journal files, index and ref; never automatic apply.
+Explicit receive (Windows and POSIX): journal files, index and ref; never automatic apply.
 
 | Classe | Descrizione |
 | --- | --- |

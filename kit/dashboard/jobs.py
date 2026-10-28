@@ -6,7 +6,7 @@ from uuid import UUID
 
 from .contracts import ContractError, parse_json, content_hash, check_path_budget
 from .diagnostics import log_unexpected as _log_unexpected
-from .storage import VaultLock, Journal, capture_snapshot, _no_link
+from .storage import NOTE_KINDS, VaultLock, Journal, capture_snapshot, _no_link
 
 TERMINAL = {"succeeded", "failed", "cancelled", "blocked_external_change", "recovery_required"}
 
@@ -21,6 +21,7 @@ def _public(record):
 class RebuildCoordinator:
     def __init__(self, registry):
         self.registry = registry
+        self.publication_of = lambda identifier: None
         self._mutex = threading.RLock()
         self._workers = {}  # one live job per vault, at most four vaults
         self._requests = {}
@@ -129,6 +130,12 @@ class RebuildCoordinator:
                 self._workers.pop(vault_id, None)
 
     def get(self, vault_id, identifier):
+        result = self._get(vault_id, identifier)
+        if result['kind'] == 'graph_edit':
+            result['publication'] = self.publication_of(identifier)  # esito della pubblicazione automatica, se prevista
+        return result
+
+    def _get(self, vault_id, identifier):
         try:
             if str(UUID(identifier)) != identifier:
                 raise ValueError
@@ -152,7 +159,7 @@ class RebuildCoordinator:
         except sqlite3.Error:
             raise ContractError("operation_unavailable", "Journal temporaneamente non leggibile") from None
         skill = record['kind'] in ('ingest_lint','lint','fill_gaps')
-        if record["kind"] not in ("rebuild", "ontology_apply", 'ingest_lint','lint','fill_gaps') or record["vault_id"] != vault_id:
+        if record["kind"] not in ("rebuild", *NOTE_KINDS) or record["vault_id"] != vault_id:
             raise ContractError("operation_missing", "Operazione non trovata")
         if skill:
             if record['state']=='recovery_required' and self.note_activity(vault_id)==identifier:
@@ -163,7 +170,7 @@ class RebuildCoordinator:
         with self._mutex:
             active = self._workers.get(vault_id)
             note = self.note_activity(vault_id)
-            if record['kind'] == 'ontology_apply' and record['state'] == 'recovery_required' and note == identifier:
+            if record['kind'] in ('ontology_apply', 'graph_edit') and record['state'] == 'recovery_required' and note == identifier:
                 record.update(state='running', error=None)
             if record["state"] not in TERMINAL | {'rolled_back'} and (not active or active[0] != identifier) and note != identifier:
                 record.update(state="recovery_required", error={"code": "interrupted",

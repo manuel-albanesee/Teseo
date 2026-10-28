@@ -11,7 +11,7 @@ import unicodedata
 
 MAX_BYTES = 2 * 1024 * 1024
 MAX_ROWS = 2048
-SPECIAL = frozenset({'tipo', 'tags', 'fonti', 'aggiornato', 'aliases', 'menziona', 'documentato_in'})
+SPECIAL = frozenset({'tipo', 'tags', 'fonti', 'aggiornato', 'aliases', 'relazioni_dettaglio', 'menziona', 'documentato_in'})
 WILDCARDS = frozenset({'qualsiasi', 'stesso tipo'})
 HEADINGS = {'Tipi ammessi': 'types', 'Relazioni tipizzate': 'relations'}
 

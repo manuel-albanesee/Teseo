@@ -52,6 +52,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import avvisi
 from build_graph import norm
 from domande import TAG_ENTROPIA
 from recall import (IMPERATIVI, INFINITI, INGLESE, META, SCRITTURA,  # noqa: F401 (nomi riesportati)
@@ -480,8 +481,9 @@ def inizio_sessione(evento, stato, sessione, processo):
     sessione["inizio"] = [adesso(), modello] if modello else None
     processo["modello"] = modello
     testo_avviso = AVVISO_OPUS if classe(modello) == "opus" else avviso(sessione, modello)
-    if testo_avviso:
-        print(json.dumps({"systemMessage": testo_avviso}, ensure_ascii=False))
+    messaggi = [m for m in (testo_avviso, avvisi.remoti(VAULT)) if m]
+    if messaggi:
+        print(json.dumps({"systemMessage": "\n".join(messaggi)}, ensure_ascii=False))
 
 
 def prompt_utente(evento, stato, sessione, processo):

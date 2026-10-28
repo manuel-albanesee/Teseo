@@ -9,6 +9,8 @@ Archi:
   - [[link]] nel corpo della pagina                  → `menziona`
   - chiavi in `fonti`                                → `documentato_in`
 Alias: proprietà `aliases` del frontmatter.
+Attributi d'arco: `relazioni_dettaglio` è una mappa `"[[Y]]": {confidenza: alta|media|bassa, evidenza: testo}` e vale per
+l'arco `causa` della pagina verso Y, che deve essere dichiarato; finisce nella tabella `relation_attributes`.
 Testo: tabella FTS5 `testo` (id pagina, titolo, corpo senza frontmatter) per il ripiego di recall.per_testo, quando
 il grafo non riconosce nessuna pagina. Il corpo è intero, blocchi di codice compresi (nomi di tabelle e comandi stanno
 spesso in backtick: sono ciò che si cerca). Ci sono anche le pagine `entropia`: sono riassunti, ma escluderle qui
@@ -22,6 +24,8 @@ Varianti grafiche dei nomi (tabella `varianti`, generata): per ogni nome di pagi
 (ServiceDesk → «Service Desk», Web2Print → «Web 2 Print») e, per i nomi a più parole, quella attaccata («Modulo fatture» →
 «ModuloFatture»), così «service desk» trova ServiceDesk. Una variante che coincide con un nome, un alias o una variante
 di un'altra pagina si scarta (varianti_nomi).
+Autori (tabella `autori`): non li legge il builder, che lavora su copie senza .git; li inserisce chi lo chiama con
+snapshot["autori"] (dashboard/graph_service.rebuild, da dashboard/authors.collect). Vuota se non c'è storia Git.
 Vocabolario delle relazioni: tabella "## Relazioni tipizzate" in Wiki reference.md (se presente).
 
 Uso:
@@ -53,7 +57,9 @@ except ImportError:
 # Nomi che sono anche parole comuni: valgono solo scritti con la maiuscola (stessa lista di recall.PAROLE_COMUNI,
 # che non si può importare da qui: recall importa build_graph)
 PAROLE_COMUNI_NOMI = {"portale"}  # da adattare
-NON_RELAZIONI = {"tipo", "tags", "fonti", "aggiornato", "aliases"}
+NON_RELAZIONI = {"tipo", "tags", "fonti", "aggiornato", "aliases", "relazioni_dettaglio"}
+CONFIDENZE = ("alta", "media", "bassa")
+MAX_EVIDENZA = 500
 PAGINE_SCHEMA = {"index", "log", "wiki reference"}  # link ammessi, ma non sono nodi del grafo
 
 LINK = re.compile(r"!?\[\[([^\]]+?)\]\]")
@@ -204,7 +210,7 @@ def parse_documents(documents):
         problem_details.append({'code': code, 'page': page, 'property': prop,
                                 'reason': message, 'target': target})
 
-    entita, relazioni, alias = [], set(), []
+    entita, relazioni, alias, attributi = [], set(), [], []
 
     def risolvi(pagina, raw, dove):
         t = bersaglio(raw)
@@ -241,6 +247,30 @@ def parse_documents(documents):
                 t = risolvi(nome, l, f"proprietà {prop}")
                 if t and t != nome:
                     relazioni.add((nome, t, prop))
+        dettagli = fm.get("relazioni_dettaglio")
+        if dettagli is not None and not isinstance(dettagli, dict):
+            problem(f"{nome}: relazioni_dettaglio deve essere una mappa \"[[Pagina]]\": {{confidenza, evidenza}}",
+                    f'wiki/{nome}.md', 'relazioni_dettaglio', 'relation_detail_invalid')
+        for chiave, attr in (dettagli.items() if isinstance(dettagli, dict) else ()):
+            link = LINK.findall(str(chiave))
+            t = risolvi(nome, link[0], "proprietà relazioni_dettaglio") if len(link) == 1 else None
+            errore = None
+            if len(link) != 1:
+                errore = "la chiave deve essere un solo link tra virgolette"
+            elif t and (nome, t, "causa") not in relazioni:
+                errore = f"[[{t}]] non è un effetto dichiarato con 'causa' in questa pagina"
+            elif not isinstance(attr, dict) or not attr or set(attr) - {"confidenza", "evidenza"}:
+                errore = "ammessi solo confidenza ed evidenza"
+            elif "confidenza" in attr and attr["confidenza"] not in CONFIDENZE:
+                errore = "confidenza attesa fra " + ", ".join(CONFIDENZE)
+            elif "evidenza" in attr and (not isinstance(attr["evidenza"], str) or not attr["evidenza"].strip()
+                                         or len(attr["evidenza"]) > MAX_EVIDENZA):
+                errore = f"evidenza attesa come testo non vuoto fino a {MAX_EVIDENZA} caratteri"
+            if errore:
+                problem(f"{nome}: relazioni_dettaglio {chiave}: {errore}", f'wiki/{nome}.md', 'relazioni_dettaglio',
+                        'relation_detail_invalid', t)
+            elif t:
+                attributi.append((nome, t, "causa", attr.get("confidenza"), attr.get("evidenza")))
         for l in LINK.findall(CODICE.sub("", corpo)):
             t = risolvi(nome, l, "testo")
             if t and t != nome:
@@ -277,7 +307,7 @@ def parse_documents(documents):
             problem(f"alias '{a}' di {nome} coincide con {altro}", f'wiki/{nome}.md', 'aliases', 'alias_collision', altro)
 
     return {"pagine": pagine, "entita": entita, "relazioni": relazioni,
-            "alias": alias, "problemi": tuple(problemi), "fonti_usate": fonti_usate,
+            "alias": alias, "attributi": attributi, "problemi": tuple(problemi), "fonti_usate": fonti_usate,
             "tipizzate": tipizzate, "vocabolario": vocabolario, "ontology": ontology,
             "problem_details": tuple(problem_details)}
 
@@ -312,6 +342,10 @@ def build_candidate(snapshot, out):
         CREATE INDEX relations_source ON relations (source_id);
         CREATE INDEX relations_target ON relations (target_id);
         CREATE TABLE varianti (entity_id TEXT, variante TEXT);
+        CREATE TABLE relation_attributes (source_id TEXT, target_id TEXT, type TEXT, confidenza TEXT, evidenza TEXT,
+                                          PRIMARY KEY (source_id, target_id, type));
+        CREATE TABLE autori (entity_id TEXT PRIMARY KEY, creato_da TEXT, creato_il TEXT, modificato_da TEXT,
+                             modificato_il TEXT, agente TEXT, modifiche INTEGER);
         CREATE VIRTUAL TABLE testo USING fts5(id UNINDEXED, titolo, corpo, radici_titolo, radici_corpo,
                                               tokenize = 'unicode61 remove_diacritics 2');
         """)
@@ -319,6 +353,8 @@ def build_candidate(snapshot, out):
         db.executemany("INSERT INTO entities VALUES (?,?,?,?,?,?)", snapshot["entita"])
         db.executemany("INSERT INTO relations VALUES (?,?,?)", sorted(snapshot["relazioni"]))
         db.executemany("INSERT INTO aliases VALUES (?,?)", alias)
+        db.executemany("INSERT INTO relation_attributes VALUES (?,?,?,?,?)", sorted(set(snapshot["attributi"])))
+        db.executemany("INSERT INTO autori VALUES (?,?,?,?,?,?,?)", snapshot.get("autori", ()))  # dalla storia Git, vuota senza .git
         db.executemany("INSERT INTO varianti VALUES (?,?)",
                        varianti_nomi([(nome, nome) for nome in pagine] + alias))
         db.executemany("INSERT INTO testo VALUES (?,?,?,?,?)",

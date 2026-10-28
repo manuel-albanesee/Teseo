@@ -153,8 +153,10 @@ class Contracts(unittest.TestCase):
 
 class PathBudget(unittest.TestCase):
     def test_long_root_is_refused_before_any_write_on_limited_windows(self):
-        with tempfile.TemporaryDirectory() as temp,                 mock.patch("kit.dashboard.contracts.os.name", "nt"),                 mock.patch("kit.dashboard.contracts._long_paths_enabled", return_value=False):
-            with self.assertRaises(ContractError) as caught:
+        with tempfile.TemporaryDirectory() as temp:
+            # Il limite Windows è simulato su max_vault_path_length: patchare os.name rompe pathlib su POSIX.
+            with mock.patch("kit.dashboard.contracts.max_vault_path_length", return_value=91), \
+                    self.assertRaises(ContractError) as caught:
                 check_path_budget(Path(temp) / ("x" * 120))
             self.assertEqual(caught.exception.code, "path_too_long")
             self.assertNotIn(temp, str(caught.exception))

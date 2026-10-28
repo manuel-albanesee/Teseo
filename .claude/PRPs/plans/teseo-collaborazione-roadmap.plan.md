@@ -48,6 +48,10 @@ preview → apply → rebuild → post.
 
 ---
 
+## Stato (2026-10-28)
+
+Fasi 1–3 consegnate con il piano autosync. **Fasi 4–7 implementate** e documentate in [doc/10](../../../doc/10-editor-grafo-e-autori.md). Scostamenti dal piano: gli autori si raccolgono in `kit/dashboard/authors.py` e `graph_service.rebuild` (il builder lavora su copie senza `.git`); l'HEAD entra nell'identità della generazione (builder v4); la ricezione è abilitata anche su POSIX (non solo documentata la sostituzione con `pre`); l'editor pubblica senza eseguire `build_graph.py --check` (graph_check=False). Fuori scopo, invariati: creazione/rinomina/eliminazione di pagine.
+
 ## Fasi
 
 | # | Fase | Prerequisiti | Consegna | Piano |

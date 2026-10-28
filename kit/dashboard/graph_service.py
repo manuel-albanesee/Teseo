@@ -8,6 +8,7 @@ import time
 from uuid import uuid4
 
 from .contracts import ContractError, canonical_json, content_hash, graph_name, resolve_path, file_hash
+from .authors import collect, history_head
 from .storage import VaultLock, capture_snapshot, _no_link
 
 try:  # sorgenti del kit / pacchetto installato in .graph/dashboard
@@ -17,7 +18,7 @@ except ImportError:
     import build_graph
     from graph_db import graph_reference
 
-BUILDER_VERSION = 3
+BUILDER_VERSION = 4  # 4: tabella `autori` e HEAD nell'identità della generazione
 
 
 def _atomic_marker(path, record):
@@ -79,7 +80,9 @@ def rebuild(root, *, lock=None, cancelled=None, validating=None, operation_id=No
         snapshot = capture_snapshot(root)
         from .shared_state import validate_snapshot
         validate_snapshot(snapshot)
-        generation = content_hash({"content_revision": snapshot.digest, "builder_version": BUILDER_VERSION})
+        head = history_head(root)  # gli autori dipendono dalla storia: un nuovo commit è una nuova generazione
+        generation = content_hash({"content_revision": snapshot.digest, "builder_version": BUILDER_VERSION,
+                                   **({"history": head} if head else {})})
         legacy = root / ".graph/graph.sqlite"
         _no_link(root / ".teseo/local/graphs")
         current = graph_reference(legacy)
@@ -109,6 +112,7 @@ def rebuild(root, *, lock=None, cancelled=None, validating=None, operation_id=No
                 parsed = build_graph.parse_snapshot(copy)
             except ValueError as error:
                 raise ContractError("graph_parse_failed", str(error)[:500]) from error
+            parsed["autori"] = collect(root, set(parsed["pagine"])) if head else []
             check_cancelled()
             if validating is not None:
                 validating()

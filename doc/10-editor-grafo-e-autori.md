@@ -1,0 +1,49 @@
+# 10 — Autori, causa-effetto, editor del grafo e visualizzazione
+
+Stato: implementato (fasi 4–7 della [roadmap](../.claude/PRPs/plans/teseo-collaborazione-roadmap.plan.md)). Richiede [3](03-editor-ontologia.md) per apply e recovery, [6](06-pubblicazione-github.md) e [9](09-autosync-collaborativo.md) per la pubblicazione.
+
+## Autori dalla storia Git (fase 4)
+
+La persona è l'**autore del commit**; l'agente e la skill vengono dai trailer `Teseo-Agent` e `Teseo-Skill` del commit più recente che ha toccato la pagina. Nessun campo nel frontmatter (romperebbe `build_graph --check` e creerebbe conflitti).
+
+- `kit/dashboard/authors.py` esegue **una sola** `git log --no-merges -M --name-status` su `wiki/` con l'invocatore sicuro di `git_sync` (ambiente ripulito, niente hook, niente configurazione globale) e segue le rinomine all'indietro dal commit più recente. I merge (anche `Teseo <teseo@localhost>`) non contano; le pagine eliminate sono ignorate. Si legge solo il nome dell'autore, mai l'email.
+- Tabella `autori(entity_id, creato_da, creato_il, modificato_da, modificato_il, agente, modifiche)` in `graph.sqlite`. Il builder non legge Git (lavora su copie senza `.git`): `graph_service.rebuild` passa `snapshot["autori"]`. Senza repository, senza commit o con Git indisponibile la tabella è vuota.
+- **Identità della generazione**: oltre a revisione dei contenuti e versione del builder (ora **4**) entra l'OID di HEAD quando c'è. Un nuovo commit (anche di pubblicazione) produce quindi una nuova generazione e gli autori non restano indietro; senza Git l'identità non cambia. I grafi v2 e v3 restano leggibili (le nuove tabelle sono opzionali in lettura).
+- Oltre `MAX_COMMITS` (10000) la data di creazione delle pagine più vecchie è la prima nella finestra.
+- API: `GET /nodes/{id}` → `authors` (`created_by`, `created_at`, `modified_by`, `modified_at`, `agent`, `changes`); `GET /authors` → nomi con conteggi; `GET /graph?author=NOME` filtra i nodi (e gli archi con entrambi gli estremi) creati o modificati da quella persona.
+
+## Causa-effetto (fase 6)
+
+- Relazione `causa` (qualsiasi → qualsiasi) nel vocabolario del template `kit/vault/Wiki reference.md`; le skill ingest e lint la dichiarano solo se la fonte afferma il nesso, mai per sequenza o correlazione. I vault esistenti la aggiungono dall'editor dell'ontologia.
+- Attributi d'arco opzionali nel frontmatter della pagina della causa: `relazioni_dettaglio: {"[[Y]]": {confidenza: alta|media|bassa, evidenza: "frase"}}`. Y deve essere un effetto dichiarato con `causa`; `evidenza` è una riga fino a 500 caratteri. Errori: `relation_detail_invalid` (e `unresolved_link` per un bersaglio inesistente). Tabella `relation_attributes(source_id, target_id, type, confidenza, evidenza)`; `relazioni_dettaglio` è riservato e non può essere nome di relazione.
+- `GET /causal?node=ID&direction=effects|causes&depth=1..10` percorre la sola relazione `causa` in senso orientato (massimo 500 archi, `truncated`, `cycle` se la catena torna al nodo di partenza) e restituisce confidenza ed evidenza di ogni arco. `GET /neighbors?node=ID&limit≤200` restituisce il vicinato a un passo (usato per espandere il disegno).
+
+## Editor del grafo (fase 5)
+
+Operazioni atomiche su **una** pagina (da 1 a 16 per modifica): `add_relation`, `remove_relation`, `set_aliases`, `set_tags`, `set_tipo`, `set_relation_detail`. Creare, rinominare o eliminare pagine resta fuori (il mapping `page.renamed` è ancora bloccato).
+
+- **Modifica di byte conservativa** (`kit/dashboard/graph_edit.py`): si riscrive solo il blocco della chiave toccata del frontmatter (le altre righe, i commenti, gli a capo CRLF e il corpo restano identici); il risultato deve riparsare **esattamente** nel frontmatter atteso, altrimenti `edit_manual`. Chiavi duplicate, anchor/alias YAML o chiavi top-level quotate sono lasciati all'autore. Se la pagina ha `aggiornato`, passa alla data odierna.
+- **Preview** `POST /nodes/{id}/edit/preview` `{base_content_digest, idempotency_key, operations}`: diff del frontmatter, esito della validazione completa del grafo candidato (`valid`, `problems`), relazioni risultanti. Nessuna scrittura; cache di sessione come per l'ontologia (16 voci, 15 minuti). Un candidato con problemi non si può applicare.
+- **Apply** `POST /nodes/{id}/edit/apply` con `If-Match` = digest base e `{preview_id, proposal_hash, idempotency_key, mode: manual_paused, external_writers_paused: true, semantic_reviewed: true}`: stesso journal, lock, rebuild del candidato isolato, backup e recovery (`finish`/`rollback`) dell'apply dell'ontologia, con operazione `graph_edit`. Nessuna esclusione degli editor esterni promessa.
+- **Pubblicazione**: a lock rilasciato, se l'autosync è attivo, `Autosync.post('dashboard', 'umano')` pubblica con gli stessi trailer delle skill (`Teseo-Skill: dashboard`). L'esito è nel campo `publication` di `GET /operations/{id}`; un fallimento non annulla la modifica. Il servizio **non esegue** `.graph/build_graph.py --check` (`graph_check=False`): l'apply ha già validato il candidato con il builder del runtime.
+- Errori: `edit_invalid`, `edit_manual`, `edit_unknown_relation`, `edit_unknown_target`, `edit_noop` (422); `edit_duplicate`, `edit_missing` (409); più `preview_stale`, `idempotency_conflict`, `manual_confirmation_required`, `migration_invalid` come per l'ontologia. Capacità `graph_edit` nello stato del vault.
+
+## Visualizzazione (fase 7)
+
+`kit/dashboard/graph_ui.py`: layout a forze (Fruchterman-Reingold) in JS vanilla dentro la pagina, SVG senza risorse esterne, CSP invariata (nonce). Limite configurabile dall'interfaccia (12–500 nodi, predefinito 200; 124 nodi verificati fluidi in Chromium). Zoom con rotella o pulsanti, spostamento trascinando lo sfondo, adattamento automatico della vista, Invio su un nodo per aprirlo, colore per tipo con legenda, dimensioni di nodi, etichette e frecce adattate allo zoom, evidenza della catena causale. **Espandi il vicinato** aggiunge al disegno i nodi a un passo senza paginare tutto il grafo. `kit/dashboard/node_ui.py` aggiunge nel dettaglio del nodo autori, catena causale ed editor (anteprima → conferma → applica); il filtro per autore sta nella barra dei filtri.
+
+## Ricezione e apply su POSIX e avviso a inizio sessione (fase 7)
+
+- Apply dell'ontologia, delle skill, dell'editor del grafo e ricezione manuale funzionano ora anche su Linux/macOS. `_replace` sposta il file da sostituire nel backup con `rename` (i byte salvati sono quelli davvero presenti) e inserisce il nuovo con un `link` esclusivo (`_move_new`): uno scrittore esterno che ricrea il target fa fallire l'operazione invece di essere sovrascritto; il recovery già previsto per l'assenza temporanea del target vale anche qui. Volume: si rifiutano i filesystem di rete noti letti da `/proc/self/mountinfo` (`nfs`, `cifs`, `sshfs`…); dove il tipo non è leggibile (macOS) non c'è controllo. Windows invariato (`ReplaceFileW`, `GetDriveTypeW`).
+- `python .graph/teseo_git.py avvisi`: un solo `fetch` e il conteggio dei commit remoti (`behind`/`diverged`/`current`/`offline`/`disabled`), mai pull né scritture. `kit/graph/avvisi.py` lo chiama dagli hook `SessionStart` di Claude (`modello_hook.py`) e Codex con timeout di 8 s (gli hook hanno 15 s); offline o guasti non disturbano l'avvio. La skill successiva riceve gli aggiornamenti con `pre`.
+
+## Limiti noti
+
+- Gli autori sono nel grafo, non in tempo reale: dopo un commit servono un rebuild (l'adozione e la pubblicazione lo eseguono già) o «Ricostruisci grafo». `status.stale` confronta solo i contenuti.
+- L'apply POSIX non fa `fsync` della cartella dopo il rename: un'interruzione di corrente fra rename e link è coperta dal recovery, non dalla durabilità del nome. Senza hard link sul filesystem il link esclusivo ripiega su `rename` (resta la sola finestra di race fra controllo e rename).
+- L'avviso di sessione fa un fetch di rete a ogni `SessionStart` dei vault collaborativi con autosync attivo.
+- Collaudo con un repository GitHub reale e client AI autenticati non svolto; i test usano un remoto bare locale. Il disegno non è testato su vault con migliaia di nodi (il tetto è 500).
+
+## Verifiche
+
+`python -m unittest discover -s tests -v` (nuovi: `test_authors`, `test_causa`, `test_graph_edit`, `test_graph_edit_publication`, `test_avvisi`, `test_apply_posix`, più i test prima saltati su Linux). Browser: `python tests/dashboard_graph_fixture.py <cartella-nuova>` avvia un vault sintetico (120 nodi, catena causale, due autori) e stampa l'URL; `node tests/dashboard_graph_smoke.js "<URL>" <cartella-screenshot>` esegue lo smoke con Playwright (modifica davvero il vault sintetico).

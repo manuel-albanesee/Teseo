@@ -85,6 +85,8 @@ def assert_receiver_complete(root):
     finally:db.close()
 
 
+NOTE_KINDS = ('ontology_apply', 'graph_edit', 'ingest_lint', 'lint', 'fill_gaps')  # operazioni che scrivono note: una sola da completare alla volta
+
 class VaultLock(AbstractContextManager):
     """Lock kernel su un file persistente: non rimuovere lock in base al PID.
 
@@ -354,7 +356,7 @@ class Journal(AbstractContextManager):
         self._require_lock()
         for (identifier,) in self.db.execute('SELECT operation_id FROM operations').fetchall():
             record = self.get(identifier)
-            if (identifier != allowed and record['kind'] in ('ontology_apply','ingest_lint','lint','fill_gaps')
+            if (identifier != allowed and record['kind'] in NOTE_KINDS
                     and record['state'] != 'queued'
                     and record['state'] not in ('succeeded', 'rolled_back', 'failed', 'blocked_external_change', 'cancelled')):
                 raise ContractError('recovery_required', 'Operazione note da completare o ripristinare prima di altre scritture')
@@ -362,7 +364,7 @@ class Journal(AbstractContextManager):
     def save_ontology(self, record):
         """Solo il coordinator specifico può avanzare il protocollo note."""
         self._require_lock()
-        if record['kind'] not in ('ontology_apply','ingest_lint','lint','fill_gaps') or self.get(record['operation_id'])['kind'] != record['kind']:
+        if record['kind'] not in NOTE_KINDS or self.get(record['operation_id'])['kind'] != record['kind']:
             raise ContractError('invalid_transition', 'Richiesta operazione ontologia')
         self._save(record)
 

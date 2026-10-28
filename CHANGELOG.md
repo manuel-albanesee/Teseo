@@ -8,6 +8,12 @@ e raggruppata per traguardo; le voci nuove si aggiungono sotto «Non rilasciato�
 
 ### Aggiunto
 
+- Fasi 4–7 della roadmap collaborativa ([doc/10](doc/10-editor-grafo-e-autori.md)): autori delle note dalla storia Git
+  (tabella `autori`, filtro per autore); relazione `causa` con `relazioni_dettaglio` (confidenza ed evidenza) e catena
+  causale; editor del grafo nella dashboard (aggiungi/togli relazioni, alias, tag, tipo) con anteprima, apply journalizzato
+  e pubblicazione `dashboard`; layout a forze con zoom, pan, colori per tipo e vicinato espandibile; avviso «N aggiornamenti
+  remoti» a inizio sessione (`teseo_git.py avvisi`, hook SessionStart di Claude e Codex).
+- Apply manuale e ricezione anche su Linux/macOS (rename nel backup + link esclusivo; rifiuto dei filesystem di rete).
 - `copilot_timing_hook.py`: durata di ogni tool Copilot CLI in timeline (riga di progresso con i ms,
   senza toccare il contesto del modello) e log interrogabile in `.graph/timing.jsonl` con istante,
   tool, ms, esito e anteprima del risultato; mai bloccante. `installa.py` registra gli eventi

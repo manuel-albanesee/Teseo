@@ -12,7 +12,7 @@ from kit.graph import build_graph
 from kit.graph.ontology import (parse, serialize, propose_type_catalog, validate, TypeDef,
                                Relation, OntologyError, MAX_BYTES)
 from kit.dashboard.contracts import canonical_json, content_hash, file_hash
-from kit.dashboard.graph_service import rebuild
+from kit.dashboard.graph_service import BUILDER_VERSION, rebuild
 
 ROOT = Path(__file__).resolve().parents[1]
 TYPES = ('## Tipi ammessi\n\n| Tipo | Descrizione |\n| --- | --- |\n'
@@ -49,7 +49,7 @@ class Lossless(unittest.TestCase):
         self.assertIsNone(document.types)
         self.assertFalse(document.editable)
         self.assertTrue(document.structurally_editable)
-        self.assertEqual(len(document.relations), 9)
+        self.assertEqual(len(document.relations), 10)
         self.assertIn('persona', document.convention_types)
         self.assertEqual(serialize(document), raw)
 
@@ -258,7 +258,7 @@ class Integration(unittest.TestCase):
         self.assertEqual(self.hashes(), before)
         current = rebuild(self.root)
         self.assertNotEqual(current.generation, generation)
-        self.assertEqual(self.get('status')[2]['validation_version'], 3)
+        self.assertEqual(self.get('status')[2]['validation_version'], BUILDER_VERSION)
 
 
 if __name__ == '__main__':

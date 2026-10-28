@@ -13,6 +13,9 @@ from .contracts import ContractError, canonical_json, parse_json, portable_path,
 from .storage import capture_snapshot, _no_link
 
 MAX_DOCUMENT_BYTES = 2 * 1024 * 1024
+MAX_CAUSAL_DEPTH = 10
+MAX_CAUSAL_EDGES = 500
+MAX_NEIGHBORS = 200
 
 
 def _parser():
@@ -26,6 +29,10 @@ def _parser():
 
 def _revision(reference):
     return {"content_revision": reference.content_revision, "graph_generation": reference.generation}
+
+
+def _has_table(db, name):
+    return db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone() is not None
 
 
 def _issue(code, severity, message, revision, path=None):
@@ -70,7 +77,7 @@ class ReadAPI:
                 raise ContractError("graph_corrupt", "Hash del grafo non valido")
             db = connect_graph(reference.path, reference=reference)
             metadata = dict(db.execute("SELECT key, value FROM graph_metadata"))
-            if metadata.get("builder_version") not in {"2", "3"}:
+            if metadata.get("builder_version") not in {"2", "3", "4"}:
                 raise ContractError("graph_upgrade_required", "Ricostruire esplicitamente il grafo con il kit aggiornato")
             deadline = time.monotonic() + 5
             db.set_progress_handler(lambda: time.monotonic() > deadline, 10000)
@@ -133,12 +140,12 @@ class ReadAPI:
             raise ContractError("invalid_cursor", "Cursore non valido per questa sessione") from None
 
     def graph(self, vault_id, parameters):
-        self._parameters(parameters, {"generation", "limit", "type", "relation", "cursor"})
+        self._parameters(parameters, {"generation", "limit", "type", "relation", "author", "cursor"})
         limit = parameters.get("limit", "100")
         if not limit.isascii() or not limit.isdecimal() or len(limit) > 3 or not 1 <= int(limit) <= 200:
             raise ContractError("invalid_query", "limit atteso fra 1 e 200")
         limit = int(limit)
-        filters = {key: parameters.get(key) for key in ("type", "relation")}
+        filters = {key: parameters.get(key) for key in ("type", "relation", "author")}
         if any(value is not None and (not value or len(value) > 128) for value in filters.values()):
             raise ContractError("invalid_query", "Filtro vuoto o oltre 128 caratteri")
         cursor = self._decode_cursor(parameters["cursor"]) if "cursor" in parameters else None
@@ -150,6 +157,12 @@ class ReadAPI:
         root = self.registry.root(vault_id)
         with self._open(root, generation) as (db, reference):
             node_where, node_args = [], []
+            by_author = "(SELECT entity_id FROM autori WHERE creato_da=? OR modificato_da=?)"
+            if filters["author"]:
+                if not _has_table(db, "autori"):
+                    raise ContractError("graph_upgrade_required", "Autori non disponibili: ricostruire il grafo con il kit aggiornato")
+                node_where.append("id IN " + by_author)
+                node_args.extend([filters["author"]] * 2)
             if filters["type"]:
                 node_where.append("tipo = ?")
                 node_args.append(filters["type"])
@@ -169,6 +182,9 @@ class ReadAPI:
                 edge_where.append("source_id IN (SELECT id FROM entities WHERE tipo=?) AND "
                                   "target_id IN (SELECT id FROM entities WHERE tipo=?)")
                 edge_args.extend([filters["type"], filters["type"]])
+            if filters["author"]:
+                edge_where.append("source_id IN " + by_author + " AND target_id IN " + by_author)
+                edge_args.extend([filters["author"]] * 4)
             if cursor and cursor["edges_after"] is not None:
                 edge_where.append("(source_id,target_id,type) > (?,?,?)")
                 edge_args.extend(cursor["edges_after"])
@@ -216,15 +232,102 @@ class ReadAPI:
                     raise ContractError("invalid_node_data", "Frontmatter non rappresentabile in JSON") from error
             relations = [dict(row) for row in db.execute("SELECT source_id,target_id,type FROM relations "
                 "WHERE source_id=? OR target_id=? ORDER BY source_id,target_id,type LIMIT 201", (node_id, node_id))]
+            attributes = []
+            if _has_table(db, "relation_attributes"):
+                attributes = [dict(row) for row in db.execute("SELECT source_id,target_id,type,confidenza,evidenza FROM relation_attributes "
+                    "WHERE source_id=? OR target_id=? ORDER BY source_id,target_id,type LIMIT 200", (node_id, node_id))]
             aliases = [row[0] for row in db.execute("SELECT alias FROM aliases WHERE entity_id=? ORDER BY alias LIMIT 201", (node_id,))]
             sources = [row[0] for row in db.execute("SELECT target_id FROM relations WHERE source_id=? "
                 "AND type='documentato_in' ORDER BY target_id LIMIT 201", (node_id,))]
-            return {**_revision(reference), "node": node, "properties": properties,
+            authors = None
+            if _has_table(db, "autori"):
+                row = db.execute("SELECT creato_da,creato_il,modificato_da,modificato_il,agente,modifiche FROM autori "
+                                 "WHERE entity_id=?", (node_id,)).fetchone()
+                authors = dict(zip(("created_by", "created_at", "modified_by", "modified_at", "agent", "changes"), row)) if row else None
+            return {**_revision(reference), "node": node, "properties": properties, "authors": authors,
                     "text": html.escape(text, quote=False) if text is not None else None,
-                    "text_format": "escaped_markdown", "relations": relations[:200],
+                    "text_format": "escaped_markdown", "relations": relations[:200], "relation_attributes": attributes,
                     "aliases": aliases[:200], "sources": sources[:200],
                     "relations_truncated": len(relations) > 200, "aliases_truncated": len(aliases) > 200,
                     "sources_truncated": len(sources) > 200}
+
+    def neighbors(self, vault_id, parameters):
+        """Vicinato a un passo di un nodo (archi in entrata e in uscita) per espandere il disegno senza paginare tutto il grafo."""
+        self._parameters(parameters, {"generation", "node", "limit"})
+        node, limit = parameters.get("node"), parameters.get("limit", "100")
+        if not node or "/" in node or "\\" in node or len(node) > 255:
+            raise ContractError("invalid_query", "Richiesto il parametro node")
+        if not limit.isascii() or not limit.isdecimal() or not 1 <= int(limit) <= MAX_NEIGHBORS:
+            raise ContractError("invalid_query", f"limit atteso fra 1 e {MAX_NEIGHBORS}")
+        limit = int(limit)
+        with self._open(self.registry.root(vault_id), parameters.get("generation")) as (db, reference):
+            if db.execute("SELECT 1 FROM entities WHERE id=?", (node,)).fetchone() is None:
+                raise ContractError("node_missing", "Nodo non presente nella generazione")
+            edges = [dict(zip(("source_id", "target_id", "type"), row)) for row in db.execute(
+                "SELECT source_id,target_id,type FROM relations WHERE source_id=? OR target_id=? "
+                "ORDER BY source_id,target_id,type LIMIT ?", (node, node, limit + 1))]
+            truncated = len(edges) > limit
+            edges = edges[:limit]
+            ids = sorted({node, *(edge[key] for edge in edges for key in ("source_id", "target_id"))})
+            nodes = [dict(zip(("id", "tipo", "descrizione"), row)) for row in db.execute(
+                f"SELECT id,tipo,descrizione FROM entities WHERE id IN ({','.join('?' * len(ids))}) ORDER BY id", ids)]
+            return {**_revision(reference), "root": node, "nodes": nodes, "edges": edges, "truncated": truncated}
+
+    def causal(self, vault_id, parameters):
+        """Catena causale orientata: cause (a ritroso) o effetti (in avanti) di un nodo lungo la sola relazione `causa`."""
+        self._parameters(parameters, {"generation", "node", "direction", "depth"})
+        node, direction, depth = parameters.get("node"), parameters.get("direction", "effects"), parameters.get("depth", "3")
+        if not node or "/" in node or "\\" in node or len(node) > 255:
+            raise ContractError("invalid_query", "Richiesto il parametro node")
+        if direction not in ("effects", "causes"):
+            raise ContractError("invalid_query", "direction atteso: effects o causes")
+        if not depth.isascii() or not depth.isdecimal() or not 1 <= int(depth) <= MAX_CAUSAL_DEPTH:
+            raise ContractError("invalid_query", f"depth atteso fra 1 e {MAX_CAUSAL_DEPTH}")
+        forward = direction == "effects"
+        with self._open(self.registry.root(vault_id), parameters.get("generation")) as (db, reference):
+            if db.execute("SELECT 1 FROM entities WHERE id=?", (node,)).fetchone() is None:
+                raise ContractError("node_missing", "Nodo non presente nella generazione")
+            has_attributes = _has_table(db, "relation_attributes")
+            frontier, seen, edges, truncated = [node], {node}, [], False
+            for level in range(int(depth)):
+                found = []
+                for current in frontier:
+                    column, other = ("source_id", "target_id") if forward else ("target_id", "source_id")
+                    rows = db.execute(f"SELECT source_id,target_id FROM relations WHERE type='causa' AND {column}=? "
+                                      "ORDER BY source_id,target_id", (current,)).fetchall()
+                    for source, target in rows:
+                        if len(edges) >= MAX_CAUSAL_EDGES:
+                            truncated = True
+                            break
+                        edges.append({"source_id": source, "target_id": target, "type": "causa", "level": level + 1})
+                        follow = target if forward else source
+                        if follow not in seen:
+                            seen.add(follow)
+                            found.append(follow)
+                frontier = found
+            if has_attributes:
+                for edge in edges:
+                    row = db.execute("SELECT confidenza,evidenza FROM relation_attributes WHERE source_id=? AND target_id=? "
+                                     "AND type='causa'", (edge["source_id"], edge["target_id"])).fetchone()
+                    edge["confidenza"], edge["evidenza"] = row if row else (None, None)
+            marks = ",".join("?" * len(seen))
+            nodes = [dict(zip(("id", "tipo", "descrizione"), row)) for row in db.execute(
+                f"SELECT id,tipo,descrizione FROM entities WHERE id IN ({marks}) ORDER BY id", tuple(seen))]
+            return {**_revision(reference), "root": node, "direction": direction, "depth": int(depth),
+                    "nodes": nodes, "edges": edges, "truncated": truncated, "cycle": any(
+                        edge["target_id" if forward else "source_id"] == node for edge in edges)}
+
+    def authors(self, vault_id, parameters):
+        self._parameters(parameters, {"generation"})
+        with self._open(self.registry.root(vault_id), parameters.get("generation")) as (db, reference):
+            if not _has_table(db, "autori"):
+                return {**_revision(reference), "authors": [], "available": False}
+            names = {}
+            for column, key in (("creato_da", "created"), ("modificato_da", "modified")):
+                for name, count in db.execute(f"SELECT {column},count(*) FROM autori WHERE {column} IS NOT NULL GROUP BY {column}"):
+                    names.setdefault(name, {"name": name, "created": 0, "modified": 0})[key] = count
+            return {**_revision(reference), "authors": sorted(names.values(), key=lambda item: item["name"])[:200],
+                    "available": True}
 
     @staticmethod
     def _ontology(db, reference):

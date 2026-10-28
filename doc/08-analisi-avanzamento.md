@@ -28,7 +28,7 @@ a generazioni restano prerequisiti per attivare la dashboard e le automazioni.
 | 4 | Registry/coda/ricevute (4.1), handoff (4.2), pipeline/manifest/apply manuale (4.3), adapter e UI (4.4) disponibili; automazione nativa non verificata, fallback manuale per tre client |
 | 5 | 5.1–5.4 disponibili: eventi immutabili/DAG, migrazione selettiva, consolidamento UUID e checkpoint, UI conflitti/rinvii e ripristino documentato; publisher al passo 6 |
 | 6 | Publisher esplicito disponibile: onboarding, allowlist, checkpoint, integrazione isolata, gate/riconciliazione, push/recovery e UI; creazione remota e apertura PR manuali, automatico disabilitato |
-| 7 | Rilevamento opt-in, staging isolato, adozione manuale Windows e recovery disponibili; UI pausa/ripresa, nessun apply automatico; collaudo integrato e limiti nelle evidenze del passo |
+| 7 | Rilevamento opt-in, staging isolato, adozione manuale (Windows e POSIX) e recovery disponibili; UI pausa/ripresa, nessun apply automatico; collaudo integrato e limiti nelle evidenze del passo |
 
 ## Autosync collaborativo (documento 9)
 
@@ -827,3 +827,26 @@ Nuovo limite: la radice del vault può arrivare a circa 91 caratteri senza perco
 budget include anche `receives/` (158) e `git-candidates/` (165), che usano ancora UUID interi.
 Restano fuori i nomi delle note (scelti dall'utente) e `transactions/`, `skill-jobs/`. Un'operazione creata con il layout precedente e
 recuperata in una radice di 52–91 caratteri può ancora superare MAX_PATH.
+
+## Incremento — prima verifica POSIX (Linux)
+
+Prima esecuzione della suite fuori da Windows (Linux, Python 3.13, `python -m unittest discover -s tests`).
+Prima delle correzioni: 469 test, 2 fallimenti, 15 errori, 29 salti. Nessun difetto di produzione su POSIX:
+
+- 16 fallimenti su 17 derivavano dal gate voluto `receiver_apply.py:71` (`apply_platform_unavailable`), esteso al
+  solo Windows insieme a `ReplaceFileW` e `GetDriveTypeW` (via `ctypes.WinDLL`). Non era un difetto: l'apply era
+  dichiarato verificato solo su Windows.
+- 1 errore era un difetto del test: `test_long_root_is_refused_before_any_write_on_limited_windows` patchava
+  `os.name` a `nt` e `pathlib` non istanzia `WindowsPath` su Linux. Il limite è ora simulato su
+  `max_vault_path_length`; la logica `nt` resta coperta da `test_vault_root_limit_leaves_room_on_limited_windows`.
+- I lock `fcntl` (`storage.py`, `registry_store.py`) passano i test su Linux.
+
+## Incrementi 25–28 — fasi 4–7 della roadmap collaborativa ([documento 10](10-editor-grafo-e-autori.md))
+
+- **Apply e ricezione su POSIX** (fase 7): `_replace` POSIX (rename nel backup + link esclusivo), `_move_new`, rifiuto dei filesystem di rete da `/proc/self/mountinfo`, gate Windows tolti da `ontology_apply`, `receiver_apply` e dalle capacità. I 26 test prima saltati («Apply manuale Windows») e i 17 del receiver prima falliti girano e passano su Linux; nuovi `tests/test_apply_posix.py`. Restano saltati i soli 4 test di junction NTFS e `SO_EXCLUSIVEADDRUSE`.
+- **Autori da Git** (fase 4): `authors.py`, tabella `autori`, builder v4 con HEAD nell'identità della generazione, `nodes/{id}.authors`, `GET /authors`, filtro `author` del grafo.
+- **Causa-effetto** (fase 6): relazione `causa` nel template, `relazioni_dettaglio` validato, tabella `relation_attributes`, `GET /causal` e `GET /neighbors`; skill ingest e lint istruite.
+- **Editor del grafo** (fase 5): `graph_edit.py` (modifica di byte conservativa, preview validata), operazione `graph_edit` nel journal, `POST /nodes/{id}/edit/preview|apply`, pubblicazione `dashboard` con autosync attivo senza eseguire script del vault.
+- **Visualizzazione e avviso** (fase 7): layout a forze con zoom, pan, fit, colori per tipo, vicinato espandibile e limite configurabile; filtro autore, catena causale ed editor nel dettaglio del nodo; `teseo_git.py avvisi` e hook `SessionStart` (Claude e Codex).
+
+Verifica: suite completa su Linux: 522 test, 0 fallimenti, 4 salti, tutti Windows (junction NTFS, `SO_EXCLUSIVEADDRUSE`). Smoke in Chromium (Playwright) con `tests/dashboard_graph_smoke.js` su vault sintetico di 124 nodi: 18 controlli superati, nessun errore in console né violazione CSP; la modifica scrive davvero il file e il layout assestato resta nell'area visibile. Nessun collaudo con repository GitHub reale, credenziali reali o client AI autenticati. `mypy` segnala gli stessi 4 errori preesistenti (`winreg`, `IO_REPARSE_TAG_MOUNT_POINT`); `ruff` non ha nuovi errori di classe F.

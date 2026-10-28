@@ -4,7 +4,7 @@ Avanzamento runtime e analisi ECC: [registro implementazioni](08-analisi-avanzam
 Le sezioni progettuali seguenti descrivono il piano originario; il registro distingue
 gli incrementi implementati dalle funzionalità ancora future.
 
-Stato: passi 1–6 implementati, passo 7 parziale (rilevamento opt-in e adozione manuale); lo stato di ciascun passo è in testa al suo documento e il dettaglio in [08](08-analisi-avanzamento.md). Metodo: ECC Blueprint; proposta del 22 ottobre 2026, aggiornata il 25 ottobre 2026. Ciò che il documento di un passo non dichiara implementato resta proposta.
+Stato: passi 1–6 implementati, passo 7 parziale (rilevamento opt-in e adozione manuale, ora anche su POSIX), passi 9 e 10 implementati; lo stato di ciascun passo è in testa al suo documento e il dettaglio in [08](08-analisi-avanzamento.md). Metodo: ECC Blueprint; proposta del 22 ottobre 2026, aggiornata il 25 ottobre 2026. Ciò che il documento di un passo non dichiara implementato resta proposta.
 
 ## Risultato atteso
 
@@ -24,6 +24,7 @@ Il kit software resta distinto dal repository dati. Markdown è l'autorità dell
 | 6 | [Pubblicazione GitHub](06-pubblicazione-github.md) | 1, 2, 4, 5 | Onboarding, integrazione isolata e push ordinario |
 | 7 | [Ricezione automatica](07-ricezione-automatica.md) | 1, 2, 5, 6 | Poll, import, recovery e convergenza multi-clone |
 | 9 | [Autosync collaborativo](09-autosync-collaborativo.md) | 6, 7 | Pull prima e commit+push dopo ogni skill, opt-in per vault |
+| 10 | [Autori, causa-effetto, editor e visualizzazione](10-editor-grafo-e-autori.md) | 3, 9 | Autori da Git, relazione `causa`, modifica del grafo dalla dashboard, layout a forze, apply anche su POSIX |
 
 ```mermaid
 flowchart LR

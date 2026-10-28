@@ -323,7 +323,6 @@ class WriterConcurrency(unittest.TestCase):
         status, _, raw = self.request('POST', self.base + 'operations', self.lint('blocked_writer'))
         self.assertEqual((status, json.loads(raw)['state']), (202, 'awaiting_client'), raw)
 
-    @unittest.skipUnless(os.name == 'nt', 'Apply manuale Windows')
     def test_second_lint_cannot_overwrite_the_first_applied_note(self):
         first = self.prepared()
         second = self.submit('lint_second_002', kind='lint')

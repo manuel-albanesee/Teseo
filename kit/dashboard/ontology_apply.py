@@ -1,5 +1,6 @@
-"""Apply manuale Windows con journal e recovery; nessuna esclusione editor promessa."""
+"""Apply manuale (Windows e POSIX) con journal e recovery; nessuna esclusione editor promessa."""
 import ctypes
+import errno
 import html
 import os
 from pathlib import Path
@@ -9,24 +10,42 @@ from uuid import uuid4
 
 from .contracts import ContractError, content_hash, file_hash, resolve_path, check_path_budget
 from .diagnostics import log_unexpected as _log_unexpected
-from .storage import Journal, Snapshot, SnapshotFile, VaultLock, capture_snapshot, _no_link
+from .storage import Journal, NOTE_KINDS, Snapshot, SnapshotFile, VaultLock, capture_snapshot, _no_link
 from .ontology_migrations import migrate
 from .ontology_preview import _fields
 from .read_api import _parser
 from .jobs import _public
 
 FINAL = {'succeeded', 'rolled_back', 'failed', 'blocked_external_change', 'cancelled'}
-NOTE_KINDS = {'ontology_apply','ingest_lint','lint','fill_gaps'}
 
 
 def _confirmed(body):
     if body.get('mode') != 'manual_paused' or body.get('external_writers_paused') is not True or body.get('semantic_reviewed') is not True:
         raise ContractError('manual_confirmation_required', 'Sospendere editor/hook esterni e revisionare diff, migrazioni e significato; apply automatico disabilitato')
-    if os.name != 'nt':
-        raise ContractError('apply_platform_unavailable', 'Apply manuale disponibile solo sul percorso Windows verificato')
+
+
+_REMOTE_FS = frozenset({'nfs', 'nfs4', 'cifs', 'smb3', 'smbfs', 'afs', 'ncpfs', 'fuse.sshfs', 'fuse.rclone', 'ceph', 'glusterfs'})
+
+
+def _filesystem(root):
+    """Tipo di filesystem che contiene root da /proc/self/mountinfo (Linux); None se non determinabile."""
+    try:
+        target, best, kind = str(Path(root).resolve(strict=True)), -1, None
+        for line in Path('/proc/self/mountinfo').read_text(encoding='utf-8', errors='replace').splitlines():
+            head, _, tail = line.partition(' - ')
+            point = head.split(' ')[4].replace('\\040', ' ')
+            if (target == point or target.startswith(point.rstrip('/') + '/')) and len(point) > best and tail:
+                best, kind = len(point), tail.split(' ')[0]
+        return kind
+    except (OSError, IndexError):
+        return None
 
 
 def _local_volume(root):
+    if os.name != 'nt':  # Su POSIX si rifiutano i filesystem di rete noti; dove il tipo non è leggibile (macOS) non c'è controllo.
+        if _filesystem(root) in _REMOTE_FS:
+            raise ContractError('apply_platform_unavailable', 'Apply disponibile solo su un volume locale, non su un filesystem di rete')
+        return
     function = ctypes.WinDLL('kernel32', use_last_error=True).GetDriveTypeW
     function.argtypes = [ctypes.c_wchar_p]
     function.restype = ctypes.c_uint
@@ -34,12 +53,34 @@ def _local_volume(root):
         raise ContractError('apply_platform_unavailable', 'Apply disponibile solo su volume Windows locale fisso')
 
 
+def _move_new(staged, target):
+    """Sposta staged su un target che non deve esistere. Windows: rename fallisce se esiste; POSIX lo sovrascriverebbe,
+    quindi link esclusivo (FileExistsError se uno scrittore esterno ha ricreato il target) e poi unlink di staged."""
+    if os.name == 'nt':
+        os.rename(staged, target)
+        return
+    try:
+        os.link(staged, target)
+    except OSError as error:
+        if error.errno not in (errno.EPERM, errno.ENOTSUP, errno.EMLINK, errno.EXDEV) or os.path.lexists(target):
+            raise
+        os.rename(staged, target)  # filesystem senza hard link: resta solo la finestra di race fra il controllo e il rename
+        return
+    os.unlink(staged)
+
+
 def _replace(target, staged, backup):
-    """ReplaceFileW conserva il file realmente sostituito, anche nella finestra di race.
+    """Windows: ReplaceFileW conserva il file realmente sostituito, anche nella finestra di race.
+    POSIX: rename del target nel backup (i byte spostati sono quelli davvero presenti) e poi inserimento esclusivo di
+    staged; fra i due passi il target manca, come già previsto dal recovery (intento durevole nel journal).
 
     Fallimenti possono lasciare il nome originale assente: il journal mantiene
     intento, staged e backup; non tentare rollback impliciti che perdano dati.
     """
+    if os.name != 'nt':
+        os.rename(target, backup)
+        _move_new(staged, target)
+        return
     library = ctypes.WinDLL('kernel32', use_last_error=True)
     function = library.ReplaceFileW
     function.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_wchar_p,
@@ -158,7 +199,7 @@ def execute(journal, identifier, action='finish'):
         elif target.exists():
             _replace(target, staged, _path(root, backup))
         else:
-            os.rename(staged, target)  # Windows rename fails if an external writer recreated the target.
+            _move_new(staged, target)  # fallisce se uno scrittore esterno ha ricreato il target
         _check_live(root, record, base, candidate)
         live = capture_snapshot(root)
     if capture_snapshot(root).digest != desired.digest:
@@ -167,7 +208,7 @@ def execute(journal, identifier, action='finish'):
     record.update(state='succeeded' if action == 'finish' else 'rolled_back', error=None)
     record['checkpoint'].update(content_revision=reference.content_revision, graph_generation=reference.generation,
                                 changed_files=changed, mode='manual_paused', external_exclusion=False)
-    if record['kind'] != 'ontology_apply' and action=='finish':
+    if record['kind'] not in ('ontology_apply', 'graph_edit') and action=='finish':
         journal.complete_skill(record)
     else:
         journal.save_ontology(record)
@@ -183,8 +224,9 @@ def execute(journal, identifier, action='finish'):
 
 
 class ApplyService:
-    def __init__(self, registry, previews):
-        self.registry, self.previews = registry, previews
+    def __init__(self, registry, previews, edits=None, publisher=None):
+        self.registry, self.previews, self.edits, self.publisher = registry, previews, edits, publisher
+        self._publications = {}
         self._mutex = threading.RLock()
         self._workers = {}
         self._requests = {}
@@ -205,11 +247,45 @@ class ApplyService:
                 or not isinstance(body['selected_migrations'], list) or len(body['selected_migrations']) > 1000
                 or any(not isinstance(item, str) for item in body['selected_migrations'])):
             raise ContractError('invalid_payload', 'Richiesti preview, hash, selezione e chiave idempotente validi')
+        payload = dict(body, base_content_digest=self._base(if_match))
+
+        def candidate(snapshot):
+            proposal = self.previews.proposal(vault_id, body['preview_id'], body['proposal_hash'])
+            if proposal['base_content_digest'] != snapshot.digest:
+                raise ContractError('preview_stale', 'Contenuti cambiati: creare nuova preview')
+            return _candidate(snapshot, proposal, body['selected_migrations'])
+        return self._submit(vault_id, 'ontology_apply', payload, body['idempotency_key'], candidate)
+
+    def submit_edit(self, vault_id, node_id, body, if_match):
+        """Apply di una modifica del grafo (graph_edit): stesso journal, lock, rebuild e recovery dell'ontologia."""
+        _fields(body, ('preview_id', 'proposal_hash', 'idempotency_key', 'mode', 'external_writers_paused', 'semantic_reviewed'))
+        _confirmed(body)
+        if (self.edits is None or not isinstance(body['preview_id'], str) or not isinstance(body['proposal_hash'], str)
+                or not re.fullmatch('[0-9a-f]{64}', body['proposal_hash'])
+                or not isinstance(body['idempotency_key'], str) or not re.fullmatch('[A-Za-z0-9_-]{8,128}', body['idempotency_key'])):
+            raise ContractError('invalid_payload', 'Richiesti preview, hash e chiave idempotente validi')
+        payload = dict(body, base_content_digest=self._base(if_match), node=node_id)
+
+        def candidate(snapshot):
+            record, data = self.edits.proposal(vault_id, body['preview_id'], body['proposal_hash'])
+            if record['base_content_digest'] != snapshot.digest or record['page'] != node_id:
+                raise ContractError('preview_stale', 'Contenuti o pagina cambiati: creare nuova preview')
+            if not record['valid']:
+                raise ContractError('migration_invalid', 'La proposta non supera la validazione del grafo')
+            values = {entry.path: entry.data for entry in snapshot.files}
+            values[record['path']] = data
+            return Snapshot(tuple(SnapshotFile(path, content) for path, content in sorted(values.items())))
+        return self._submit(vault_id, 'graph_edit', payload, body['idempotency_key'], candidate)
+
+    @staticmethod
+    def _base(if_match):
         if not isinstance(if_match, str) or not re.fullmatch('"[0-9a-f]{64}"', if_match):
             raise ContractError('precondition_required', 'If-Match deve contenere il digest base tra virgolette')
-        payload = dict(body, base_content_digest=if_match[1:-1])
+        return if_match[1:-1]
+
+    def _submit(self, vault_id, kind, payload, idempotency_key, candidate_of):
         with self._mutex:
-            key = (vault_id, body['idempotency_key'])
+            key = (vault_id, idempotency_key)
             if key in self._requests:
                 digest, record = self._requests[key]
                 if digest != content_hash(payload):
@@ -220,16 +296,15 @@ class ApplyService:
             _local_volume(root)
             check_path_budget(root)
             with VaultLock(root, recovery=True) as lock, Journal(lock) as journal:
-                previous = journal.find_request('ontology_apply', payload, body['idempotency_key'])
+                previous = journal.find_request(kind, payload, idempotency_key)
                 if previous:
                     return _public(previous)
                 journal.assert_notes_idle()
-                proposal = self.previews.proposal(vault_id, body['preview_id'], body['proposal_hash'])
                 snapshot = capture_snapshot(root)
-                if snapshot.digest != payload['base_content_digest'] or proposal['base_content_digest'] != snapshot.digest:
+                if snapshot.digest != payload['base_content_digest']:
                     raise ContractError('preview_stale', 'Contenuti cambiati: creare nuova preview')
-                candidate = _candidate(snapshot, proposal, body['selected_migrations'])
-                record = journal.create('ontology_apply', payload, body['idempotency_key'], snapshot)
+                candidate = candidate_of(snapshot)
+                record = journal.create(kind, payload, idempotency_key, snapshot)
                 identifier = record['operation_id']
                 try:
                     journal.transition(identifier, 'waiting_lock')
@@ -312,7 +387,24 @@ class ApplyService:
             self._launch(vault_id,identifier,'finish')
             return _public(record)
 
+    def publication(self, identifier):
+        with self._mutex:
+            return self._publications.get(identifier)
+
+    def _publish(self, identifier, root):
+        """Pubblicazione automatica dopo una modifica del grafo: a lock rilasciato, con esito mai bloccante per l'apply."""
+        try:
+            result = self.publisher(root)
+        except Exception as error:
+            _log_unexpected(error)
+            result = {'state': 'failed', 'message': 'Pubblicazione non completata: usare Pubblicazione Git nella dashboard'}
+        with self._mutex:
+            self._publications[identifier] = result
+            while len(self._publications) > 64:
+                del self._publications[next(iter(self._publications))]
+
     def _run(self, vault_id, identifier, action):
+        done = None
         try:
             root = self.registry.operation_root(vault_id)
             with VaultLock(root, timeout=5, recovery=True) as lock, Journal(lock) as journal:
@@ -320,7 +412,7 @@ class ApplyService:
                     record = journal.get(identifier)
                     if self._stop:
                         raise ContractError('service_stopping', 'Servizio in arresto: recovery esplicito richiesto')
-                    execute(journal, identifier, action)
+                    done = execute(journal, identifier, action)
                 except Exception as error:
                     if not isinstance(error, ContractError): _log_unexpected(error)
                     record = journal.get(identifier)
@@ -331,6 +423,9 @@ class ApplyService:
         except Exception as error:
             # Lock/identity/storage failure leaves a durable record for explicit recovery; la causa va almeno loggata.
             _log_unexpected(error)
+        try:
+            if done and done['kind'] == 'graph_edit' and done['state'] == 'succeeded' and action == 'finish' and self.publisher:
+                self._publish(identifier, root)
         finally:
             with self._mutex:
                 self._workers.pop(vault_id, None)

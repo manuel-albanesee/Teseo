@@ -23,6 +23,7 @@ from .read_api import ReadAPI
 from .jobs import RebuildCoordinator
 from .ontology_preview import PreviewService
 from .ontology_apply import ApplyService
+from .graph_edit import GraphEditService
 from .operations import SkillCoordinator
 from .adapters import default_adapters
 from .shared_service import SharedService
@@ -51,7 +52,9 @@ class DashboardServer(ThreadingHTTPServer):
         self.operations = RebuildCoordinator(self.registry)
         self.read_api = ReadAPI(self.registry, self.operations)
         self.previews = PreviewService(self.registry)
-        self.applies = ApplyService(self.registry, self.previews)
+        self.edits = GraphEditService(self.registry)
+        self.applies = ApplyService(self.registry, self.previews, self.edits, self._publish_edit)
+        self.operations.publication_of = self.applies.publication
         self.skills = SkillCoordinator(self.registry, default_adapters())
         self.shared = SharedService(self.registry)
         self.sync = SyncService(self.registry)
@@ -66,6 +69,14 @@ class DashboardServer(ThreadingHTTPServer):
         super().__init__(("127.0.0.1", port), DashboardHandler)
         self.origin = f"http://127.0.0.1:{self.server_port}"
         self.receiver.start()
+
+    @staticmethod
+    def _publish_edit(root):
+        """Dopo una modifica del grafo, con autosync attivo: commit e push attribuiti a `dashboard` (stesso motore delle skill).
+        Nessun `build_graph.py --check`: l'apply ha già validato il candidato e il servizio non esegue script del vault."""
+        from .autosync import Autosync
+        autosync = Autosync(root)
+        return autosync.post('dashboard', 'umano', graph_check=False) if autosync.enabled() else {'state': 'disabled', 'message': 'Autosync non attivo: nessuna pubblicazione automatica'}
 
     def server_close(self):
         self.receiver.request_stop()
@@ -303,6 +314,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     result=self.server.skills.action(parts[4],parts[6],body,parts[7])
                 self._reply(200,result)
                 return
+            if len(parts) == 9 and parts[1:4] == ['api', 'v1', 'vaults'] and parts[5] == 'nodes' and parts[7] == 'edit' and parts[8] in ('preview', 'apply'):
+                node_id = unquote(parts[6], encoding='utf-8', errors='strict')
+                if parts[8] == 'preview':
+                    self._reply(200, self.server.edits.preview(parts[4], node_id, body))
+                else:
+                    self._reply(202, self.server.applies.submit_edit(parts[4], node_id, body, self._header('If-Match')))
+                return
             if len(parts) == 7 and parts[1:4] == ['api', 'v1', 'vaults'] and parts[5:] == ['ontology', 'apply']:
                 self._reply(202, self.server.applies.submit(parts[4], body, self._header('If-Match')))
                 return
@@ -344,6 +362,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     if len(parts) == 6:
                         reader = {"status": self.server.read_api.status, "graph": self.server.read_api.graph,
                                   "ontology": self.server.read_api.ontology,
+                                  "authors": self.server.read_api.authors,
+                                  "causal": self.server.read_api.causal,
+                                  "neighbors": self.server.read_api.neighbors,
                                   "operations": self.server.operations.list,
                                   "answers": self.server.shared.answers,
                                   "diagnostics": self.server.read_api.diagnostics}.get(parts[5])
@@ -382,7 +403,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             status = {'preview_stale': 409, 'blocked_external_change': 409, 'preview_busy': 429,
                       'preview_limit': 422, 'preview_parse_failed': 422, 'preview_encoding': 422,
                       'ontology_manual': 422, 'catalog_adoption_required': 422,
-                      'invalid_schema': 422}.get(error.code, status)
+                      'invalid_schema': 422, 'edit_invalid': 422, 'edit_manual': 422, 'edit_unknown_relation': 422,
+                      'edit_unknown_target': 422, 'edit_noop': 422, 'edit_duplicate': 409, 'edit_missing': 409}.get(error.code, status)
             status = {'manual_confirmation_required': 422, 'apply_platform_unavailable': 422,
                       'precondition_required': 428, 'migration_manual': 422, 'migration_collision': 409,
                       'migration_invalid': 422, 'invalid_migrations': 400, 'path_too_long': 422, 'shared_mapping_unavailable': 422,
