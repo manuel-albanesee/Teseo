@@ -23,6 +23,7 @@ Il kit software resta distinto dal repository dati. Markdown è l'autorità dell
 | 5 | [Stato condiviso](05-stato-condiviso.md) | 1 per formato; 2 per UI; 4 per consolidamento | Eventi idempotenti e proiezioni locali |
 | 6 | [Pubblicazione GitHub](06-pubblicazione-github.md) | 1, 2, 4, 5 | Onboarding, integrazione isolata e push ordinario |
 | 7 | [Ricezione automatica](07-ricezione-automatica.md) | 1, 2, 5, 6 | Poll, import, recovery e convergenza multi-clone |
+| 9 | [Autosync collaborativo](09-autosync-collaborativo.md) | 6, 7 | Pull prima e commit+push dopo ogni skill, opt-in per vault |
 
 ```mermaid
 flowchart LR
@@ -82,6 +83,17 @@ Ogni incremento futuro usa un branch `codex/<scopo>` e una PR se il workflow di 
 Abilitare in ordine: servizio readonly, scritture locali con backup, eventi condivisi, pubblicazione manualmente attivata, quindi automatismi esplicitamente configurati. Un rollback disabilita il modulo o la policy e conserva dati e journal; non riporta forzatamente indietro branch condivisi. Migrazioni non reversibili richiedono backup verificato e scelta dell'utente.
 
 Per cambiare il piano: aggiornare prima il contratto interessato, elencare motivazione e impatto, modificare dipendenze, fixture e criteri d'uscita dei documenti coinvolti. Un passo saltato deve lasciare una motivazione verificabile; non considerarlo completato. Registrare le decisioni in questa sezione e nel documento interessato. Questo indice svolge anche la funzione di registro del piano, senza modificare memorie fuori da `doc/`.
+
+## Riferimenti tecnici
+
+- [Architettura del motore](architettura-motore.md): componenti, schemi SQLite,
+  pipeline di recall, memoria, contratti degli hook e guida per aggiungere un client.
+- [Recall come KPI](kpi-recall.md): metriche del banco, perché il massimo dipende
+  dal banco, baseline, regola di non regressione e strategie di miglioramento.
+- [Analisi ECC del retrieval](analisi-retrieval-ecc.md): varianti del recall misurate
+  sul banco con gate e holdout; raccomanda il ripiego a cascata.
+- [Riferimento API](api.md): moduli, classi e funzioni pubbliche, generato dai
+  docstring con `script/genera_api_doc.py` (verificato da `tests/test_api_doc.py`).
 
 ## Verifiche e fonti
 

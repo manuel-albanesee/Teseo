@@ -9,6 +9,7 @@ Una wiki Obsidian costruita dai tuoi documenti, con fonti verificabili, grafo de
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](#requisiti)
 [![Markdown + SQLite](https://img.shields.io/badge/Markdown%20%2B%20SQLite-file%20locali-0F766E)](#dentro-il-vault)
 [![Claude · Codex · Copilot](https://img.shields.io/badge/AI-Claude%20%C2%B7%20Codex%20%C2%B7%20Copilot-7C3AED)](#client-supportati)
+[![Licenza MIT](https://img.shields.io/badge/Licenza-MIT-yellow)](LICENSE)
 
 [Installazione](#installazione-rapida) · [Primo utilizzo](#primo-utilizzo) · [Come funziona](#come-funziona) · [Domande frequenti](#domande-frequenti) · [Contribuire](#contribuire)
 
@@ -25,6 +26,21 @@ le pagine e risponde citando le fonti; contraddizioni e informazioni mancanti re
 
 Funziona con **Claude Code, Codex e GitHub Copilot CLI**. Puoi usarne uno solo oppure alternarli sullo stesso vault.
 Obsidian è facoltativo: i contenuti sono normali file Markdown.
+
+<details>
+<summary><strong>English summary</strong></summary>
+
+Teseo turns an Obsidian vault (or any folder of Markdown notes) into a source-backed wiki:
+raw documents in `raw/` are distilled into linked pages in `wiki/`, a local SQLite graph
+(FTS5 included) records typed relations between pages, and pre/post hooks inject the
+relevant facts into Claude Code, Codex or GitHub Copilot CLI before each answer — and
+learn afterwards which pages were actually read. Everything runs locally; the only
+Python dependency is PyYAML. Docs and code comments are in Italian; the main entry
+points are the [quick install](#installazione-rapida), the [contributing guide](CONTRIBUTING.md),
+the [engine architecture](doc/architettura-motore.md) and the [API reference](doc/api.md).
+Licensed under the [MIT License](LICENSE).
+
+</details>
 
 ## Perché Teseo
 
@@ -283,6 +299,11 @@ conservando il contenuto già trasformato dal runtime. `postToolUse` registra le
 `agentStop` e `sessionEnd` chiudono il turno e la sessione. `sessionStart` fornisce le regole iniziali.
 Risponde il modello attivo di Copilot, senza avviare Claude o applicare i ruoli Codex.
 
+`copilot_timing_hook.py` misura ogni chiamata tool: `preToolUse` registra l'avvio, `postToolUse` e
+`postToolUseFailure` mostrano i millisecondi in timeline (riga di progresso, senza toccare il contesto del
+modello) e appendono istante, tool, ms, esito e anteprima del risultato a `.graph/timing.jsonl`, così i fatti
+ricavati (per `sql`: le righe della query) restano interrogabili nel vault. Non blocca mai l'esecuzione.
+
 Copilot carica anche `.claude/settings.json` e `.claude/settings.local.json`. L'installatore migra gli handler
 Teseo verso un wrapper che ignora i payload Copilot ed elimina i doppioni Teseo dal file locale,
 conservando gli altri handler e i permessi. Le configurazioni cambiate hanno una copia di sicurezza.
@@ -351,6 +372,33 @@ Se un file di istruzioni era già personalizzato, integra le indicazioni del rel
 | `--esempio` | Aggiunge il vault d'esempio, se `wiki/` non contiene pagine Markdown al primo livello. |
 | `--prova` | Esegue la prova completa in una cartella temporanea, poi la elimina. |
 
+## Collaborare su un vault (pull e push automatici)
+
+Per lavorare in più persone su uno stesso vault, installa con `--collabora` e l'URL di un repository GitHub **dati**, distinto da questo kit:
+
+```sh
+python installa.py "PERCORSO_DEL_VAULT" --collabora https://github.com/organizzazione/vault-dati.git
+```
+
+Cosa succede, in base alla situazione:
+
+| Situazione | Risultato |
+| --- | --- |
+| Cartella con le tue note e repository remoto **vuoto** | Mostra i file che verranno condivisi e quelli che restano solo sul tuo disco, chiede conferma, crea il repository dati e fa il primo push |
+| Cartella **vuota** e repository remoto già popolato (un collega l'ha creato) | Lo clona, installa il kit e attiva la collaborazione |
+| Il repository remoto non esiste ancora | Crealo su GitHub, oppure aggiungi `--crea-remote` (richiede `gh auth login`; chiede conferma) |
+
+Il comando è ripetibile. Per saltare la domanda di conferma (l'anteprima si stampa comunque) usa `--si`; il branch condiviso si sceglie con `--branch` (predefinito `main`). Servono `git config --global user.name` e `user.email`: sono i nomi che compaiono nella storia del repository.
+
+Da quel momento le skill `obsidian-wiki-ingest`, `obsidian-wiki-lint` e `obsidian-wiki-fill-gaps` fanno da sole:
+
+- **all'inizio** `python .graph/teseo_git.py pre`: scarica gli aggiornamenti dei colleghi e ricostruisce il grafo;
+- **alla fine** `python .graph/teseo_git.py post`: controlla il grafo e pubblica un commit col tuo nome, l'agente (`claude`, `codex`, `copilot`) e la skill usata (`Teseo-Agent`, `Teseo-Skill`).
+
+Le modifiche fatte a mano, per esempio in Obsidian, si pubblicano con `python .graph/teseo_git.py post --skill manuale --agente umano`. Se la rete manca il commit resta in locale e si riprende con `python .graph/teseo_git.py riprendi`.
+
+Cosa **non** si automatizza: due persone che modificano la **stessa nota**, o note collegate tra loro, fermano la pubblicazione. Il vault vivo resta intatto e si risolve dalla dashboard (**Pubblicazione Git dei dati → Risolvi**). Le aggiunte concorrenti a `log.md` e `index.md` si uniscono da sole. Restano sul tuo disco script, configurazioni dei client e fonti non testuali (PDF e simili). Per i vault esistenti aggiorna anche le skill: `python installa.py "PERCORSO_DEL_VAULT" --aggiorna`. Decisioni e limiti nel [documento 9](doc/09-autosync-collaborativo.md).
+
 ## Dashboard locale
 
 Per un **vault nuovo in una cartella vuota**, abilita esplicitamente il formato
@@ -372,8 +420,8 @@ apply manuale, risposte condivise con migrazione selettiva e **Pubblicazione Git
 dei dati**. Il repository dati è distinto da questo kit: revisiona la preview,
 configura branch e visibilità prima del ciclo, poi pubblica un UUID validato.
 Credenziali delegate a Git locale; note correlate e conflitti richiedono revisione.
-La modalità PR propone un branch: apertura e merge restano manuali. Nessuna
-pubblicazione continuativa o applicazione automatica viene attivata.
+La modalità PR propone un branch: apertura e merge restano manuali. Senza `--collabora`
+nessuna pubblicazione o applicazione è automatica; con `--collabora` pull e push partono dalle skill (vedi sopra).
 Contratti, recupero e limiti nel [passo 6](doc/06-pubblicazione-github.md).
 
 **Ricevi aggiornamenti dal gruppo** aggiunge rilevamento remoto opt-in, pausa
@@ -434,6 +482,9 @@ Adatta le domande e le pagine attese al tuo dominio seguendo [ADATTA.md](ADATTA.
 
 Per segnalare un problema o proporre una funzione, apri una [issue](https://github.com/manuel-albanesee/Teseo/issues).
 Per una correzione, proponi una pull request con il comportamento atteso e i controlli eseguiti.
+Ambiente di sviluppo, controlli obbligatori e convenzioni sono in [CONTRIBUTING.md](CONTRIBUTING.md);
+le modifiche consegnate si registrano in [CHANGELOG.md](CHANGELOG.md). Il progetto è
+rilasciato con [licenza MIT](LICENSE).
 
 Dal repository, con le dipendenze installate:
 
@@ -453,6 +504,10 @@ memoria e conservazione dei dati. Per esplorare il codice:
 | [kit/vault/](kit/vault/) | Modelli delle convenzioni e delle configurazioni. |
 | [kit/esempio/](kit/esempio/) | Vault dimostrativo e banco di prova. |
 | [tests/](tests/) | Test di regressione delle integrazioni. |
+| [doc/architettura-motore.md](doc/architettura-motore.md) | Riferimento tecnico del motore: schemi SQLite, pipeline di recall, contratti degli hook. |
+| [doc/kpi-recall.md](doc/kpi-recall.md) | Il recall sul banco come KPI della salute del vault: metriche, baseline, strategie di miglioramento. |
+| [doc/api.md](doc/api.md) | Riferimento API generato dai docstring (`script/genera_api_doc.py`). |
+| [doc/](doc/) | Piano ed evidenze della dashboard e della collaborazione. |
 
 <details>
 <summary><strong>Comandi utili dalla cartella del vault</strong></summary>
