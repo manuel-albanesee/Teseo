@@ -8,6 +8,7 @@ e raggruppata per traguardo; le voci nuove si aggiungono sotto «Non rilasciato�
 
 ### Aggiunto
 
+- `script/collaudo_github.py`: collaudo con un repository GitHub reale e due cloni (9 scenari); credential helper di macOS, Linux e `gh` e variabili di proxy e certificati ora ammessi nei comandi Git ([rapporto](doc/evidence/step-11/collaudo-github.md)).
 - Fasi 4–7 della roadmap collaborativa ([doc/10](doc/10-editor-grafo-e-autori.md)): autori delle note dalla storia Git
   (tabella `autori`, filtro per autore); relazione `causa` con `relazioni_dettaglio` (confidenza ed evidenza) e catena
   causale; editor del grafo nella dashboard (aggiungi/togli relazioni, alias, tag, tipo) con anteprima, apply journalizzato

@@ -88,6 +88,6 @@ Limiti noti di `additive`, accettati perché la regola resta quella sopra:
 - Su POSIX resta non verificato il `cleanup_candidate` dei pack in sola lettura (descritto per Windows). L'apply manuale e la ricezione funzionano ora anche su POSIX ([documento 10](10-editor-grafo-e-autori.md)).
 - `teseo_git.py avvisi` (un solo fetch, mai pull né scritture) è chiamato dagli hook `SessionStart` di Claude e Codex per segnalare «N aggiornamenti remoti».
 - Le modifiche dalla dashboard (editor del grafo) pubblicano con `post --skill dashboard --agente umano` senza eseguire `.graph/build_graph.py` (`graph_check=False`): la sessione nasce con la pubblicazione, come per `manuale`.
-- Collaudo con un repository GitHub reale, credenziali reali e client AI autenticati non svolto; i test usano un remoto bare locale.
+- Collaudo con un repository GitHub reale svolto il 2026-10-29 (9 scenari, [rapporto](evidence/step-11/collaudo-github.md)); restano da provare repository privato o con branch protetto, SSH, due account distinti e client AI autenticati. Git usa gli helper di credenziali noti dell'utente (Windows, macOS, Linux, `gh`) e inoltra solo variabili di proxy e certificati.
 
 - Dalla dashboard l'autosync si attiva e si revoca nel pannello «Pubblicazione Git dei dati» (sezione «Autosync collaborativo»): serve la modalità «Push diretto», un checkpoint condiviso pulito e il consenso esplicito; verificato con `tests/dashboard_autosync_smoke.js`.

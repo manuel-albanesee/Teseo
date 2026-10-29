@@ -90,9 +90,19 @@ def global_author():
     return author if set(author) == {'name', 'email'} and '@' in author['email'] else {}
 
 
+# Credential helper ammessi, e solo se scelti nel ~/.gitconfig dell'utente (mai da un repository o dal vault): quelli che
+# Git fornisce per sistema operativo (Windows: manager, wincred; macOS: osxkeychain; Linux: libsecret, store, cache) e la
+# forma esatta del helper di GitHub CLI. Ogni altro valore (percorsi, `!comandi` arbitrari, argomenti extra) si ignora.
+_CREDENTIAL_HELPERS = frozenset({'manager', 'manager-core', 'wincred', 'osxkeychain', 'libsecret', 'store', 'cache',
+                                 '!gh auth git-credential'})
+
+
+def _credential_helper(value):
+    return value if value in _CREDENTIAL_HELPERS else None
+
+
 def _global_helper():
-    value = _global_values('credential.helper').get('credential.helper')
-    return value if value in ('manager', 'manager-core') else None
+    return _credential_helper(_global_values('credential.helper').get('credential.helper'))
 
 
 def remote_branch_oid(url, branch, *, allow_local_remote=False):
@@ -173,10 +183,18 @@ def github_repository_url(remote):
     return 'https://github.com/' + path
 
 
+# Proxy e certificati scelti dall'utente (o dall'azienda) per raggiungere GitHub: senza, dietro un proxy aziendale ogni fetch e
+# push fallisce. Sono variabili dell'ambiente dell'utente, mai dati del vault. Non si inoltrano GIT_SSL_NO_VERIFY, GIT_CONFIG_*,
+# GIT_ASKPASS né altre GIT_*: la verifica TLS resta obbligatoria (`-c http.sslVerify=true`).
+_NETWORK_ENV = ('HTTPS_PROXY', 'HTTP_PROXY', 'ALL_PROXY', 'NO_PROXY', 'https_proxy', 'http_proxy', 'all_proxy', 'no_proxy',
+                'SSL_CERT_FILE', 'SSL_CERT_DIR', 'GIT_SSL_CAINFO', 'GIT_SSL_CAPATH', 'CURL_CA_BUNDLE')
+
+
 def _env():
     # Drop all inherited GIT_*, shell-startup, pager and helper overrides.
     keys = ('PATH', 'SystemRoot', 'WINDIR', 'COMSPEC', 'PATHEXT', 'TEMP', 'TMP',
-            'HOME', 'USERPROFILE', 'HOMEDRIVE', 'HOMEPATH', 'SSH_AUTH_SOCK', 'APPDATA', 'LOCALAPPDATA')
+            'HOME', 'USERPROFILE', 'HOMEDRIVE', 'HOMEPATH', 'SSH_AUTH_SOCK', 'APPDATA', 'LOCALAPPDATA',
+            *_NETWORK_ENV)
     env = {k: os.environ[k] for k in keys if k in os.environ}
     # Voci PATH vuote o relative farebbero cercare sotto-comandi git-* nella cwd.
     env['PATH'] = os.pathsep.join(d for d in env.get('PATH', '').split(os.pathsep) if d and os.path.isabs(d))
@@ -204,7 +222,7 @@ def _invoke(root, args, *, input=None, env_extra=None, file_transport=False, che
                '-c', 'http.sslVerify=true', '-c', 'fetch.fsckObjects=true',
                '-c', 'submodule.recurse=false', '-c', 'fetch.recurseSubmodules=false',
                '-c', 'credential.helper=', '-c', 'credential.interactive=false',
-               *(['-c', 'credential.helper=' + credential_helper] if credential_helper in ('manager', 'manager-core') else []),
+               *(['-c', 'credential.helper=' + credential_helper] if _credential_helper(credential_helper) else []),
                *args]
     try:
         result = subprocess.run(command, cwd=root, input=input, stdout=subprocess.PIPE,
@@ -256,7 +274,7 @@ class GitRepository:
                 if not result.returncode and len(values) == 1:
                     value = values[0]
                     if key == 'credential.helper':
-                        self.credential_helper = value if value in ('manager', 'manager-core') else None
+                        self.credential_helper = _credential_helper(value)
                     elif value and len(value) <= 256 and not any(ord(c) < 32 for c in value):
                         local_value = _invoke(self.root, ['config', '--local', '--get', key], check=False)
                         if local_value.returncode:

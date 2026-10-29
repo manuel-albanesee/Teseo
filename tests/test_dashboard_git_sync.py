@@ -14,6 +14,7 @@ from unittest import mock
 
 from kit.dashboard.contracts import ContractError, DEFAULT_SHARED_PATHS, canonical_json
 from kit.dashboard.storage import capture_snapshot
+from kit.dashboard import git_sync
 from kit.dashboard.git_sync import (GitRepository, validate_remote, initialize_data_repository,
                                     preview_data_repository, github_repository_url, read_local_excludes,
                                     write_local_excludes,
@@ -162,6 +163,23 @@ class GitPolicy(unittest.TestCase):
         self.assertNotIn('GIT_CONFIG_COUNT', kwargs['env'])
         self.assertNotEqual(kwargs['env']['GIT_SSH_COMMAND'], 'bad')
         self.assertEqual(kwargs['env']['GIT_NO_REPLACE_OBJECTS'], '1')
+
+    def test_proxy_and_certificate_variables_pass_but_tls_bypass_and_git_config_do_not(self):
+        wanted = {'HTTPS_PROXY': 'http://proxy.example.invalid:3128', 'https_proxy': 'http://proxy.example.invalid:3128',
+                  'NO_PROXY': 'localhost', 'SSL_CERT_FILE': '/etc/azienda/ca.pem', 'GIT_SSL_CAINFO': '/etc/azienda/ca.pem',
+                  'CURL_CA_BUNDLE': '/etc/azienda/ca.pem'}
+        hostile = {'GIT_SSL_NO_VERIFY': '1', 'GIT_CONFIG_COUNT': '1', 'GIT_CONFIG_KEY_0': 'http.sslVerify', 'GIT_CONFIG_VALUE_0': 'false',
+                   'GIT_ASKPASS': '/tmp/ruba', 'GIT_PROXY_COMMAND': '/tmp/ruba', 'GIT_EXEC_PATH': '/tmp/ruba'}
+        with mock.patch.dict('os.environ', {**wanted, **hostile}):
+            env = git_sync._env()
+        for key, value in wanted.items():
+            self.assertEqual(env[key], value)
+        for key in hostile:
+            self.assertNotIn(key, env)
+        result = subprocess.CompletedProcess([], 0, b'', b'')
+        with mock.patch('kit.dashboard.git_sync.subprocess.run', return_value=result) as run:
+            _invoke(Path.cwd(), ['status'])
+        self.assertIn('http.sslVerify=true', run.call_args.args[0])
 
     def test_oid_branch_and_compare_url_validation(self):
         for value in ('HEAD', '--x', 'a' * 39, None):
@@ -356,6 +374,32 @@ class GitSync(unittest.TestCase):
         with mock.patch('kit.dashboard.git_sync.Path.home', return_value=home):
             repo = GitRepository(self.root, allow_local_remote=True)
         self.assertIsNone(repo.credential_helper)
+
+    def test_known_platform_helpers_are_honored_and_everything_else_is_ignored(self):
+        home = self.fixture / 'home2'
+        home.mkdir()
+        for helper, expected in (('osxkeychain', 'osxkeychain'), ('libsecret', 'libsecret'), ('store', 'store'), ('cache', 'cache'),
+                                 ('wincred', 'wincred'), ('manager-core', 'manager-core'), ('!gh auth git-credential', '!gh auth git-credential'),
+                                 ('!gh auth git-credential --evil', None), ('!echo unsafe', None), ('/tmp/helper', None),
+                                 ('store --file=/tmp/x', None), ('osxkeychain2', None), ('', None)):
+            with self.subTest(helper=helper):
+                (home / '.gitconfig').write_text('[credential]\n helper = %s\n' % helper, encoding='utf-8')
+                with mock.patch('kit.dashboard.git_sync.Path.home', return_value=home):
+                    self.assertEqual(GitRepository(self.root, allow_local_remote=True).credential_helper, expected)
+                    self.assertEqual(git_sync._global_helper(), expected)
+
+    def test_the_chosen_helper_reaches_git_as_a_config_argument_and_unknown_ones_never_do(self):
+        seen = []
+
+        def fake(command, **kwargs):
+            seen.append(command)
+            return subprocess.CompletedProcess(command, 0, stdout=b'', stderr=b'')
+        with mock.patch('subprocess.run', side_effect=fake):
+            git_sync._invoke(self.root, ['status'], credential_helper='osxkeychain')
+            git_sync._invoke(self.root, ['status'], credential_helper='!echo unsafe')
+        self.assertIn('credential.helper=osxkeychain', seen[0])
+        self.assertNotIn('credential.helper=!echo unsafe', seen[1])
+        self.assertEqual(seen[1].count('credential.helper='), 1)  # solo il reset a vuoto
 
     def test_initialization_is_explicit_and_only_previewed_data_is_committed(self):
         target = self.fixture / 'fresh'

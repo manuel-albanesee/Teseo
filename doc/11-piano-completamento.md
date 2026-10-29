@@ -9,7 +9,7 @@ Stato: punti 1–3 implementati (vedi «Esiti» in fondo); i restanti sono ancor
 | 1 | CI su Linux, Windows e macOS — **fatto (9 job, verdi dopo le correzioni sotto)** | Il codice nuovo è provato solo su Linux; nessuna CI nel repo | M |
 | 2 | Qualità statica (`mypy` Windows, `ruff`) — **fatto** | 4 errori `mypy` e ~360 rilievi di stile coprono eventuali regressioni | M |
 | 3 | Apply POSIX: durabilità e macOS — **fatto (macOS solo simulato)** | Niente `fsync` della cartella; su macOS nessun controllo dei volumi di rete | S |
-| 4 | Collaudo reale con GitHub e due cloni | Tutto il flusso è provato solo con un remoto bare locale | M |
+| 4 | Collaudo reale con GitHub e due cloni — **fatto (9 scenari su 9, con due difetti corretti)** | Tutto il flusso è provato solo con un remoto bare locale | M |
 | 5 | Collaudo con editor non cooperanti (Obsidian) | L'esclusione degli scrittori esterni è solo dichiarata | M |
 | 6 | Client AI autenticati (passo 4) | L'automazione nativa è non verificata, resta il fallback manuale per tre client | L |
 | 7 | Apertura delle PR (passo 6) | La creazione del repository c'è (`--crea-remote`), la PR è ancora manuale | S |
@@ -145,3 +145,7 @@ Ordine consigliato: 1 → 2 → 3 (fondamenta e regressioni), poi 4 → 5 (colla
   - Stato: tutti e 9 i job verdi (esecuzione sul commit `3b29c0f`); il 3.13 su Windows aveva un solo fallimento di temporizzazione, corretto con un'attesa più lunga nel test. Il passo diagnostico temporaneo per `git_unavailable` è stato tolto dal workflow.
 - **2 — Qualità**: `ruff.toml` ora seleziona esplicitamente `E`, `F`, `W` (con E701, E702 ed E501 ignorati); l'insieme predefinito di ruff 0.16 dava ~390 rilievi di stile non voluti dal progetto. `mypy`: `winreg` dietro `sys.platform != "win32"` e `stat.IO_REPARSE_TAG_MOUNT_POINT` via `getattr`; 0 errori su Linux (su Windows `mypy` controlla anche il ramo `winreg`, da vedere in CI). `ruff check .` pulito.
 - **3 — Apply POSIX**: `_fsync_directory` dopo rename e link (backup per primo); `_mount_table` legge `/proc/self/mountinfo` su Linux e `/sbin/mount` su macOS (percorso fisso, ambiente ripulito), con `afpfs` fra i filesystem di rete. Il parsing di macOS è provato su un output d'esempio; la CI su macOS passa, ma non ha un volume di rete da rifiutare, quindi il rifiuto reale resta non verificato.
+
+## Esito del punto 4
+
+Rapporto completo in [doc/evidence/step-11/collaudo-github.md](evidence/step-11/collaudo-github.md): `script/collaudo_github.py` ha eseguito 9 scenari contro `manuel-albanesee/Teseo-collaudo` (installazione, clone, attribuzione, avviso e pull, integrazione, autori e modifica dalla dashboard, offline e ripresa, stessa nota, note correlate), tutti superati. Ha trovato due difetti reali, corretti: i credential helper di macOS e Linux erano ignorati (solo Windows), e le variabili di proxy e certificati venivano scartate (nessun uso dietro un proxy aziendale). Non coperti: repository privato o con branch protetto, SSH, due account distinti, gestori di credenziali reali di macOS e Windows. Il repository di prova è pubblico con dati sintetici e va cancellato dall'autore.
