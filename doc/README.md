@@ -25,6 +25,7 @@ Il kit software resta distinto dal repository dati. Markdown è l'autorità dell
 | 7 | [Ricezione automatica](07-ricezione-automatica.md) | 1, 2, 5, 6 | Poll, import, recovery e convergenza multi-clone |
 | 9 | [Autosync collaborativo](09-autosync-collaborativo.md) | 6, 7 | Pull prima e commit+push dopo ogni skill, opt-in per vault |
 | 10 | [Autori, causa-effetto, editor e visualizzazione](10-editor-grafo-e-autori.md) | 3, 9 | Autori da Git, relazione `causa`, modifica del grafo dalla dashboard, layout a forze, apply anche su POSIX |
+| 11 | [Piano per chiudere i punti aperti](11-piano-completamento.md) | 10 | CI su tre sistemi, collaudo reale, client AI, PR, adozione legacy, pagine create/rinominate, scala |
 
 ```mermaid
 flowchart LR

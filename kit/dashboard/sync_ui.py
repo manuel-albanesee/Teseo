@@ -22,6 +22,7 @@ SYNC_SCRIPT = r"""
      const actions=element('div',undefined,box);actions.className='editor-actions';
      button(actions,'sync-refresh','Aggiorna stato Git',()=>request('Lettura dello stato Git…',()=>read()));
      const view=element('section',undefined,box);view.id='sync-state';view.setAttribute('aria-label','Checkpoint e stato della pubblicazione');
+     const autoView=element('section',undefined,box);autoView.id='autosync-state';autoView.setAttribute('aria-label','Autosync collaborativo');
      const receiverView=element('section',undefined,box);receiverView.id='receiver-state';receiverView.setAttribute('aria-label','Novità remote e candidato da ricevere');
      if(vaultStatus.compatibility!=='compatible'){message.textContent='Vault consultabile in sola lettura. La pubblicazione richiede un manifest compatibile.';request('Lettura dello stato Git…',()=>read());return;}
      const config=element('details',undefined,box);element('summary','Collega o inizializza il repository dati',config);
@@ -132,8 +133,28 @@ SYNC_SCRIPT = r"""
        if(!pending)pending={action,body:{idempotency_key:key,exclusive_confirmed:true,...(action==='publish'?{operation_id:operation.value.trim(),expected_head:head(),...(selectedRaw().length>0?{raw_paths:selectedRaw(),share_confirmed:true}:{})}:{...(decisionKey.value.trim()?{human_decision_key:decisionKey.value.trim()}:{}),...(resolutionDigest.value.trim()?{resolution_digest:resolutionDigest.value.trim()}:{} )})}};
        return request('Pubblicazione in corso: conserva il checkpoint e attendi l’esito…',async()=>{try{const result=await api(path+'/'+action,pending.body);if(!current())return;pending=null;resultView.replaceChildren();json(resultView,result);message.textContent='Esito registrato nel journal. Controlla stato, checkpoint e prossima azione.';await read(false);}catch(error){if(error.code)pending=null;throw error;}});
      }
+     // Autosync: consenso una tantum per vault; pull e push partono poi dalle skill (e dalle modifiche del grafo), mai da questo pannello.
+     function renderAuto(value){
+       autoView.replaceChildren();element('h4','Autosync collaborativo',autoView);
+       if(vaultStatus.compatibility!=='compatible')return;
+       const on=value.automatic===true;
+       element('p',on?'Autosync attivo: le skill ingest, lint e lacune scaricano prima (pre) e pubblicano dopo (post), e le modifiche del grafo da questa dashboard vengono pubblicate con gli stessi controlli. Conflitti reali e storie divergenti restano da risolvere qui.':'Autosync non attivo: nessuna sincronizzazione automatica per questo vault.',autoView);
+       if(on){
+         const off=element('button','Disattiva autosync',autoView);off.type='button';
+         off.addEventListener('click',()=>request('Disattivazione dell’autosync…',async()=>{await api(path+'/automatic-disable',{});if(!current())return;message.textContent='Autosync disattivato. Le pubblicazioni tornano manuali.';await read(false);}));
+         return;
+       }
+       if(value.config?.mode!=='direct'){element('p','L’autosync richiede la modalità «Push diretto» e un checkpoint condiviso: configura prima il repository dati.',autoView).className='hint';return;}
+       const row=element('div',undefined,autoView),agree=element('input',undefined,row);agree.type='checkbox';agree.id='autosync-consent';agree.style.width='24px';agree.style.minHeight='44px';agree.style.verticalAlign='middle';
+       element('label','Autorizzo, per questo vault, pull prima e commit+push dopo ogni ingest, lint e lacune, e dopo le modifiche del grafo dalla dashboard. Le fonti binarie in raw/ restano locali. Posso revocare il consenso qui.',row).htmlFor='autosync-consent';
+       const enable=element('button','Attiva autosync',autoView);enable.type='button';enable.disabled=true;
+       agree.addEventListener('change',()=>{enable.disabled=!agree.checked||!head();});
+       enable.addEventListener('click',()=>request('Attivazione dell’autosync…',async()=>{
+         if(!agree.checked||!head())throw new Error('Conferma il consenso e rileggi lo stato Git.');
+         await api(path+'/automatic-enable',{consent:true,expected_head:head()});if(!current())return;message.textContent='Autosync attivo. Nessun push eseguito ora: partirà dalle prossime skill o modifiche.';await read(false);}));
+     }
      async function read(announce=true){
-       const value=await api(path+'/status');if(!current())return;const previous=snapshot?.receiver;snapshot=value;if(vaultStatus.compatibility==='compatible'&&(previous?.pending_oid!==value.receiver?.pending_oid||previous?.candidate_digest!==value.receiver?.candidate_digest||previous?.base_head!==value.receiver?.base_head))receiverExclusive.checked=false;renderReceiver(value);view.replaceChildren();
+       const value=await api(path+'/status');if(!current())return;const previous=snapshot?.receiver;snapshot=value;if(vaultStatus.compatibility==='compatible'&&(previous?.pending_oid!==value.receiver?.pending_oid||previous?.candidate_digest!==value.receiver?.candidate_digest||previous?.base_head!==value.receiver?.base_head))receiverExclusive.checked=false;renderReceiver(value);renderAuto(value);view.replaceChildren();
        const job=value.operation||value.current_operation||value.last_operation||value,state=job.state||value.state||'non configurato';
        element('p','Stato: '+bounded(state),view);
        const next={waiting_network:'Rete non disponibile: conserva il checkpoint e riprendi dopo il ripristino della connessione.',waiting_auth:'Autenticati con Git/gh nel terminale, poi riprendi il candidato salvato.',needs_resolution:'Conflitto conservato in area isolata. Revisiona il perimetro e le note; nessun lato viene scelto automaticamente.',needs_decision:'Revisiona note, fonti e perimetro semantico. Per attestare la decisione usa la chiave restituita nel journal e il consenso dedicato.',needs_approval:'È richiesta approvazione: revisiona il branch proposto o le protezioni. Nessun merge viene eseguito dalla dashboard.',retry_exhausted:'Il remote continua a cambiare. Riprendi dopo aver concordato il momento di pubblicazione.',published_pending_local_adoption:'Il candidato è pubblicato. Conserva le modifiche locali e sospendi gli scrittori prima di riprendere l’adozione; nessun nuovo lint richiesto.',converged:'Pubblicazione e adozione locale verificate.',noop:'Nessuna novità condivisibile: nessun commit aggiuntivo.'}[state];

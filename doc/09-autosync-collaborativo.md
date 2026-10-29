@@ -89,3 +89,5 @@ Limiti noti di `additive`, accettati perché la regola resta quella sopra:
 - `teseo_git.py avvisi` (un solo fetch, mai pull né scritture) è chiamato dagli hook `SessionStart` di Claude e Codex per segnalare «N aggiornamenti remoti».
 - Le modifiche dalla dashboard (editor del grafo) pubblicano con `post --skill dashboard --agente umano` senza eseguire `.graph/build_graph.py` (`graph_check=False`): la sessione nasce con la pubblicazione, come per `manuale`.
 - Collaudo con un repository GitHub reale, credenziali reali e client AI autenticati non svolto; i test usano un remoto bare locale.
+
+- Dalla dashboard l'autosync si attiva e si revoca nel pannello «Pubblicazione Git dei dati» (sezione «Autosync collaborativo»): serve la modalità «Push diretto», un checkpoint condiviso pulito e il consenso esplicito; verificato con `tests/dashboard_autosync_smoke.js`.
