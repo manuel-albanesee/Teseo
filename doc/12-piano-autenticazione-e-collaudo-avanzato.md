@@ -1,6 +1,6 @@
 # 12 — Piano: autenticazione reale e collaudo avanzato con GitHub
 
-Stato: piano, non implementato. Nasce dalle lacune dichiarate nel [rapporto di collaudo](evidence/step-11/collaudo-github.md) (repository privato o con branch protetto, SSH, due account GitHub distinti, gestori di credenziali veri di Windows e macOS) e dalla rilettura del codice che quelle lacune hanno provocato. Prosegue il punto 4 di [11](11-piano-completamento.md). Metodo e vincoli come negli altri passi: nessuna nuova dipendenza, stile compatto, commenti e messaggi in italiano, un branch `codex/<scopo>` per intervento.
+Stato: **fase A implementata** (vedi «Esito della fase A» in fondo); fasi B e C ancora piano. Nasce dalle lacune dichiarate nel [rapporto di collaudo](evidence/step-11/collaudo-github.md) (repository privato o con branch protetto, SSH, due account GitHub distinti, gestori di credenziali veri di Windows e macOS) e dalla rilettura del codice che quelle lacune hanno provocato. Prosegue il punto 4 di [11](11-piano-completamento.md). Metodo e vincoli come negli altri passi: nessuna nuova dipendenza, stile compatto, commenti e messaggi in italiano, un branch `codex/<scopo>` per intervento.
 
 ## Premessa: che cosa è emerso e che cosa va corretto nel rapporto
 
@@ -84,3 +84,11 @@ Il proprietario deve: creare un repository **privato** di prova e un secondo acc
 | C | M (tempo su macchine reali) | A, B |
 
 Ordine: A (con i test), poi B su un solo sistema per validare la struttura, poi i tre sistemi, poi C. A5 e A6 possono uscire prima di B perché aiutano già gli utenti reali.
+
+## Esito della fase A
+
+- **A1–A4 (configurazione e classificazione)**: `credential_helper_info()` in `git_sync.py` legge gli scope di **sistema**, **XDG** e **utente** (con `GIT_CONFIG_NOSYSTEM=0` solo per questa lettura; l'ambiente dei comandi di lavoro resta ripulito, mai repository né vault), considera `credential.helper` e `credential.<url>.helper` per schema e host, applica il reset con valore vuoto e sceglie l'ultimo helper ammesso. Ammessi i nomi noti, la forma `!gh auth git-credential` e i percorsi assoluti a eseguibili **esistenti** con nome noto (`git-credential-manager`, `-manager-core`, `-osxkeychain`, `-libsecret`, `-store`, `-cache`; `gh` con argomenti esatti `auth git-credential`, come li scrive `gh auth setup-git`). Nuovi codici `git_hostkey` e `git_not_found`; `GH006`, `GH013` e «approving review» sono `git_policy`; «invalid username or token», «password authentication was removed» e «terminal prompts disabled» sono `git_auth`.
+- **A5 (messaggi)**: un messaggio fisso con la prossima azione per ogni codice (`_GIT_MESSAGES`), mai il testo grezzo di Git (test con un segreto nello stderr simulato).
+- **A6 (diagnosi)**: `python .graph/teseo_git.py diagnosi` stampa trasporto (`https`, `ssh`, `locale`), helper scelto e scope, presenza dell'agente SSH e l'esito classificato di un `ls-remote`; nessun segreto né URL con credenziali.
+- **A7 (branch protetto)**: con `git_policy` l'autosync risponde che il branch è protetto e indica la modalità PR; la PR si apre dal pulsante del punto 7 di `doc/11`.
+- Provato con configurazioni scritte da `gh auth setup-git` (formato reale con reset vuoto e percorso assoluto), sistema simulato, XDG, chiavi per URL di altri host, percorsi ostili. **Non provato** con GCM, `osxkeychain` e `gh` reali su Windows e macOS, né con SSH e repository privati: è la fase B.

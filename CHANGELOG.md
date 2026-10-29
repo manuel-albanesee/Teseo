@@ -8,6 +8,8 @@ e raggruppata per traguardo; le voci nuove si aggiungono sotto «Non rilasciato�
 
 ### Aggiunto
 
+- Fase A di [doc/12](doc/12-piano-autenticazione-e-collaudo-avanzato.md): credential helper cercati in sistema, XDG e utente (anche chiavi per URL, formato di `gh auth setup-git`), nuovi errori `git_hostkey` e `git_not_found` con messaggi fissi e rimedio, `teseo_git.py diagnosi`, indicazione della modalità PR sui branch protetti.
+- Apertura della pull request dalla dashboard con `gh` (`POST /sync/open-pr`); cache di 10 minuti dell'avviso di sessione; decisione proposta sull'apply automatico ([doc/13](doc/13-decisione-apply-automatico.md)).
 - `script/collaudo_github.py`: collaudo con un repository GitHub reale e due cloni (9 scenari); credential helper di macOS, Linux e `gh` e variabili di proxy e certificati ora ammessi nei comandi Git ([rapporto](doc/evidence/step-11/collaudo-github.md)).
 - Fasi 4–7 della roadmap collaborativa ([doc/10](doc/10-editor-grafo-e-autori.md)): autori delle note dalla storia Git
   (tabella `autori`, filtro per autore); relazione `causa` con `relazioni_dettaglio` (confidenza ed evidenza) e catena

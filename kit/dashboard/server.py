@@ -278,7 +278,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                         'publish':self.server.sync.publish,'resolve':self.server.sync.resolve,
                         'check':self.server.receiver.check,'pause':self.server.receiver.pause,
                         'resume':self.server.receiver.resume,'receive':self.server.receiver_apply.apply,
-                        'receive-recover':self.server.receiver_apply.recover,
+                        'receive-recover':self.server.receiver_apply.recover,'open-pr':self.server.sync.open_pull_request,
                         'automatic-enable':self.server.sync.enable_automatic,
                         'automatic-disable':lambda vault,_body:self.server.sync.disable_automatic(vault)}.get(parts[6])
                 if method:
@@ -412,7 +412,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                       'recovery_required': 409, 'recovery_conflict': 409}.get(error.code, status)
             status = {'invalid_receipt':403,'receipt_conflict':409,'receipt_manifest_mismatch':409}.get(error.code,status)
             if error.code.startswith(('sync_','git_')):
-                status=422 if error.code in ('sync_request','sync_config','sync_consent','sync_exclusion','git_invalid_remote','git_invalid_selection','git_repository_required') else 409
+                status=422 if error.code in ('sync_request','sync_config','sync_consent','sync_exclusion','sync_pr_unavailable','sync_gh_missing','git_invalid_remote','git_invalid_selection','git_repository_required') else 409
             status = {'invalid_response_ids':422,'answer_conflict':409,'answer_not_supported':422,'event_write_forbidden':422,
                 'event_pending':409,'event_collision':409,'shared_heads_stale':409,'legacy_preview_stale':409,
                 'shared_confirmation_required':422,'legacy_missing':404,'legacy_invalid':422,'invalid_event':422,

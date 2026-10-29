@@ -42,6 +42,31 @@ class SyncService:
         from .git_sync import GitRepository
         return GitRepository(root)
 
+    def open_pull_request(self,vault_id,body):
+        """Apre la PR del branch proposto con `gh pr create`, solo su conferma. Titolo e corpo contengono operazione e OID, mai testo delle note."""
+        _fields(body,('operation_id','confirm'))
+        if body['confirm'] is not True:raise ContractError('sync_consent','Confermare l’apertura della pull request')
+        identifier=_uuid(body['operation_id'])
+        root=self.registry.root(vault_id)
+        with self._mutex,VaultLock(root):
+            with self._db(root) as db:
+                self._schema(db);config=self._config(db)
+                row=db.execute('SELECT data FROM jobs WHERE operation_id=?',(identifier,)).fetchone()
+                if not row:raise ContractError('sync_missing','Operazione non trovata')
+                record=parse_json(row[0])
+                if record.get('pr_url'):return self._public(record)
+                if record.get('state')!='needs_approval' or not record.get('proposal_branch') or not record.get('proposal_oid'):
+                    raise ContractError('sync_pr_unavailable','Nessun branch proposto in attesa di approvazione: la modalità PR pubblica un branch proposto, il push diretto rifiutato no')
+                from .git_sync import github_repository_url,open_pull_request
+                url=github_repository_url(config['remote_url'])
+                if not url:raise ContractError('sync_pr_unavailable','La pull request richiede un remoto GitHub')
+                title='Teseo: aggiornamento dei dati condivisi (%s)'%identifier[:8]
+                text=('Proposta preparata da Teseo.\n\nOperazione: %s\nBase: %s\nProposta: %s\n\n'
+                      'Revisiona le differenze su GitHub prima di unire.')%(identifier,record['B'][:12],record['proposal_oid'][:12])
+                record['pr_url']=open_pull_request(url.removeprefix('https://github.com/'),config['branch'],record['proposal_branch'],title,text)
+                self._save(db,record)
+                return self._public(record)
+
     @staticmethod
     def _path(root):
         for relative in ('.teseo','.teseo/local'): _no_link(root/relative)

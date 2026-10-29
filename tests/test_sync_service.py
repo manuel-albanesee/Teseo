@@ -4,6 +4,7 @@ import hashlib
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 from uuid import uuid4
 
 from kit.dashboard.contracts import ContractError, canonical_json
@@ -100,6 +101,51 @@ class Service(unittest.TestCase):
         self.config['mode']='pr';body=self.operation();result=self.service.publish(self.vault,body)
         self.assertEqual(result['state'],'needs_approval');self.assertTrue(result['proposal_branch'].startswith('codex/teseo-'))
         self.assertNotIn('published_oid',result)
+
+    def fake_gh(self,script):
+        """Una `gh` finta in una cartella assoluta di PATH; scrive gli argomenti ricevuti in args.txt."""
+        import os
+        import stat
+        folder=self.root/'gh-bin';folder.mkdir(exist_ok=True)
+        path=folder/'gh';path.write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "'+str(self.root/'args.txt')+'"\n'+script+'\n',encoding='utf-8')
+        path.chmod(path.stat().st_mode|stat.S_IXUSR)
+        return mock.patch.dict('os.environ',{'PATH':str(folder)+os.pathsep+os.environ.get('PATH','')})
+
+    @unittest.skipIf(__import__('os').name=='nt','gh finta con script sh')
+    def test_pull_request_is_opened_once_with_only_ids_in_the_body(self):
+        self.config['mode']='pr';job=self.service.publish(self.vault,self.operation())
+        with self.fake_gh('echo https://github.com/example/data/pull/7'):
+            result=self.service.open_pull_request(self.vault,{'operation_id':job['operation_id'],'confirm':True})
+        self.assertEqual(result['pr_url'],'https://github.com/example/data/pull/7')
+        args=(self.root/'args.txt').read_text(encoding='utf-8').splitlines()
+        self.assertEqual(args[:9],['pr','create','--repo','example/data','--base','team','--head',job['proposal_branch'],'--title'])
+        self.assertNotIn('Prima',' '.join(args));self.assertNotIn('Anna',' '.join(args))
+        (self.root/'args.txt').unlink()
+        again=self.service.open_pull_request(self.vault,{'operation_id':job['operation_id'],'confirm':True})  # senza gh: già registrata
+        self.assertEqual(again['pr_url'],result['pr_url']);self.assertFalse((self.root/'args.txt').exists())
+
+    @unittest.skipIf(__import__('os').name=='nt','gh finta con script sh')
+    def test_pull_request_failures_are_classified_without_raw_output(self):
+        self.config['mode']='pr';job=self.service.publish(self.vault,self.operation());body={'operation_id':job['operation_id'],'confirm':True}
+        with self.fake_gh('echo "token=SEGRETO123 not logged in" >&2; exit 1'),self.assertRaises(ContractError) as failed:
+            self.service.open_pull_request(self.vault,body)
+        self.assertEqual(failed.exception.code,'sync_gh_failed');self.assertNotIn('SEGRETO123',str(failed.exception))
+        with self.fake_gh('echo "a pull request for branch already exists:" >&2; echo https://github.com/example/data/pull/3 >&2; exit 1'):
+            self.assertEqual(self.service.open_pull_request(self.vault,body)['pr_url'],'https://github.com/example/data/pull/3')
+
+    def test_pull_request_needs_consent_and_a_proposal(self):
+        job=self.service.publish(self.vault,self.operation())  # modalità direct: nessun branch proposto
+        for body,code in (({'operation_id':job['operation_id'],'confirm':False},'sync_consent'),
+                          ({'operation_id':job['operation_id'],'confirm':True},'sync_pr_unavailable'),
+                          ({'operation_id':str(uuid4()),'confirm':True},'sync_missing')):
+            with self.subTest(code=code),self.assertRaises(ContractError) as failed:self.service.open_pull_request(self.vault,body)
+            self.assertEqual(failed.exception.code,code)
+
+    def test_pull_request_without_gh_fails_clearly(self):
+        self.config['mode']='pr';job=self.service.publish(self.vault,self.operation())
+        with mock.patch.dict('os.environ',{'PATH':str(self.root/'vuoto')}),self.assertRaises(ContractError) as missing:
+            self.service.open_pull_request(self.vault,{'operation_id':job['operation_id'],'confirm':True})
+        self.assertEqual(missing.exception.code,'sync_gh_missing')
 
     def test_last_attempt_lost_ack_is_verified_before_budget_and_dirty_adoption(self):
         body=self.operation();self.repo.fail='git_timeout'

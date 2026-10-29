@@ -360,6 +360,9 @@ class GitSync(unittest.TestCase):
             self.repo.inspect()
 
     def test_only_vetted_global_credential_helper_and_author_are_inherited(self):
+        scopes = _user_scopes_only()  # la configurazione di sistema della macchina non deve influire sul risultato
+        scopes.start()
+        self.addCleanup(scopes.stop)
         home = self.fixture / 'home'
         home.mkdir()
         (home / '.gitconfig').write_text('[user]\n name = Global User\n email = global@example.invalid\n'
@@ -376,6 +379,9 @@ class GitSync(unittest.TestCase):
         self.assertIsNone(repo.credential_helper)
 
     def test_known_platform_helpers_are_honored_and_everything_else_is_ignored(self):
+        scopes = _user_scopes_only()  # la configurazione di sistema della macchina non deve influire sul risultato
+        scopes.start()
+        self.addCleanup(scopes.stop)
         home = self.fixture / 'home2'
         home.mkdir()
         for helper, expected in (('osxkeychain', 'osxkeychain'), ('libsecret', 'libsecret'), ('store', 'store'), ('cache', 'cache'),
@@ -746,3 +752,130 @@ class ExecutableSearch(unittest.TestCase):
                 self.assertEqual(git_sync._pathext(), ['.EXE', '.CMD'])
         else:
             self.assertEqual(git_sync._pathext(), [''])
+
+
+def _user_scopes_only():
+    """Esclude la configurazione di sistema della macchina che esegue i test: i test controllano da soli ogni scope."""
+    real = git_sync._config_entries
+    return mock.patch.object(git_sync, '_config_entries', lambda arguments: [] if arguments == ['--system'] else real(arguments))
+
+
+class CredentialDiscovery(unittest.TestCase):
+    """Dove sta il credential helper: sistema, XDG, utente, chiavi per URL, reset vuoto e percorsi assoluti."""
+
+    def setUp(self):
+        import tempfile
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.home = Path(temp.name).resolve()
+        patcher = mock.patch.dict('os.environ', {'XDG_CONFIG_HOME': str(self.home / 'xdg')})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        home = mock.patch('kit.dashboard.git_sync.Path.home', return_value=self.home)
+        home.start()
+        self.addCleanup(home.stop)
+
+    def program(self, name):
+        path = self.home / 'bin' / name
+        path.parent.mkdir(exist_ok=True)
+        path.write_bytes(b'#!/bin/sh\n')
+        path.chmod(0o755)
+        return path
+
+    def write(self, where, text):
+        target = self.home / where
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text, encoding='utf-8')
+
+    def info(self, system=()):
+        real = git_sync._config_entries
+        with mock.patch.object(git_sync, '_config_entries', lambda arguments: list(system) if arguments == ['--system'] else real(arguments)):
+            return git_sync.credential_helper_info()
+
+    def test_gh_auth_setup_git_format_is_recognized(self):
+        gh = self.program('gh')
+        self.write('.gitconfig', '[credential "https://github.com"]\n\thelper =\n\thelper = !%s auth git-credential\n'
+                                 '[credential "https://gist.github.com"]\n\thelper =\n\thelper = !%s auth git-credential\n' % (gh.as_posix(), gh.as_posix()))
+        self.assertEqual(self.info(), ('!"%s" auth git-credential' % gh.as_posix(), 'utente'))
+
+    def test_the_system_scope_is_read_and_the_user_scope_wins_and_can_reset(self):
+        system = [('credential.helper', 'osxkeychain')]
+        self.assertEqual(self.info(system), ('osxkeychain', 'sistema'))
+        self.write('.gitconfig', '[credential]\n\thelper = store\n')
+        self.assertEqual(self.info(system), ('store', 'utente'))
+        self.write('.gitconfig', '[credential]\n\thelper =\n')
+        self.assertEqual(self.info(system), (None, None))
+
+    def test_the_xdg_config_is_read(self):
+        self.write('xdg/git/config', '[credential]\n\thelper = cache\n')
+        self.assertEqual(self.info(), ('cache', 'xdg'))
+
+    def test_url_scoped_helpers_apply_only_to_the_same_scheme_and_host(self):
+        self.write('.gitconfig', '[credential "https://example.org"]\n\thelper = store\n[credential "http://github.com"]\n\thelper = cache\n')
+        self.assertEqual(self.info(), (None, None))
+        self.write('.gitconfig', '[credential "https://github.com"]\n\thelper = libsecret\n')
+        self.assertEqual(self.info(), ('libsecret', 'utente'))
+
+    def test_absolute_paths_are_accepted_only_for_known_binaries_that_exist(self):
+        manager, helper = self.program('git-credential-manager'), self.program('helper')
+        for value, expected in ((manager.as_posix(), manager.as_posix()), ('"%s"' % manager.as_posix(), manager.as_posix()),
+                                (helper.as_posix(), None), ('!%s' % manager.as_posix(), None),
+                                ((self.home / 'bin' / 'git-credential-store').as_posix(), None),  # non esiste
+                                ('%s --extra' % manager.as_posix(), None), ('!%s auth git-credential' % manager.as_posix(), None),
+                                ('relativo/git-credential-manager', None)):
+            with self.subTest(value=value):
+                self.assertEqual(git_sync._credential_helper(value), expected)
+
+    def test_a_repository_or_vault_config_is_never_consulted(self):
+        repo = self.home / 'vault'
+        repo.mkdir()
+        (repo / '.git').mkdir()
+        (repo / '.git' / 'config').write_text('[credential]\n\thelper = store\n', encoding='utf-8')
+        self.assertEqual(self.info(), (None, None))
+        self.assertNotIn(('repository', ['--local']), git_sync._config_sources())
+
+    def test_git_errors_get_a_class_and_a_fixed_message_never_the_raw_text(self):
+        cases = {
+            'git_hostkey': 'Host key verification failed.\nfatal: Could not read from remote repository.',
+            'git_policy': 'remote: error: GH006: Protected branch update failed for refs/heads/main.\n ! [remote rejected] main -> main (protected branch hook declined)',
+            'git_policy ': 'remote: error: GH013: Repository rule violations found for refs/heads/main.',
+            'git_auth': 'remote: Invalid username or token. Password authentication is not supported for Git operations.',
+            'git_auth ': 'git@github.com: Permission denied (publickey).',
+            'git_auth  ': "fatal: could not read Username for 'https://github.com': terminal prompts disabled",
+            'git_not_found': "remote: Repository not found.\nfatal: repository 'https://github.com/o/r.git/' not found",
+            'git_network': 'fatal: unable to access: Could not resolve host: github.com',
+            'git_push_rejected': ' ! [rejected]        main -> main (fetch first)',
+        }
+        for code, text in cases.items():
+            with self.subTest(code=code):
+                result = subprocess.CompletedProcess([], 128, b'', ('token=SEGRETO123 ' + text).encode('utf-8'))
+                with mock.patch('kit.dashboard.git_sync.subprocess.run', return_value=result), self.assertRaises(ContractError) as caught:
+                    git_sync._invoke(Path.cwd(), ['fetch'])
+                self.assertEqual(caught.exception.code, code.strip())
+                self.assertNotIn('SEGRETO123', str(caught.exception))
+                self.assertGreater(len(str(caught.exception)), 40)
+
+
+@unittest.skipIf(os.name == 'nt', 'Permessi di cartella POSIX')
+class ReadOnlyTrees(unittest.TestCase):
+    def test_read_only_files_and_directories_are_removed_but_the_outside_is_never_touched(self):
+        import stat
+        import tempfile
+        with tempfile.TemporaryDirectory() as temp:
+            outside = Path(temp).resolve()
+            outside.chmod(0o755)
+            tree = outside / 'candidato'
+            pack = tree / 'objects' / 'pack'
+            pack.mkdir(parents=True)
+            (pack / 'x.pack').write_bytes(b'x')
+            (pack / 'x.pack').chmod(0o444)
+            pack.chmod(0o555)
+            (tree / 'objects').chmod(0o555)
+            git_sync._remove_tree(tree)
+            self.assertFalse(tree.exists())
+            self.assertEqual(stat.S_IMODE(outside.stat().st_mode), 0o755)
+
+    def test_errors_other_than_permissions_are_not_swallowed(self):
+        handler = git_sync._writable_handler(Path('/tmp/x'))
+        with self.assertRaises(FileNotFoundError):
+            handler(os.unlink, '/tmp/x/y', (FileNotFoundError, FileNotFoundError('y'), None))

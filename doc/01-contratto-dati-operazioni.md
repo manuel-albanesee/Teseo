@@ -1,5 +1,7 @@
 # 1 — Contratto dei dati e delle operazioni
 
+> Apply automatico: non previsto ([decisione](13-decisione-apply-automatico.md)).
+
 Primo incremento disponibile in `kit/dashboard/contracts.py`: versioni e manifest,
 classificazione percorsi e canonicalizzazione JSON. Dettagli e limiti nel
 [registro implementazioni](08-analisi-avanzamento.md). Disponibili anche journal,

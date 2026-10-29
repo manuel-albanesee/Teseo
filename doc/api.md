@@ -70,7 +70,7 @@ Offline, tempo scaduto o qualunque guasto non disturbano l'avvio della sessione 
 
 | Funzione | Descrizione |
 | --- | --- |
-| `remoti(vault, timeout=TIMEOUT)` | Frase da mostrare all'utente se il remoto ha aggiornamenti (o storie divergenti), altrimenti None. |
+| `remoti(vault, timeout=TIMEOUT, adesso=time.time)` | Frase da mostrare all'utente se il remoto ha aggiornamenti (o storie divergenti), altrimenti None. |
 
 ## `kit/graph/backup_personal.py`
 
@@ -845,6 +845,7 @@ Avvia il servizio locale del kit installato, senza eseguire codice dei vault col
 ## `kit/graph/teseo_git.py`
 
 Autosync del vault: `pre` all'inizio di una skill (pull), `post` alla fine (commit e push).
+`diagnosi` dice come ci si autentica (trasporto, credential helper e scope, esito di un ls-remote), senza segreti.
 `avvisi` conta gli aggiornamenti remoti con un solo fetch (usato dall'hook SessionStart): mai pull, mai scritture.
 
 Codici di uscita: 0 eseguito, nulla da fare o collaborazione non attiva; 2 bloccato, serve
@@ -996,6 +997,9 @@ No credentials or raw subprocess output are persisted or returned on failures.
 | Funzione | Descrizione |
 | --- | --- |
 | `global_author()` | {'name','email'} da ~/.gitconfig, oppure {} se mancano o non sono accettabili. |
+| `credential_helper_info(url='https://github.com')` | (helper, origine) scelto per l'URL, o (None, None). Rispetta la semantica di gitcredentials: valgono `credential.helper` |
+| `credential_helper_label(helper)` | Nome da mostrare per un helper scelto (mai il percorso completo). |
+| `open_pull_request(slug, base, head, title, body)` | Apre la PR con GitHub CLI e ne restituisce l'URL. Solo repository GitHub `owner/repo`, branch validati, mai una shell; |
 | `remote_branch_oid(url, branch, *, allow_local_remote=False)` | OID del branch sul remoto, None se il remoto è vuoto o non ha quel branch; errore se irraggiungibile. |
 | `clone_data_repository(url, branch, destination, *, allow_local_remote=False)` | Clona il repository dati in una cartella vuota o nuova, rifiutando alberi fuori policy. |
 | `validate_remote(value, *, allow_local_remote=False)` | No credentials, arbitrary hosts, helpers, option injection or URL queries. |

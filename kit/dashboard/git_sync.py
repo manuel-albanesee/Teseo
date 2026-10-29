@@ -14,6 +14,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
+from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
 from .contracts import (ContractError, PathKind, classify_path, is_junction, parse_manifest,
@@ -90,19 +91,125 @@ def global_author():
     return author if set(author) == {'name', 'email'} and '@' in author['email'] else {}
 
 
-# Credential helper ammessi, e solo se scelti nel ~/.gitconfig dell'utente (mai da un repository o dal vault): quelli che
-# Git fornisce per sistema operativo (Windows: manager, wincred; macOS: osxkeychain; Linux: libsecret, store, cache) e la
-# forma esatta del helper di GitHub CLI. Ogni altro valore (percorsi, `!comandi` arbitrari, argomenti extra) si ignora.
+# Credential helper ammessi, e solo se scelti nella configurazione dell'utente o di sistema (mai da un repository o dal vault):
+# i nomi che Git fornisce per sistema operativo (Windows: manager, wincred; macOS: osxkeychain; Linux: libsecret, store,
+# cache), la forma esatta `!gh auth git-credential` e i percorsi assoluti a eseguibili esistenti con un nome noto (come li
+# scrivono `gh auth setup-git`, GCM e le installazioni di sistema). Ogni altro valore (`!comandi`, argomenti extra) si ignora.
 _CREDENTIAL_HELPERS = frozenset({'manager', 'manager-core', 'wincred', 'osxkeychain', 'libsecret', 'store', 'cache',
                                  '!gh auth git-credential'})
+_HELPER_BINARIES = frozenset({'git-credential-manager', 'git-credential-manager-core', 'git-credential-osxkeychain',
+                              'git-credential-libsecret', 'git-credential-store', 'git-credential-cache'})
+_HELPER_PATH = re.compile(r'"?(?P<path>(?:[A-Za-z]:[\\/]|/)[^"]+?)"?(?P<gh> auth git-credential)?')
 
 
 def _credential_helper(value):
-    return value if value in _CREDENTIAL_HELPERS else None
+    """Il helper da passare a Git se è ammesso (valore normalizzato), altrimenti None."""
+    if not isinstance(value, str):
+        return None
+    if value in _CREDENTIAL_HELPERS:
+        return value
+    match = _HELPER_PATH.fullmatch(value[1:] if value.startswith('!') else value)
+    if not match or (match['gh'] is None and value.startswith('!')):
+        return None
+    path = Path(match['path'])
+    name = path.name.lower().removesuffix('.exe')
+    if not path.is_absolute() or not path.is_file() or name != ('gh' if match['gh'] else name) or (
+            match['gh'] is None and name not in _HELPER_BINARIES):
+        return None
+    return ('!"%s" auth git-credential' % path.as_posix()) if match['gh'] else path.as_posix()
+
+
+def _config_entries(arguments):
+    """[(chiave, valore)] in ordine, da `git config -l -z` con gli argomenti dati (senza include); [] se non leggibile."""
+    result = _invoke(Path.home(), ['config', *arguments, '--no-includes', '-l', '-z'], check=False,
+                     env_extra={'GIT_CONFIG_NOSYSTEM': '0'})
+    if result.returncode or len(result.stdout) > 1024 * 1024:
+        return []
+    entries = []
+    for record in result.stdout.decode('utf-8', 'replace').split('\0'):
+        key, _, value = record.partition('\n')
+        if key:
+            entries.append((key, value))
+    return entries
+
+
+def _config_sources():
+    """[(nome, argomenti)] degli scope di utente e di sistema, in ordine di precedenza crescente. Mai repository né vault."""
+    home = Path.home()
+    xdg = Path(os.environ.get('XDG_CONFIG_HOME') or (home / '.config')) / 'git' / 'config'
+    sources = [('sistema', ['--system'])]
+    for name, path in (('xdg', xdg), ('utente', home / '.gitconfig')):
+        if path.is_file() and path.stat().st_size <= 1024 * 1024:
+            sources.append((name, ['--file', str(path)]))
+    return sources
+
+
+def credential_helper_info(url='https://github.com'):
+    """(helper, origine) scelto per l'URL, o (None, None). Rispetta la semantica di gitcredentials: valgono `credential.helper`
+    e `credential.<url>.helper` con lo stesso schema e host, in ordine di lettura; un valore vuoto azzera i precedenti; fra i
+    rimasti si sceglie l'ultimo ammesso. L'origine è lo scope che lo ha dichiarato."""
+    parts = urlsplit(url)
+    prefix, chosen = 'credential.', []
+    for origin, arguments in _config_sources():
+        for key, value in _config_entries(arguments):
+            if not key.startswith(prefix) or not key.endswith('.helper'):
+                continue
+            scope = key[len(prefix):-len('.helper')]
+            if scope:
+                other = urlsplit(scope)
+                if (other.scheme, other.hostname) != (parts.scheme, parts.hostname):
+                    continue
+            if not value.strip():
+                chosen = []
+            else:
+                chosen.append((value.strip(), origin))
+    for value, origin in reversed(chosen):
+        if _credential_helper(value):
+            return _credential_helper(value), origin
+    return None, None
+
+
+def credential_helper_label(helper):
+    """Nome da mostrare per un helper scelto (mai il percorso completo)."""
+    if not helper:
+        return None
+    if helper.startswith('!') and 'auth git-credential' in helper:
+        return 'gh'
+    return Path(helper).name if '/' in helper else helper
 
 
 def _global_helper():
-    return _credential_helper(_global_values('credential.helper').get('credential.helper'))
+    return credential_helper_info()[0]
+
+
+_PR_URL = re.compile(r'https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/\d+')
+
+
+def open_pull_request(slug, base, head, title, body):
+    """Apre la PR con GitHub CLI e ne restituisce l'URL. Solo repository GitHub `owner/repo`, branch validati, mai una shell;
+    una PR già aperta per lo stesso branch restituisce la sua URL. Titolo e corpo li compone il chiamante (conteggi e OID)."""
+    if not isinstance(slug, str) or not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', slug):
+        raise ContractError('git_invalid_remote', 'Repository GitHub non valido per la pull request')
+    base, head = _branch(base), _branch(head)
+    gh = _executable('gh')
+    if not gh:
+        raise ContractError('sync_gh_missing', 'GitHub CLI (gh) non trovata: installala e autenticati con `gh auth login`, '
+                                               'oppure apri la pull request dal link di confronto')
+    env = _env()
+    env.update({key: os.environ[key] for key in ('GH_TOKEN', 'GITHUB_TOKEN', 'GH_CONFIG_DIR', 'XDG_CONFIG_HOME', 'GH_HOST') if key in os.environ})
+    env.update(GH_PROMPT_DISABLED='1', GH_NO_UPDATE_NOTIFIER='1')
+    try:
+        done = subprocess.run([gh, 'pr', 'create', '--repo', slug, '--base', base, '--head', head, '--title', title, '--body', body],
+                              capture_output=True, env=env, shell=False, timeout=90, stdin=subprocess.DEVNULL, check=False)
+    except subprocess.TimeoutExpired as error:
+        raise ContractError('git_timeout', 'gh non ha risposto entro il timeout: verifica prima di ritentare') from error
+    except OSError as error:
+        raise ContractError('sync_gh_missing', 'GitHub CLI (gh) non eseguibile') from error
+    found = _PR_URL.search((done.stdout + b'\n' + done.stderr).decode('utf-8', 'replace'))
+    if found and (not done.returncode or b'already exists' in done.stderr):
+        return found.group(0)
+    raise ContractError('sync_gh_failed', 'gh non ha aperto la pull request: controlla `gh auth status` e i permessi sul repository; '
+                                          'puoi aprirla a mano dal link di confronto')
 
 
 def remote_branch_oid(url, branch, *, allow_local_remote=False):
@@ -208,6 +315,22 @@ def _env():
     return env
 
 
+# Un messaggio fisso per codice, con l'azione da compiere: mai il testo grezzo di Git (potrebbe contenere URL o credenziali).
+_GIT_MESSAGES = {
+    'git_failed': 'Comando Git non completato; nessuna cancellazione o riscrittura automatica',
+    'git_auth': 'Autenticazione Git non riuscita: autenticati una volta nel terminale (per esempio con `git ls-remote <url>`), '
+                'perché il servizio non può chiedere la password, e controlla che il token abbia il permesso di scrittura sul repository',
+    'git_hostkey': 'Chiave dell\'host non verificata: aggiungi github.com a ~/.ssh/known_hosts (per esempio con `ssh -T git@github.com`) '
+                   'e riprova; non si accettano chiavi sconosciute in automatico',
+    'git_not_found': 'Repository non trovato: l\'URL è sbagliato oppure l\'account non ha accesso (GitHub risponde allo stesso modo '
+                     'per un repository privato senza accesso)',
+    'git_policy': 'Il remoto rifiuta il push per una regola del repository (branch protetto o ruleset): usa la modalità PR '
+                  'e apri una pull request dal branch proposto',
+    'git_network': 'Rete non raggiungibile o proxy non configurato: il lavoro locale è conservato; riprova quando sei online',
+    'git_push_rejected': 'Il remoto ha commit che non hai: ricevi gli aggiornamenti prima di pubblicare',
+}
+
+
 def _invoke(root, args, *, input=None, env_extra=None, file_transport=False, check=True, credential_helper=None):
     env = _env()
     env.update(env_extra or {})
@@ -238,15 +361,22 @@ def _invoke(root, args, *, input=None, env_extra=None, file_transport=False, che
         # versions; classify both streams without exposing either to clients.
         stderr = (result.stderr + b'\n' + result.stdout).lower()
         code = 'git_failed'
-        if b'non-fast-forward' in stderr or b'fetch first' in stderr or b'[rejected]' in stderr:
+        if b'host key verification failed' in stderr:
+            code = 'git_hostkey'
+        elif any(x in stderr for x in (b'gh006', b'gh013', b'protected branch', b'repository rule', b'remote rejected',
+                                       b'pre-receive hook declined', b'approving review')):
+            code = 'git_policy'
+        elif b'non-fast-forward' in stderr or b'fetch first' in stderr or b'[rejected]' in stderr:
             code = 'git_push_rejected'
-        elif any(x in stderr for x in (b'authentication failed', b'permission denied', b'could not read username')):
+        elif any(x in stderr for x in (b'authentication failed', b'permission denied', b'could not read username',
+                                       b'invalid username or token', b'password authentication was removed',
+                                       b'terminal prompts disabled', b'could not read password')):
             code = 'git_auth'
+        elif b'repository not found' in stderr:
+            code = 'git_not_found'
         elif any(x in stderr for x in (b'could not resolve', b'unable to access', b'connection timed out', b'connection refused')):
             code = 'git_network'
-        elif any(x in stderr for x in (b'remote rejected', b'protected branch', b'pre-receive hook declined', b'repository rule')):
-            code = 'git_policy'
-        raise ContractError(code, 'Comando Git non completato; nessuna cancellazione o riscrittura automatica')
+        raise ContractError(code, _GIT_MESSAGES.get(code, _GIT_MESSAGES['git_failed']))
     return result
 
 
@@ -268,17 +398,16 @@ class GitRepository:
         # Never inherit arbitrary !shell helpers or repository credential config.
         global_config = Path.home() / '.gitconfig'
         if global_config.is_file() and global_config.stat().st_size <= 1024 * 1024:
-            for key in ('user.name', 'user.email', 'credential.helper'):
+            for key in ('user.name', 'user.email'):
                 result = _invoke(self.root, ['config', '--file', str(global_config), '--no-includes', '--get-all', key], check=False)
                 values = result.stdout.decode('utf-8').strip().splitlines()
                 if not result.returncode and len(values) == 1:
                     value = values[0]
-                    if key == 'credential.helper':
-                        self.credential_helper = _credential_helper(value)
-                    elif value and len(value) <= 256 and not any(ord(c) < 32 for c in value):
+                    if value and len(value) <= 256 and not any(ord(c) < 32 for c in value):
                         local_value = _invoke(self.root, ['config', '--local', '--get', key], check=False)
                         if local_value.returncode:
                             self.global_author[key.removeprefix('user.')] = value
+        self.credential_helper = credential_helper_info()[0]  # anche sistema, XDG e chiavi per URL
 
     def _bytes(self, *args, input=None, env=None, file_transport=False, check=True):
         identity_env = {}
@@ -1009,13 +1138,25 @@ def preview_data_repository(root, selection=None):
 _INIT_PENDING = 'teseo-init-pending'
 
 
-def _remove_tree(folder: Path) -> None:
+def _writable_handler(folder: Path):
+    """onerror di rmtree: rende scrivibile ciò che blocca la rimozione (file di sola lettura su Windows e pack di Git; su POSIX
+    anche la cartella che li contiene, ma solo se sta dentro `folder`: mai i permessi di una cartella esterna)."""
+    folder = Path(folder)
+
     def writable(function, path, error):
         if not isinstance(error[1], PermissionError):
             raise error[1]
-        os.chmod(path, 0o600)
+        target = Path(path)
+        os.chmod(path, 0o700 if target.is_dir() and not target.is_symlink() else 0o600)
+        parent = target.parent
+        if target != folder and (parent == folder or folder in parent.parents):
+            os.chmod(parent, 0o700)
         function(path)
-    shutil.rmtree(folder, onerror=writable)
+    return writable
+
+
+def _remove_tree(folder: Path) -> None:
+    shutil.rmtree(folder, onerror=_writable_handler(folder))
 
 
 def _discard_interrupted_init(root: Path) -> None:

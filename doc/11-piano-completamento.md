@@ -1,6 +1,6 @@
 # 11 — Piano per chiudere i punti aperti
 
-Stato: punti 1–3 implementati (vedi «Esiti» in fondo); i restanti sono ancora piano. Parte dallo stato descritto in [08](08-analisi-avanzamento.md) e [10](10-editor-grafo-e-autori.md): le fasi 1–7 della roadmap collaborativa sono consegnate e provate su Linux con remoto Git locale. Qui sono raccolti i punti che restano aperti, in ordine di dipendenza, con file, rischi, verifica e stima. Ogni voce è consegnabile da sola (un branch `codex/<scopo>`), senza nuove dipendenze, con stile compatto e commenti in italiano.
+Stato: punti 1–4, 7, 11 (tranne il build tollerante) e 12 chiusi (vedi «Esiti» in fondo); restano 5, 6, 8, 9 e 10. Parte dallo stato descritto in [08](08-analisi-avanzamento.md) e [10](10-editor-grafo-e-autori.md): le fasi 1–7 della roadmap collaborativa sono consegnate e provate su Linux con remoto Git locale. Qui sono raccolti i punti che restano aperti, in ordine di dipendenza, con file, rischi, verifica e stima. Ogni voce è consegnabile da sola (un branch `codex/<scopo>`), senza nuove dipendenze, con stile compatto e commenti in italiano.
 
 ## Riepilogo
 
@@ -12,12 +12,12 @@ Stato: punti 1–3 implementati (vedi «Esiti» in fondo); i restanti sono ancor
 | 4 | Collaudo reale con GitHub e due cloni — **fatto (9 scenari su 9, con due difetti corretti)** | Tutto il flusso è provato solo con un remoto bare locale | M |
 | 5 | Collaudo con editor non cooperanti (Obsidian) | L'esclusione degli scrittori esterni è solo dichiarata | M |
 | 6 | Client AI autenticati (passo 4) | L'automazione nativa è non verificata, resta il fallback manuale per tre client | L |
-| 7 | Apertura delle PR (passo 6) | La creazione del repository c'è (`--crea-remote`), la PR è ancora manuale | S |
+| 7 | Apertura delle PR (passo 6) — **fatto** | La creazione del repository c'è (`--crea-remote`), la PR è ancora manuale | S |
 | 8 | Adozione dei vault legacy ed export diagnostico (passo 2) | Dichiarati futuri in `doc/08` | M |
 | 9 | Editor: creare, rinominare, eliminare pagine | Il mapping `page.renamed` è bloccato | L |
 | 10 | Scala: disegno con migliaia di nodi, snapshot selettivo | Tetto 500 nodi nel disegno e 64 MiB di snapshot | L |
-| 11 | Rifiniture dell'autosync | Un fetch per sessione, `valid` dell'editor, `cleanup_candidate` su POSIX | S |
-| 12 | Decisione sull'apply automatico | Disabilitato per scelta: va chiusa come decisione, non lasciata aperta | S |
+| 11 | Rifiniture dell'autosync — **fatto (resta aperta la sola decisione sul build tollerante)** | Un fetch per sessione, `valid` dell'editor, `cleanup_candidate` su POSIX | S |
+| 12 | Decisione sull'apply automatico — **scritta, da confermare** ([13](13-decisione-apply-automatico.md)) | Disabilitato per scelta: va chiusa come decisione, non lasciata aperta | S |
 
 Ordine consigliato: 1 → 2 → 3 (fondamenta e regressioni), poi 4 → 5 (collaudo), poi 7 e 11 (piccoli), poi 8, 6, 9, 10 (nuove capacità), 12 alla fine con i dati del collaudo.
 
@@ -149,3 +149,9 @@ Ordine consigliato: 1 → 2 → 3 (fondamenta e regressioni), poi 4 → 5 (colla
 ## Esito del punto 4
 
 Rapporto completo in [doc/evidence/step-11/collaudo-github.md](evidence/step-11/collaudo-github.md): `script/collaudo_github.py` ha eseguito 9 scenari contro `manuel-albanesee/Teseo-collaudo` (installazione, clone, attribuzione, avviso e pull, integrazione, autori e modifica dalla dashboard, offline e ripresa, stessa nota, note correlate), tutti superati. Ha trovato due difetti reali, corretti: i credential helper di macOS e Linux erano ignorati (solo Windows), e le variabili di proxy e certificati venivano scartate (nessun uso dietro un proxy aziendale). Non coperti: repository privato o con branch protetto, SSH, due account distinti, gestori di credenziali reali di macOS e Windows. Il repository di prova è pubblico con dati sintetici e va cancellato dall'autore.
+
+## Esiti dei punti 7, 11 e 12
+
+- **7 — PR**: `POST /sync/open-pr` (`SyncService.open_pull_request`) apre la pull request del branch proposto con `gh pr create`, solo con `confirm: true` e per un'operazione in `needs_approval` con branch proposto; titolo e corpo contengono operazione e OID, mai testo delle note; l'esito è idempotente (`pr_url` registrato); `gh` assente o non autenticato dà `sync_gh_missing` o `sync_gh_failed` con il rimedio. Pulsante nel pannello «Pubblicazione Git dei dati». Provato con una `gh` finta (argomenti, idempotenza, errori senza testo grezzo); non provato con `gh` e un repository reali.
+- **11 — Rifiniture**: cache a tempo (10 minuti) dell'avviso di sessione in `.teseo/local/avvisi.json`, cancellata da `pre`, `post` e `riprendi`; offline e guasti non si memorizzano. Pack di sola lettura su POSIX: la rimozione dei candidati rende scrivibile anche la cartella che li contiene, ma solo dentro l'albero rimosso. **Non fatto di proposito**: il build «tollerante» dell'editor cambia la garanzia «un grafo invalido non sostituisce quello precedente» e richiede una decisione del proprietario.
+- **12 — Apply automatico**: [decisione 13](13-decisione-apply-automatico.md), «non previsto», con i criteri per riaprirla. È una proposta: la conferma spetta al proprietario.

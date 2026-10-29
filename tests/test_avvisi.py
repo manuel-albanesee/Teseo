@@ -52,6 +52,45 @@ class Notice(unittest.TestCase):
         self.assertLess(avvisi.TIMEOUT, 15)
 
 
+class Cache(unittest.TestCase):
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.vault = Path(temp.name)
+        (self.vault / '.teseo/local').mkdir(parents=True)
+        (self.vault / '.teseo/project.json').write_text('{}', encoding='utf-8')
+        self.now = 1000.0
+
+    def call(self, result):
+        with mock.patch('subprocess.run', return_value=result) as run:
+            return avvisi.remoti(self.vault, adesso=lambda: self.now), run.call_count
+
+    def test_a_recent_answer_is_reused_without_a_second_fetch_until_it_expires(self):
+        behind = done({'state': 'behind', 'message': '2 aggiornamenti remoti'})
+        self.assertEqual(self.call(behind), ('Teseo: 2 aggiornamenti remoti', 1))
+        self.now += avvisi.VALIDITA - 1
+        self.assertEqual(self.call(behind), ('Teseo: 2 aggiornamenti remoti', 0))
+        self.now += 2
+        self.assertEqual(self.call(done({'state': 'current', 'message': ''})), (None, 1))
+        self.assertEqual(self.call(done({'state': 'behind', 'message': 'x'})), (None, 0))  # «current» è memorizzato
+
+    def test_offline_and_failures_are_never_cached(self):
+        self.assertEqual(self.call(done({'state': 'offline', 'message': 'x'})), (None, 1))
+        self.assertEqual(self.call(done({'state': 'offline', 'message': 'x'})), (None, 1))
+        self.assertEqual(self.call(done(None)), (None, 1))
+        self.assertFalse((self.vault / avvisi.CACHE).exists())
+
+    def test_a_corrupt_or_future_cache_is_ignored_and_a_vault_without_local_state_just_skips_it(self):
+        for text in ('non json', '{"quando": "x"}', '{"quando": 5000.0, "messaggio": "Teseo: vecchio"}', '[]'):
+            (self.vault / avvisi.CACHE).write_text(text, encoding='utf-8')
+            with self.subTest(text=text):
+                self.assertEqual(self.call(done({'state': 'current', 'message': ''})), (None, 1))
+        import shutil
+        shutil.rmtree(self.vault / '.teseo/local')
+        self.assertEqual(self.call(done({'state': 'behind', 'message': 'x'})), ('Teseo: x', 1))
+        self.assertEqual(self.call(done({'state': 'behind', 'message': 'x'})), ('Teseo: x', 1))
+
+
 class SessionStartHook(unittest.TestCase):
     def run_hook(self, source):
         import contextlib

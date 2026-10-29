@@ -1,4 +1,5 @@
 """Autosync del vault: `pre` all'inizio di una skill (pull), `post` alla fine (commit e push).
+`diagnosi` dice come ci si autentica (trasporto, credential helper e scope, esito di un ls-remote), senza segreti.
 `avvisi` conta gli aggiornamenti remoti con un solo fetch (usato dall'hook SessionStart): mai pull, mai scritture.
 
 Codici di uscita: 0 eseguito, nulla da fare o collaborazione non attiva; 2 bloccato, serve
@@ -31,7 +32,7 @@ def main(argv=None):
         sys.stdout.reconfigure(encoding='utf-8')
         sys.stderr.reconfigure(encoding='utf-8')
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument('comando', choices=('pre', 'post', 'riprendi', 'stato', 'avvisi'))
+    parser.add_argument('comando', choices=('pre', 'post', 'riprendi', 'stato', 'avvisi', 'diagnosi'))
     parser.add_argument('--vault', default=str(Path(__file__).resolve().parents[1]),
                         help='cartella del vault (predefinito: quella che contiene .graph)')
     parser.add_argument('--skill', choices=SKILLS)
@@ -49,6 +50,8 @@ def main(argv=None):
             result = autosync.post(args.skill, agent)
         elif args.comando == 'avvisi':
             result = autosync.updates()
+        elif args.comando == 'diagnosi':
+            result = autosync.diagnosis()
         elif args.comando == 'riprendi':
             result = autosync.resume()
         else:

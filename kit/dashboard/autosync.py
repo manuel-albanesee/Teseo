@@ -153,7 +153,9 @@ class Autosync:
             if not self.enabled():
                 return _result('disabled', 0, 'Autosync non attivo: nessuna sincronizzazione')
             return self._pre(skill, agent)
-        return self._guard(run)
+        result = self._guard(run)
+        self._forget_notice()
+        return result
 
     def _pre(self, skill, agent):
         repo = self._repository()
@@ -209,7 +211,9 @@ class Autosync:
             if not self.enabled():
                 return _result('disabled', 0, 'Autosync non attivo: nessuna pubblicazione')
             return self._post(skill, agent, graph_check)
-        return self._guard(run)
+        result = self._guard(run)
+        self._forget_notice()
+        return result
 
     def _graph_check(self):
         script = self.root / '.graph/build_graph.py'
@@ -291,8 +295,41 @@ class Autosync:
             return _result('waiting', 3, 'Rete o autenticazione non disponibili: commit conservato, '
                                          'riprendere con python .graph/teseo_git.py riprendi', error=job.get('error'), **common)
         self._set(session, 'blocked', error=job.get('error'))
+        if (job.get('error') or {}).get('code') == 'git_policy':
+            return _result('blocked', 2, 'Il branch condiviso è protetto: il push diretto non è ammesso. Passa alla modalità PR '
+                           '(dashboard, Pubblicazione Git) per pubblicare un branch proposto e aprire la pull request',
+                           error=job.get('error'), job_state=state, **common)
         return _result('blocked', 2, 'Pubblicazione da risolvere nella dashboard (Pubblicazione Git → Risolvi): stato '
                        + state, error=job.get('error'), job_state=state, **common)
+
+    def _forget_notice(self):
+        """Dopo un pull o una pubblicazione l'avviso memorizzato non è più vero: si cancella."""
+        try:
+            (self.root / '.teseo/local/avvisi.json').unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    # -- diagnosi -------------------------------------------------------------------------------
+    def diagnosis(self):
+        """Come si autentica questo vault: trasporto, credential helper scelto e da dove, agente SSH, esito di un ls-remote
+        classificato. Nessun segreto e nessun URL con credenziali nell'esito."""
+        def run():
+            if not self.service:
+                return _result('disabled', 0, 'Collaborazione non attiva: nessun manifest dati compatibile')
+            from .git_sync import credential_helper_info, credential_helper_label, remote_branch_oid
+            config = self.service.status(self.vault_id).get('config') or {}
+            url = config.get('remote_url') or ''
+            transport = 'ssh' if url.startswith(('git@', 'ssh://')) else 'https' if url.startswith('https://') else 'locale'
+            helper, origin = credential_helper_info() if transport == 'https' else (None, None)
+            try:
+                remote_branch_oid(url, config.get('branch') or 'main', allow_local_remote=self.allow_local_remote)
+                access = {'state': 'ok', 'message': 'Il remoto risponde e l\'autenticazione di lettura funziona'}
+            except ContractError as error:
+                access = {'state': error.code, 'message': str(error)}
+            return _result('diagnosi', 0, access['message'], transport=transport, remote=url.split('@')[-1] if transport == 'ssh' else url,
+                           credential_helper=credential_helper_label(helper),
+                           helper_origin=origin, ssh_agent=bool(os.environ.get('SSH_AUTH_SOCK')), access=access)
+        return self._guard(run)
 
     # -- avvisi ---------------------------------------------------------------------------------
     def updates(self):
@@ -330,4 +367,6 @@ class Autosync:
                 raise ContractError('autosync_unpublished', 'Il vault ha modifiche non pubblicate: la ripresa richiede un albero pulito')
             session = waiting[0]
             return self._outcome(session, self.service.resume_session(self.vault_id, session['id']), [], 'skipped', 0)
-        return self._guard(run)
+        result = self._guard(run)
+        self._forget_notice()
+        return result

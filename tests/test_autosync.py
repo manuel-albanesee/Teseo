@@ -167,6 +167,26 @@ class AutosyncFlow(unittest.TestCase):
         self.assertIn('refs/teseo/fetch/in-uso', refs)
         self.assertEqual(len([r for r in refs if r.startswith('refs/teseo/notice/')]), 1)
 
+    def test_pre_and_post_forget_the_remote_notice(self):
+        notice = self.a / '.teseo/local/avvisi.json'
+        for action in (lambda: self.sync_a.pre('ingest', 'claude'), lambda: self.sync_a.post('ingest', 'claude')):
+            notice.write_text('{"quando": 1, "messaggio": "Teseo: vecchio"}', encoding='utf-8')
+            action()
+            self.assertFalse(notice.exists())
+
+    def test_diagnosis_reports_transport_and_access_without_secrets(self):
+        result = self.sync_a.diagnosis()
+        self.assertEqual((result['state'], result['exit'], result['transport'], result['access']['state']), ('diagnosi', 0, 'locale', 'ok'), result)
+        self.assertIsNone(result['credential_helper'])
+        self.assertNotIn('@', json.dumps({k: v for k, v in result.items() if k != 'remote'}))
+
+    def test_a_protected_branch_points_to_the_pr_mode(self):
+        session = self.sync_a._new_session('ingest', 'claude', git(self.a, 'rev-parse', 'HEAD'))
+        job = {'state': 'needs_approval', 'error': {'code': 'git_policy', 'message': 'x'}}
+        result = self.sync_a._outcome(session, job, [], 'ok', 1)
+        self.assertEqual((result['state'], result['exit'], result['error']['code']), ('blocked', 2, 'git_policy'))
+        self.assertIn('modalità PR', result['message'])
+
     def test_updates_are_silent_when_the_vault_is_not_collaborative(self):
         self.sync_a.service.disable_automatic(self.sync_a.vault_id)
         self.assertEqual((self.sync_a.updates()['state'], self.sync_a.updates()['exit']), ('disabled', 0))
@@ -376,6 +396,8 @@ class AutosyncFlow(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn('--skill', err)
         code, out, _ = self.run_cli(plain, 'avvisi')
+        self.assertEqual((code, json.loads(out)['state']), (0, 'disabled'))
+        code, out, _ = self.run_cli(plain, 'diagnosi')
         self.assertEqual((code, json.loads(out)['state']), (0, 'disabled'))
 
 
