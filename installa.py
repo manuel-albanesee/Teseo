@@ -23,6 +23,8 @@ Uso:
                     repository dati condiviso e autosync: crea il repository (anteprima dei file condivisi e conferma,
                     primo push) oppure, se il remoto è già popolato e <vault> è vuoto, lo clona; poi le skill fanno
                     pull all'inizio (.graph/teseo_git.py pre) e commit+push alla fine (post). Ripetibile.
+  python installa.py <vault> --adotta [--si]
+                    adotta un vault legacy già in uso (anteprima, conferma, solo .teseo/ creata; nessuna nota toccata)
   python installa.py --prova        installa in una cartella temporanea con il vault d'esempio, verifica e cancella
 """
 import argparse
@@ -471,9 +473,14 @@ def esegui(vault, *argomenti):
 
 
 def installa(vault, skill="vault", aggiorna=False, esempio=False, client="tutti", solo_integrazione=False,
-             dashboard=False, collabora=None):
-    """collabora: None, oppure dict(url, branch, visibilita, crea_remote, si, locale) per repository dati e autosync."""
+             dashboard=False, collabora=None, adotta=None):
+    """collabora: None, oppure dict(url, branch, visibilita, crea_remote, si, locale) per repository dati e autosync.
+    adotta: None, oppure dict(si) per adottare un vault legacy già in uso (anteprima e conferma, nessuna nota toccata)."""
     vault = vault.resolve()
+    if adotta:
+        if solo_integrazione or collabora:
+            raise ValueError("--adotta richiede installazione completa e non si combina con --collabora (che adotta già il vault)")
+        dashboard = True
     if collabora:
         if solo_integrazione:
             raise ValueError("--collabora richiede installazione completa")
@@ -483,7 +490,7 @@ def installa(vault, skill="vault", aggiorna=False, esempio=False, client="tutti"
         if solo_integrazione:
             raise ValueError("--dashboard richiede installazione completa")
         # Con --collabora un vault già in uso è ammesso: il manifest si crea dopo la conferma esplicita dei file condivisi.
-        if not collabora and vault.exists() and any(vault.iterdir()) and inspect_vault(vault).mode != "compatible":
+        if not collabora and not adotta and vault.exists() and any(vault.iterdir()) and inspect_vault(vault).mode != "compatible":
             raise ValueError("--dashboard inizializza solo cartelle vuote; nessuna adozione automatica dei legacy")
     if solo_integrazione and not (vault / ".graph" / "recall_hook.py").is_file():
         raise ValueError("--solo-integrazione richiede un vault con Teseo già installato")
@@ -564,7 +571,28 @@ def installa(vault, skill="vault", aggiorna=False, esempio=False, client="tutti"
         installa_skill(skill, vault, aggiorna, rapporto, selezionato)
     if esempio:
         copia_esempio(vault, rapporto)
-    if dashboard and not (vault / ".teseo/project.json").exists():
+    if adotta and not (vault / ".teseo/project.json").exists():
+        from kit.dashboard import adoption
+        from kit.dashboard.contracts import ContractError
+        try:
+            piano = adoption.preview(vault)
+        except ContractError as errore:
+            raise ValueError(f"adozione non possibile ({errore.code}): {errore}") from errore
+        print(f"\nAdozione del vault: {piano['pages']} pagine, {piano['raw_files']} fonti raw. Verranno creati: "
+              + ", ".join(voce["path"] for voce in piano["files"]) + ".")
+        print(piano["unchanged"])
+        for problema in piano["problems"][:10]:
+            print(f"  ⚠️ {problema['code']} · {problema['page']}")
+        if piano["parse_error"]:
+            print(f"  ⚠️ vault non analizzabile: {piano['parse_error']}")
+        if not _conferma("Adottare il vault?", adotta["si"]):
+            raise ValueError("adozione annullata: nessun file creato")
+        try:
+            adoption.apply(vault, piano["plan_digest"], True, rebuild=False)  # il grafo lo costruisce il controllo finale
+        except ContractError as errore:
+            raise ValueError(f"adozione non riuscita ({errore.code}): {errore}") from errore
+        rapporto(".teseo/project.json", "vault adottato: nuovo manifest dati v1, nessuna nota modificata")
+    elif dashboard and not (vault / ".teseo/project.json").exists():
         from kit.dashboard.contracts import canonical_json, DEFAULT_SHARED_PATHS, KIT_VERSION
         directory = vault / ".teseo"
         directory.mkdir(exist_ok=True)
@@ -670,6 +698,8 @@ def main():
     ap.add_argument("--dashboard", action="store_true", help="inizializza formato dashboard solo per un vault nuovo; non adotta legacy")
     ap.add_argument("--collabora", metavar="URL", help="repository dati GitHub del vault: lo crea (o clona, se popolato) e attiva "
                     "pull all'inizio e commit+push alla fine di ingest, lint e lacune")
+    ap.add_argument("--adotta", action="store_true", help="adotta un vault legacy già in uso: anteprima, conferma e solo .teseo/ creata "
+                    "(nessuna nota, fonte raw, script o database modificato); con --si conferma senza chiedere")
     ap.add_argument("--branch", default="main", help="branch condiviso del repository dati (predefinito: main)")
     ap.add_argument("--visibilita", choices=("private", "public"), default="private",
                     help="visibilità dichiarata del repository dati (predefinito: private)")
@@ -690,15 +720,17 @@ def main():
         ap.error("--solo-integrazione non è compatibile con --esempio")
     if args.collabora and args.solo_integrazione:
         ap.error("--collabora richiede installazione completa (non è compatibile con --solo-integrazione)")
-    if (args.crea_remote or args.si) and not args.collabora:
-        ap.error("--crea-remote e --si valgono solo con --collabora")
+    if args.crea_remote and not args.collabora:
+        ap.error("--crea-remote vale solo con --collabora")
+    if args.si and not (args.collabora or args.adotta):
+        ap.error("--si vale solo con --collabora o --adotta")
     collabora = None
     if args.collabora:
         collabora = dict(url=args.collabora, branch=args.branch, visibilita=args.visibilita,
                          crea_remote=args.crea_remote, si=args.si, locale=False)
     try:
         result = installa(args.vault, args.skill, args.aggiorna, args.esempio, args.client, args.solo_integrazione,
-                         args.dashboard, collabora)
+                         args.dashboard, collabora, dict(si=args.si) if args.adotta else None)
     except ValueError as error:
         ap.error(str(error))
     sys.exit(result)

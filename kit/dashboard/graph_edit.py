@@ -310,7 +310,7 @@ class GraphEditService:
             if cached is not None:
                 snapshot.assert_unchanged(root)
                 return cached
-            record, data = analyze(snapshot, node_id, body['operations'], self.clock())  # fuori dal lock: il parse può durare secondi
+            record, data = self._analyze(snapshot, node_id, body['operations'])  # fuori dal lock: il parse può durare secondi
             snapshot.assert_unchanged(root)
             self.registry.root(vault_id)  # identità del vault ricontrollata dopo l'analisi
             record.update(preview_id=str(uuid4()), expires_at=int(time.time()) + self.ttl, ttl_seconds=self.ttl)
@@ -323,6 +323,9 @@ class GraphEditService:
             return deepcopy(record)
         finally:
             self._slots.release()
+
+    def _analyze(self, snapshot, node_id, operations):
+        return analyze(snapshot, node_id, operations, self.clock())
 
     def _reserve(self, key, request):
         """Record già in cache per lo stesso payload; conflitto se la chiave porta un payload diverso; altrimenti None."""

@@ -179,6 +179,17 @@ class Storage(unittest.TestCase):
         (self.root / "wiki/run.py").write_text("never run", encoding="utf-8")
         self.assert_code("unexpected_data_path", capture_snapshot, self.root)
 
+    def test_snapshot_limit_env_override(self):
+        for value, mib in ((None, 64), ("", 64), ("abc", 64), ("7", 64), ("2049", 64), ("8", 8), ("512", 512), ("2048", 2048)):
+            with mock.patch.dict(os.environ):
+                os.environ.pop("TESEO_SNAPSHOT_MAX_MIB", None)
+                if value is not None:
+                    os.environ["TESEO_SNAPSHOT_MAX_MIB"] = value
+                self.assertEqual(storage.snapshot_limit(), mib * 1024 * 1024, value)
+        with self.assertRaises(ContractError) as caught:
+            capture_snapshot(self.root, max_bytes=1)
+        self.assertIn("TESEO_SNAPSHOT_MAX_MIB", str(caught.exception))
+
     def test_change_during_scan_is_rejected(self):
         real = storage._scan
         def scan(root, max_bytes):

@@ -272,8 +272,8 @@ def execute(journal, identifier, action='finish'):
 
 
 class ApplyService:
-    def __init__(self, registry, previews, edits=None, publisher=None):
-        self.registry, self.previews, self.edits, self.publisher = registry, previews, edits, publisher
+    def __init__(self, registry, previews, edits=None, publisher=None, pages=None):
+        self.registry, self.previews, self.edits, self.publisher, self.pages = registry, previews, edits, publisher, pages
         self._publications = {}
         self._publishers = {}
         self._mutex = threading.RLock()
@@ -323,6 +323,31 @@ class ApplyService:
                 raise ContractError('migration_invalid', 'La proposta non supera la validazione del grafo')
             values = {entry.path: entry.data for entry in snapshot.files}
             values[record['path']] = data
+            return Snapshot(tuple(SnapshotFile(path, content) for path, content in sorted(values.items())))
+        return self._submit(vault_id, 'graph_edit', payload, body['idempotency_key'], candidate)
+
+    def submit_pages(self, vault_id, body, if_match):
+        """Apply di creazione, rinomina o eliminazione di pagine: stesso journal e stesso kind della modifica del grafo."""
+        _fields(body, ('preview_id', 'proposal_hash', 'idempotency_key', 'mode', 'external_writers_paused', 'semantic_reviewed'))
+        _confirmed(body)
+        if (self.pages is None or not isinstance(body['preview_id'], str) or not isinstance(body['proposal_hash'], str)
+                or not re.fullmatch('[0-9a-f]{64}', body['proposal_hash'])
+                or not isinstance(body['idempotency_key'], str) or not re.fullmatch('[A-Za-z0-9_-]{8,128}', body['idempotency_key'])):
+            raise ContractError('invalid_payload', 'Richiesti preview, hash e chiave idempotente validi')
+        payload = dict(body, base_content_digest=self._base(if_match), node='*')
+
+        def candidate(snapshot):
+            record, changes = self.pages.proposal(vault_id, body['preview_id'], body['proposal_hash'])
+            if record['base_content_digest'] != snapshot.digest:
+                raise ContractError('preview_stale', 'Contenuti cambiati: creare nuova preview')
+            if not record['valid']:
+                raise ContractError('migration_invalid', 'La proposta non supera la validazione del grafo')
+            values = {entry.path: entry.data for entry in snapshot.files}
+            for path, data in changes.items():
+                if data is None:
+                    values.pop(path, None)
+                else:
+                    values[path] = data
             return Snapshot(tuple(SnapshotFile(path, content) for path, content in sorted(values.items())))
         return self._submit(vault_id, 'graph_edit', payload, body['idempotency_key'], candidate)
 

@@ -35,6 +35,8 @@ Uso:
                     repository dati condiviso e autosync: crea il repository (anteprima dei file condivisi e conferma,
                     primo push) oppure, se il remoto è già popolato e <vault> è vuoto, lo clona; poi le skill fanno
                     pull all'inizio (.graph/teseo_git.py pre) e commit+push alla fine (post). Ripetibile.
+  python installa.py <vault> --adotta [--si]
+                    adotta un vault legacy già in uso (anteprima, conferma, solo .teseo/ creata; nessuna nota toccata)
   python installa.py --prova        installa in una cartella temporanea con il vault d'esempio, verifica e cancella
 
 | Classe | Descrizione |
@@ -57,7 +59,7 @@ Uso:
 | `collabora_clona(vault, opzioni, rapporto)` | Vault vuoto o nuovo e repository dati già popolato: lo clona al posto di crearne uno. True se clonato. |
 | `collabora_imposta(vault, opzioni, clonato, rapporto)` | Repository dati e autosync: clone già fatto, aggancio a un .git esistente, oppure creazione con primo push. |
 | `esegui(vault, *argomenti)` | — |
-| `installa(vault, skill='vault', aggiorna=False, esempio=False, client='tutti', solo_integrazione=False, dashboard=False, collabora=None)` | collabora: None, oppure dict(url, branch, visibilita, crea_remote, si, locale) per repository dati e autosync. |
+| `installa(vault, skill='vault', aggiorna=False, esempio=False, client='tutti', solo_integrazione=False, dashboard=False, collabora=None, adotta=None)` | collabora: None, oppure dict(url, branch, visibilita, crea_remote, si, locale) per repository dati e autosync. |
 | `prova(client='tutti', dashboard=False)` | Installazione di prova con il vault d'esempio in una cartella temporanea: niente esce da lì. |
 | `main()` | — |
 
@@ -894,6 +896,27 @@ Adapter manuali: versioni osservabili, nessun avvio AI o callback presunto.
 | `phase_instructions(phase)` | — |
 | `default_adapters()` | — |
 
+## `kit/dashboard/admin_ui.py`
+
+Adozione di un vault legacy, export diagnostico e gestione delle pagine (crea, rinomina, elimina): anteprima, consenso esplicito.
+
+## `kit/dashboard/adoption.py`
+
+Adozione esplicita di un vault legacy: crea il manifest dati e lo stato locale, senza toccare note, raw, script né database.
+
+Prima un'anteprima (che cosa si crea, quanti file, problemi del grafo), poi l'adozione con il digest dell'anteprima e un
+consenso esplicito. Nessun file esistente si modifica o si sposta: per questo non serve un backup, e il ritorno al formato legacy
+è la sola cancellazione di `.teseo/` (mai automatica). Un vault con `.teseo/` già presente ma senza manifest valido non si adotta.
+
+| Classe | Descrizione |
+| --- | --- |
+| `AdoptionService` | — |
+
+| Funzione | Descrizione |
+| --- | --- |
+| `preview(root)` | Che cosa creerebbe l'adozione e se il grafo si potrebbe costruire; nessuna scrittura. |
+| `apply(root, plan_digest, confirm, *, rebuild=True)` | Crea `.teseo/project.json` (nuovo vault_id) e, se il grafo è costruibile, la prima generazione. |
+
 ## `kit/dashboard/authors.py`
 
 Autori delle note dalla storia Git: la persona è l'autore del commit, agente e skill vengono dai trailer Teseo-*.
@@ -981,6 +1004,17 @@ Diagnostica minima su stderr: tipo, codice contrattuale e posizione; mai messagg
 | Funzione | Descrizione |
 | --- | --- |
 | `log_unexpected(error: BaseException)` | — |
+
+## `kit/dashboard/diagnostics_export.py`
+
+Export diagnostico per le segnalazioni: versioni, forma del vault, codici dei problemi e dei guasti. Mai contenuti.
+
+Esclusi per costruzione: testo delle note e dei raw, nomi delle pagine, percorsi assoluti, URL del remoto, nomi di autori,
+messaggi di errore liberi. Restano conteggi, codici stabili e identificatori che non rivelano contenuto (hash di generazione).
+
+| Classe | Descrizione |
+| --- | --- |
+| `DiagnosticsExporter` | — |
 
 ## `kit/dashboard/git_sync.py`
 
@@ -1106,6 +1140,23 @@ Cicli skill persistenti: output isolato, ricevute e nessun successo implicito.
 | --- | --- |
 | `SkillCoordinator` | — |
 
+## `kit/dashboard/page_ops.py`
+
+Crea, rinomina ed elimina pagine del grafo: preview multi-file con candidato già validato, apply dal journal.
+
+Rinominare riscrive solo i bersagli dei link `[[Vecchio]]` (nel frontmatter, nel corpo, in index.md e log.md), conservando
+cartella, sezione e testo del link. Eliminare toglie la pagina e la sua riga di index.md; se altre pagine la citano, la
+proposta non è valida (link non risolti) e va corretta prima. Nessuna scrittura qui: l'apply è quello di `graph_edit`.
+
+| Classe | Descrizione |
+| --- | --- |
+| `PageOpsService` | Stessa cache di proposte e stesso limite di preview concorrenti dell'editor del grafo; cambia solo l'analisi. |
+
+| Funzione | Descrizione |
+| --- | --- |
+| `build_changes(documents, operation, today)` | {percorso: nuovo testo | None (eliminato)} per l'operazione, oppure ContractError edit_*. |
+| `analyze(snapshot, operation, today)` | — |
+
 ## `kit/dashboard/read_api.py`
 
 Consultazione di una generazione immutabile; nessuna GET costruisce o scrive dati.
@@ -1226,7 +1277,8 @@ non escludono editor esterni e non autorizzano apply automatici.
 | Funzione | Descrizione |
 | --- | --- |
 | `assert_receiver_complete(root)` | A crashed receive blocks other cooperative writers and live projections. |
-| `capture_snapshot(root, max_bytes=64 * 1024 * 1024, *, allow_missing_schema=False)` | Due scansioni di confronto, limite esplicito; nessuna garanzia anti-race. |
+| `snapshot_limit()` | Limite predefinito in byte, alzabile con TESEO_SNAPSHOT_MAX_MIB (8..2048 MiB) per vault con molti raw; valori fuori scala si ignorano. |
+| `capture_snapshot(root, max_bytes=None, *, allow_missing_schema=False)` | Due scansioni di confronto, limite esplicito; nessuna garanzia anti-race. |
 | `validate_raw_unchanged(base, candidate)` | Nuove fonti ammesse; eliminazione, modifica e rename di raw vietati. |
 
 ## `kit/dashboard/sync_service.py`

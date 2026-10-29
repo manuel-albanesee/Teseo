@@ -224,7 +224,7 @@ def _scan(root, max_bytes):
                 data = stream.read(remaining + 1)
             total += len(data)
             if total > max_bytes:
-                raise ContractError("snapshot_too_large", "Superato il limite byte dello snapshot")
+                raise ContractError("snapshot_too_large", f"Superato il limite dello snapshot ({max_bytes // (1024 * 1024)} MiB di note e raw): alzarlo con TESEO_SNAPSHOT_MAX_MIB (8-2048) o escludere i raw grandi dal perimetro")
             entries.append(SnapshotFile(relative, data))
         else:
             raise ContractError("unsupported_file", "Tipo file non supportato", relative)
@@ -238,12 +238,26 @@ def _scan(root, max_bytes):
     return Snapshot(tuple(sorted(entries, key=lambda entry: entry.path)))
 
 
-def capture_snapshot(root, max_bytes=64 * 1024 * 1024, *, allow_missing_schema=False):
+SNAPSHOT_DEFAULT_MIB = 64
+
+
+def snapshot_limit():
+    """Limite predefinito in byte, alzabile con TESEO_SNAPSHOT_MAX_MIB (8..2048 MiB) per vault con molti raw; valori fuori scala si ignorano."""
+    try:
+        mib = int(os.environ.get("TESEO_SNAPSHOT_MAX_MIB", ""))
+    except ValueError:
+        return SNAPSHOT_DEFAULT_MIB * 1024 * 1024
+    return (mib if 8 <= mib <= 2048 else SNAPSHOT_DEFAULT_MIB) * 1024 * 1024
+
+
+def capture_snapshot(root, max_bytes=None, *, allow_missing_schema=False):
     """Due scansioni di confronto, limite esplicito; nessuna garanzia anti-race.
 
     Byte della prima scansione conservati in memoria e successivamente copiabili
     per il build. Una mutazione rilevata durante la lettura invalida il risultato.
     """
+    if max_bytes is None:
+        max_bytes = snapshot_limit()
     if type(max_bytes) is not int or max_bytes <= 0:
         raise ValueError("max_bytes deve essere un intero positivo")
     root, _ = _compatible_root(root, allow_missing_schema)

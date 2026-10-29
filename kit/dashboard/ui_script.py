@@ -5,10 +5,11 @@ from .shared_ui import SHARED_SCRIPT
 from .sync_ui import SYNC_SCRIPT
 from .graph_ui import GRAPH_SCRIPT
 from .node_ui import NODE_SCRIPT
+from .admin_ui import ADMIN_SCRIPT
 SCRIPT = r"""
 (() => {
  'use strict';
-""" + EDITOR_SCRIPT + SKILL_SCRIPT + SHARED_SCRIPT + SYNC_SCRIPT + GRAPH_SCRIPT + NODE_SCRIPT + r"""
+""" + EDITOR_SCRIPT + SKILL_SCRIPT + SHARED_SCRIPT + SYNC_SCRIPT + GRAPH_SCRIPT + NODE_SCRIPT + ADMIN_SCRIPT + r"""
  const $ = id => document.getElementById(id);
  const token = new URLSearchParams(location.hash.slice(1)).get('session');
  history.replaceState(null, '', location.pathname);
@@ -19,7 +20,7 @@ SCRIPT = r"""
  // counters additionally protect independent selections within that view.
  let csrf = '', epoch = 0, graphRequest = 0, detailRequest = 0, state = null;
  let nodes = [], edges = [], cursor = null, filters = {}, invalid = false, loadingGraph = false;
- let stopping = false, operationPoll = 0, vocabulary = {relations:[], types:[]};
+ let stopping = false, operationPoll = 0, vocabulary = {relations:[], types:[]}, bulkLoading = false;
  const pendingRebuild = new Map();
  async function api(path, data, extraHeaders={}) {
    const headers = {'X-Teseo-Session':token,...extraHeaders}, options = {headers,cache:'no-store'};
@@ -34,6 +35,8 @@ SCRIPT = r"""
  const graphView=createGraphView({element,onOpen:id=>openNode(id)});
  const nodeTools=createNodeTools({api,element,plain,url:(endpoint,parameters)=>url(endpoint,parameters),getState:()=>state,getVault:()=>$('vault').value,getEpoch:()=>epoch,
    stopped:()=>stopping,graphView,getVocabulary:()=>({...vocabulary,nodes:nodes.map(node=>node.id)}),onOperation:(vault,id)=>watchOperation(vault,id)});
+ const admin=createAdminPanel({api,element,getEpoch:()=>epoch,getVault:()=>$('vault').value,getState:()=>state,getNodes:()=>nodes.map(node=>node.id),stopped:()=>stopping,
+   onAdopted:vaultId=>refreshVaults(vaultId),onOperation:(vault,id)=>watchOperation(vault,id)});
  const sync=createSyncPanel({api,element,getEpoch:()=>epoch,getVault:()=>$('vault').value,stopped:()=>stopping});
  $('skill-dispatch').addEventListener('click',async()=>{const vault=$('vault').value;if(!vault||stopping)return;try{await api('/api/v1/vaults/'+encodeURIComponent(vault)+'/dispatch',{});if(vault===$('vault').value)$('list-operations').click();}catch(error){$('operation').textContent=error.code+': '+error.message;}});
  $('list-operations').addEventListener('click',async()=>{
@@ -126,7 +129,15 @@ SCRIPT = r"""
    for(const node of list) {const li=element('li',undefined,$('nodes'));const button=nodeButton(li,node.id);element('small',node.tipo || 'Tipo non dichiarato',button);}
    $('edges').replaceChildren();relationList($('edges'),edges);
    if(!edges.length) element('li','Nessuna relazione caricata per questi filtri.',$('edges'));
-   $('more').hidden=!cursor;$('more').disabled=invalid||loadingGraph;graphMap(list);
+   $('more').hidden=!cursor;$('load-all').hidden=!cursor;$('more').disabled=invalid||loadingGraph;$('load-all').disabled=invalid||loadingGraph;if(!bulkLoading)graphMap(list);
+ }
+ // Carica pagina dopo pagina fino al limite di nodi del disegno (o alla fine dei dati): per grafi grandi senza cento clic.
+ async function loadAll() {
+   const run=epoch;
+   bulkLoading=true;  // il disegno si ricostruisce una volta sola alla fine, non a ogni pagina
+   const limit=Math.min(2000,Math.max(12,Number($('map-limit').value)||200));
+   try{while(cursor&&!invalid&&run===epoch&&!loadingGraph&&(nodes.length<limit||edges.length<limit*4))await loadGraph(true);}
+   finally{bulkLoading=false;if(run===epoch)renderGraph();}
  }
  async function loadGraph(more=false) {
    if(!state?.graph_generation || invalid || (more && loadingGraph))return;
@@ -166,10 +177,12 @@ SCRIPT = r"""
    const list=element('ul',undefined,container);for(const issue of body.issues)element('li',issue.severity+' · '+issue.code+' · '+issue.message+(issue.path?' · '+issue.path:''),list);
    if(!body.issues.length)element('li','Nessun problema rilevato nei controlli disponibili.',list);
    if(body.truncated)element('p','Elenco parziale: limite di diagnostica raggiunto.',container);
+   admin.exportInto(container);
  }
  async function selectVault() {
    if(stopping)return;
    editor.reset();
+   admin.reset();
    skills.reset();
    shared.reset();
    sync.reset();
@@ -189,6 +202,7 @@ SCRIPT = r"""
      $('root').textContent=status.path;$('revision').textContent='Contenuti: '+(status.content_revision||'non disponibili')+' · Generazione: '+(status.graph_generation||'non disponibile')+' · Job di questo servizio: '+(status.busy?'rebuild attivo':'nessuno');
      $('rebuild').disabled=!status.capabilities.rebuild || !!status.busy;
      editor.mount(status);
+     admin.mount(status);
      skills.mount(status);
      shared.mount(status);
      sync.mount(status);
@@ -203,7 +217,7 @@ SCRIPT = r"""
        for(const type of ontology.types)$('type').append(new Option(type,type));
        for(const relation of ontology.relations)$('relation').append(new Option(relation.name,relation.name));
      } else {element('p','Ontologia pubblicata non disponibile: '+results[0].reason.message,$('ontology-published'));failure(results[0].reason);}
-     if(results[1].status==='fulfilled')renderDiagnostics(results[1].value);else{element('p','Diagnostica non disponibile: '+results[1].reason.message,$('diagnostics'));failure(results[1].reason);}
+     if(results[1].status==='fulfilled')renderDiagnostics(results[1].value);else{element('p','Diagnostica non disponibile: '+results[1].reason.message,$('diagnostics'));admin.exportInto($('diagnostics'));failure(results[1].reason);}
      if(results[2].status==='fulfilled')for(const author of results[2].value.authors)$('author').append(new Option(author.name+' ('+author.created+' create, '+author.modified+' modificate)',author.name));
      for(const key of ['type','relation','author','search','map-limit','apply'])$(key).disabled=invalid;
      if(invalid)$('counts').textContent='Caricamento interrotto: aggiorna la vista per leggere la nuova generazione.';
@@ -219,7 +233,7 @@ SCRIPT = r"""
    $('vault').disabled=!body.vaults.length;await selectVault();
  }
  $('vault').addEventListener('change',selectVault);$('refresh').addEventListener('click',selectVault);
- $('search').addEventListener('input',renderGraph);$('map-limit').addEventListener('change',renderGraph);$('more').addEventListener('click',()=>loadGraph(true));
+ $('search').addEventListener('input',renderGraph);$('map-limit').addEventListener('change',renderGraph);$('more').addEventListener('click',()=>loadGraph(true));$('load-all').addEventListener('click',loadAll);
  $('filters').addEventListener('submit',event=>{event.preventDefault();if(invalid)return;filters={};if($('type').value)filters.type=$('type').value;if($('relation').value)filters.relation=$('relation').value;if($('author').value)filters.author=$('author').value;nodes=[];edges=[];cursor=null;renderGraph();loadGraph();});
  document.querySelectorAll('[data-view]').forEach(button=>button.addEventListener('click',()=>{for(const view of ['graph','ontology','diagnostics'])$(view).hidden=view!==button.dataset.view;document.querySelectorAll('[data-view]').forEach(item=>item.setAttribute('aria-pressed',String(item===button)));}));
  $('attach').addEventListener('submit',async event=>{event.preventDefault();$('connect').disabled=true;

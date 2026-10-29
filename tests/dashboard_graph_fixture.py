@@ -1,10 +1,12 @@
 """Vault sintetico per tests/dashboard_graph_smoke.js: 120 nodi, catena causale, storia Git con due autori, server locale.
 
-Uso: python tests/dashboard_graph_fixture.py <nuova-cartella>   (crea il vault, avvia il servizio e stampa l'URL di sessione)
+Uso: python tests/dashboard_graph_fixture.py <nuova-cartella> [--nodi N]   (crea il vault, avvia il servizio e stampa l'URL di sessione)
+Con --nodi più grande di 120 ogni nodo ha anche un arco verso un altro nodo scelto in modo deterministico (grafo denso).
 """
 import argparse
 import os
 from pathlib import Path
+import random
 import subprocess
 import sys
 import threading
@@ -26,16 +28,22 @@ def git(root, *args, author='Ada'):
     subprocess.run(['git', *args], cwd=root, env=env, check=True, capture_output=True)
 
 
-def create(destination):
+def create(destination, nodi=120):
     root = Path(destination).resolve()
     root.mkdir()
     for directory in ('wiki', 'raw', '.graph', '.teseo'):
         (root / directory).mkdir()
     (root / '.teseo/project.json').write_bytes((ROOT / 'tests/fixtures/dashboard/project-v1.json').read_bytes())
     (root / 'Wiki reference.md').write_text(SCHEMA, encoding='utf-8')
-    for number in range(120):
+    for number in range(nodi):
+        targets = [(number + 1) % nodi]
+        if nodi > 120:
+            chord = random.Random(number).randrange(nodi)
+            if chord not in (number, targets[0]):
+                targets.append(chord)
+        usa = ', '.join(f'"[[Nodo {t:03}]]"' for t in targets)
         (root / f'wiki/Nodo {number:03}.md').write_text(
-            f'---\ntipo: concetto\ntags: [sintetico]\naggiornato: 2026-10-01\nusa: "[[Nodo {(number + 1) % 120:03}]]"\n---\n# Nodo {number:03}\nTesto.\n', encoding='utf-8')
+            f'---\ntipo: concetto\ntags: [sintetico]\naggiornato: 2026-10-01\nusa: [{usa}]\n---\n# Nodo {number:03}\nTesto.\n', encoding='utf-8')
     for number in range(4):
         effect = f'causa: "[[Evento {number + 1}]]"\n' if number < 3 else ''
         detail = 'relazioni_dettaglio:\n  "[[Evento 1]]": {confidenza: alta, evidenza: "Lo afferma la call"}\n' if number == 0 else ''
@@ -54,7 +62,9 @@ def create(destination):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('destination', help='Nuova directory sintetica, deve essere assente')
-    vault = create(parser.parse_args().destination)
+    parser.add_argument('--nodi', type=int, default=120, help='numero di pagine Nodo (predefinito 120)')
+    arguments = parser.parse_args()
+    vault = create(arguments.destination, arguments.nodi)
     server = DashboardServer()
     server.registry.attach(str(vault))
     print(server.launch_url, flush=True)

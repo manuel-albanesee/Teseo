@@ -21,6 +21,8 @@ PAGE = """<!doctype html>
 <p id="notice" role="status" aria-live="polite"></p>
 <p id="operation" role="status" aria-live="polite"></p>
 <details><summary>Operazioni persistenti e recovery</summary><button id="list-operations" type="button">Leggi operazioni del vault</button><div id="operation-list"></div></details>
+<details id="pages-section" hidden><summary>Pagine · crea, rinomina, elimina</summary><div id="pages-panel"></div></details>
+<details id="adopt-section" hidden><summary>Adotta questo vault</summary><div id="adopt-panel"></div></details>
 <details><summary>Cicli ingest e lint</summary><div id="skill-panel"></div><button id="skill-dispatch" type="button">Ricontrolla coda</button></details>
 <details><summary>Risposte e decisioni condivise</summary><div id="shared-panel"></div></details>
 <details><summary>Pubblicazione Git dei dati</summary><div id="sync-panel"></div></details>
@@ -30,9 +32,9 @@ PAGE = """<!doctype html>
 <div><label for="relation">Relazione</label><select id="relation" disabled><option value="">Tutte le relazioni</option></select></div>
 <div><label for="author">Autore</label><select id="author" disabled><option value="">Tutti gli autori</option></select></div>
 <div><label for="search">Cerca nei nodi caricati</label><input id="search" type="search" disabled></div>
-<div><label for="map-limit">Nodi nel disegno (12–500)</label><input id="map-limit" type="number" min="12" max="500" value="200" disabled></div><button id="apply" disabled>Applica filtri</button></form>
+<div><label for="map-limit">Nodi nel disegno (12–2000)</label><input id="map-limit" type="number" min="12" max="2000" value="200" disabled></div><button id="apply" disabled>Applica filtri</button></form>
 <p id="counts" class="hint">Nessun dato caricato.</p><div id="map"></div>
-<div class="columns"><section aria-label="Elenco nodi"><h3>Nodi</h3><ul id="nodes" class="node-list"></ul><button id="more" hidden>Carica altri</button></section>
+<div class="columns"><section aria-label="Elenco nodi"><h3>Nodi</h3><ul id="nodes" class="node-list"></ul><button id="more" hidden>Carica altri</button> <button id="load-all" hidden>Carica fino al limite del disegno</button></section>
 <section id="detail" aria-label="Dettaglio nodo" tabindex="-1"><h3>Dettaglio nodo</h3><p>Seleziona un nodo dalla lista o dal grafo.</p></section></div>
 <details><summary>Relazioni caricate · sorgente → destinazione</summary><ul id="edges"></ul></details>
 </section>

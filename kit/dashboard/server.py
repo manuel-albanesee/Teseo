@@ -24,6 +24,9 @@ from .jobs import RebuildCoordinator
 from .ontology_preview import PreviewService
 from .ontology_apply import ApplyService
 from .graph_edit import GraphEditService
+from .page_ops import PageOpsService
+from .adoption import AdoptionService
+from .diagnostics_export import DiagnosticsExporter
 from .operations import SkillCoordinator
 from .adapters import default_adapters
 from .shared_service import SharedService
@@ -53,12 +56,15 @@ class DashboardServer(ThreadingHTTPServer):
         self.read_api = ReadAPI(self.registry, self.operations)
         self.previews = PreviewService(self.registry)
         self.edits = GraphEditService(self.registry)
-        self.applies = ApplyService(self.registry, self.previews, self.edits, self._publish_edit)
+        self.page_ops = PageOpsService(self.registry)
+        self.applies = ApplyService(self.registry, self.previews, self.edits, self._publish_edit, self.page_ops)
         self.operations.publication_of = self.applies.publication
         self.skills = SkillCoordinator(self.registry, default_adapters())
         self.shared = SharedService(self.registry)
         self.sync = SyncService(self.registry)
         self.receiver = Receiver(self.registry, self.sync)
+        self.adoption = AdoptionService(self.registry)
+        self.exporter = DiagnosticsExporter(self.registry, self.read_api, self.sync)
         self.receiver_apply = ReceiverApplyService(self.registry, self.sync, self.receiver)
         self.operations.note_activity = self.applies.active
         self.session_token = secrets.token_urlsafe(32)
@@ -321,6 +327,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 else:
                     self._reply(202, self.server.applies.submit_edit(parts[4], node_id, body, self._header('If-Match')))
                 return
+            if len(parts) == 7 and parts[1:4] == ['api', 'v1', 'vaults'] and parts[5] == 'pages' and parts[6] in ('preview', 'apply'):
+                if parts[6] == 'preview':
+                    self._reply(200, self.server.page_ops.preview(parts[4], body))
+                else:
+                    self._reply(202, self.server.applies.submit_pages(parts[4], body, self._header('If-Match')))
+                return
+            if len(parts) == 7 and parts[1:4] == ['api', 'v1', 'vaults'] and parts[5] == 'adopt' and parts[6] in ('preview', 'apply'):
+                self._reply(200, (self.server.adoption.preview if parts[6] == 'preview' else self.server.adoption.apply)(parts[4], body))
+                return
             if len(parts) == 7 and parts[1:4] == ['api', 'v1', 'vaults'] and parts[5:] == ['ontology', 'apply']:
                 self._reply(202, self.server.applies.submit(parts[4], body, self._header('If-Match')))
                 return
@@ -364,6 +379,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                         reader = {"status": self.server.read_api.status, "graph": self.server.read_api.graph,
                                   "ontology": self.server.read_api.ontology,
                                   "authors": self.server.read_api.authors,
+                                  "diagnostics-export": self.server.exporter.export,
                                   "causal": self.server.read_api.causal,
                                   "neighbors": self.server.read_api.neighbors,
                                   "operations": self.server.operations.list,
@@ -405,7 +421,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                       'preview_limit': 422, 'preview_parse_failed': 422, 'preview_encoding': 422,
                       'ontology_manual': 422, 'catalog_adoption_required': 422,
                       'invalid_schema': 422, 'edit_invalid': 422, 'edit_manual': 422, 'edit_unknown_relation': 422,
-                      'edit_unknown_target': 422, 'edit_noop': 422, 'edit_duplicate': 409, 'edit_missing': 409}.get(error.code, status)
+                      'edit_unknown_target': 422, 'edit_noop': 422, 'edit_duplicate': 409, 'edit_missing': 409, 'already_adopted': 409, 'adoption_conflict': 409,
+                      'adoption_unavailable': 422, 'adoption_consent': 422}.get(error.code, status)
             status = {'manual_confirmation_required': 422, 'apply_platform_unavailable': 422,
                       'precondition_required': 428, 'migration_manual': 422, 'migration_collision': 409,
                       'migration_invalid': 422, 'invalid_migrations': 400, 'path_too_long': 422, 'shared_mapping_unavailable': 422,
