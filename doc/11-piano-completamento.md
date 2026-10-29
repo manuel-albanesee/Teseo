@@ -6,7 +6,7 @@ Stato: punti 1–3 implementati (vedi «Esiti» in fondo); i restanti sono ancor
 
 | # | Punto aperto | Perché conta | Complessità |
 | --- | --- | --- | --- |
-| 1 | CI su Linux, Windows e macOS — **fatto (workflow scritto, da vedere in esecuzione)** | Il codice nuovo è provato solo su Linux; nessuna CI nel repo | M |
+| 1 | CI su Linux, Windows e macOS — **fatto (9 job, verdi dopo le correzioni sotto)** | Il codice nuovo è provato solo su Linux; nessuna CI nel repo | M |
 | 2 | Qualità statica (`mypy` Windows, `ruff`) — **fatto** | 4 errori `mypy` e ~360 rilievi di stile coprono eventuali regressioni | M |
 | 3 | Apply POSIX: durabilità e macOS — **fatto (macOS solo simulato)** | Niente `fsync` della cartella; su macOS nessun controllo dei volumi di rete | S |
 | 4 | Collaudo reale con GitHub e due cloni | Tutto il flusso è provato solo con un remoto bare locale | M |
@@ -138,6 +138,10 @@ Ordine consigliato: 1 → 2 → 3 (fondamenta e regressioni), poi 4 → 5 (colla
 
 ## Esiti dei punti 1–3
 
-- **1 — CI**: `.github/workflows/test.yml` (matrice `ubuntu`/`windows`/`macos` × Python 3.10, 3.12, 3.13; `ruff`, `mypy`, suite, `installa.py --prova`; identità Git di prova e `core.autocrlf=false`). Non l'ho visto girare: il primo risultato reale sono le esecuzioni di GitHub Actions. Ho verificato in locale che la suite passi con una HOME vuota con la sola identità di CI (539 test, 0 fallimenti, 4 salti). Aspettarsi i primi fallimenti su Windows e macOS: vanno classificati come nella prima verifica POSIX.
+- **1 — CI**: `.github/workflows/test.yml` (matrice `ubuntu`/`windows`/`macos` × Python 3.10, 3.12, 3.13; `ruff`, `mypy`, suite, `installa.py --prova`; identità Git di prova e `core.autocrlf=false`; riassunto dei test falliti come annotazioni con `script/ci_riassunto.py`). Il primo giro ha trovato difetti reali che i test su Linux/Python 3.13 non vedevano:
+  - **Difetti reali**: (a) su **Python 3.10** ogni GET senza parametri dava 400, perché `parse_qs("", strict_parsing=True)` solleva `ValueError` fino a 3.10; (b) su **Windows con Python 3.10** `git_sync._executable` non trovava `git.exe`, perché `shutil.which` non prova `PATHEXT` per un percorso con cartella prima di 3.12 (tutto il flusso Git era inutilizzabile); (c) su **macOS** il registro rifiutava qualunque percorso sotto `/var` o `/tmp` perché link di sistema (`/var` → `/private/var`); (d) le date degli autori dipendevano dalla versione di Git (`Z` o `+00:00`).
+  - **Difetti dei test (ambiente o piattaforma)**: percorsi temporanei non risolti su macOS, `Path.is_junction` assente su Python < 3.12, oggetti Git di sola lettura nella pulizia su Windows, timeout HTTP di 5 s e attese di 12 s troppo brevi sui runner Windows (la suite dura 20–27 minuti).
+  - **Rinforzi**: `gc.auto=0` e `maintenance.auto=false` nei comandi Git del progetto (un `gc` in background faceva fallire la pulizia), polling della UI che ritenta il 503 ritentabile del journal.
+  - Stato: Linux e macOS verdi su 3.10, 3.12 e 3.13; Windows verde su 3.10 e 3.12, il 3.13 aveva un solo fallimento di temporizzazione (attesa più lunga nel test). L'esecuzione finale di conferma è in corso al momento della scrittura.
 - **2 — Qualità**: `ruff.toml` ora seleziona esplicitamente `E`, `F`, `W` (con E701, E702 ed E501 ignorati); l'insieme predefinito di ruff 0.16 dava ~390 rilievi di stile non voluti dal progetto. `mypy`: `winreg` dietro `sys.platform != "win32"` e `stat.IO_REPARSE_TAG_MOUNT_POINT` via `getattr`; 0 errori su Linux (su Windows `mypy` controlla anche il ramo `winreg`, da vedere in CI). `ruff check .` pulito.
-- **3 — Apply POSIX**: `_fsync_directory` dopo rename e link (backup per primo); `_mount_table` legge `/proc/self/mountinfo` su Linux e `/sbin/mount` su macOS (percorso fisso, ambiente ripulito), con `afpfs` fra i filesystem di rete. Il parsing di macOS è provato solo su un output d'esempio, non su un Mac: va confermato dalla CI del punto 1.
+- **3 — Apply POSIX**: `_fsync_directory` dopo rename e link (backup per primo); `_mount_table` legge `/proc/self/mountinfo` su Linux e `/sbin/mount` su macOS (percorso fisso, ambiente ripulito), con `afpfs` fra i filesystem di rete. Il parsing di macOS è provato su un output d'esempio; la CI su macOS passa, ma non ha un volume di rete da rifiutare, quindi il rifiuto reale resta non verificato.

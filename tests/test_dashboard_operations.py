@@ -200,7 +200,7 @@ class Operations(unittest.TestCase):
             {'action':'rollback','mode':'manual_paused','external_writers_paused':True,'semantic_reviewed':True},
             headers={'If-Match':'"'+capture_snapshot(self.root).digest+'"'})
         self.assertEqual(status,202,raw)
-        for _ in range(120):
+        for _ in range(1200):
             if not self.server.applies.active(self.vault_id):break
             time.sleep(.1)
         self.assertEqual(self.get('operations/'+job['operation_id'])[2]['state'],'rolled_back')

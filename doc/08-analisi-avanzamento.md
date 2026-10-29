@@ -850,3 +850,7 @@ Prima delle correzioni: 469 test, 2 fallimenti, 15 errori, 29 salti. Nessun dife
 - **Visualizzazione e avviso** (fase 7): layout a forze con zoom, pan, fit, colori per tipo, vicinato espandibile e limite configurabile; filtro autore, catena causale ed editor nel dettaglio del nodo; `teseo_git.py avvisi` e hook `SessionStart` (Claude e Codex).
 
 Verifica: suite completa su Linux: 522 test, 0 fallimenti, 4 salti, tutti Windows (junction NTFS, `SO_EXCLUSIVEADDRUSE`). Smoke in Chromium (Playwright) con `tests/dashboard_graph_smoke.js` su vault sintetico di 124 nodi: 18 controlli superati, nessun errore in console né violazione CSP; la modifica scrive davvero il file e il layout assestato resta nell'area visibile. Nessun collaudo con repository GitHub reale, credenziali reali o client AI autenticati. `mypy` segnala gli stessi 4 errori preesistenti (`winreg`, `IO_REPARSE_TAG_MOUNT_POINT`); `ruff` non ha nuovi errori di classe F.
+
+## Incremento — CI su tre sistemi
+
+Workflow `.github/workflows/test.yml`: Linux, Windows e macOS con Python 3.10, 3.12 e 3.13. Il primo giro ha trovato quattro difetti reali (query vuota su Python 3.10, `git.exe` non trovato su Windows con Python 3.10, registro rifiutato sotto i link di sistema di macOS, date degli autori dipendenti dalla versione di Git) e diversi difetti dei test; l'elenco e la classificazione sono in [doc/11](11-piano-completamento.md). Provati qui anche `ruff.toml` con `select = ["E", "F", "W"]` e `mypy` senza errori. La suite su Windows dura 20–27 minuti.
