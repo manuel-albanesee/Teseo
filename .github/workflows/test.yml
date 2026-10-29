@@ -45,6 +45,13 @@ jobs:
           ruff check .
           mypy
       - name: Suite
-        run: python -m unittest discover -s tests -v
+        shell: bash
+        run: |
+          set -o pipefail
+          python -m unittest discover -s tests -v 2>&1 | tee suite.log
+      - name: Riassunto dei fallimenti
+        if: failure()
+        shell: bash
+        run: python script/ci_riassunto.py suite.log
       - name: Installer in prova
         run: python installa.py --prova
