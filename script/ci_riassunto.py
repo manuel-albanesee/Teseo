@@ -29,5 +29,7 @@ def riassumi(log):
 
 
 if __name__ == "__main__":
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")  # la console Windows è cp1252: i nomi dei test e i messaggi sono in italiano
     testo = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace") if len(sys.argv) > 1 else ""
     print("\n".join(riassumi(testo)))

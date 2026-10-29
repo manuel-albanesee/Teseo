@@ -154,3 +154,30 @@ class Distribution(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+@unittest.skipIf(__import__('os').name == 'nt', 'Link di sistema POSIX')
+class SystemLinks(unittest.TestCase):
+    def test_only_root_owned_links_directly_under_the_filesystem_root_are_trusted(self):
+        from types import SimpleNamespace
+        from kit.dashboard.storage import _system_link
+        root_owned, user_owned = SimpleNamespace(st_uid=0), SimpleNamespace(st_uid=501)
+        with mock.patch.object(Path, 'is_symlink', return_value=True):
+            with mock.patch.object(Path, 'lstat', return_value=root_owned):
+                self.assertTrue(_system_link(Path('/var')))
+                self.assertFalse(_system_link(Path('/var/folders')))  # non è nella radice
+                self.assertFalse(_system_link(Path('/')))
+            with mock.patch.object(Path, 'lstat', return_value=user_owned):
+                self.assertFalse(_system_link(Path('/var')))  # un link non di root non è un link di sistema
+        with mock.patch.object(Path, 'is_symlink', return_value=False):
+            self.assertFalse(_system_link(Path('/var')))
+
+    def test_a_user_link_in_the_registry_path_is_still_refused(self):
+        with tempfile.TemporaryDirectory() as temp:
+            real = Path(temp).resolve() / 'reale'
+            real.mkdir()
+            link = Path(temp).resolve() / 'link'
+            link.symlink_to(real)
+            with self.assertRaises(ContractError) as caught:
+                RegistryStore(link / 'vaults.json')
+            self.assertEqual(caught.exception.code, 'linked_path')

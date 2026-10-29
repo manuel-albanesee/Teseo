@@ -17,7 +17,7 @@ class Posix(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()
 
     def test_move_new_refuses_a_target_recreated_by_an_external_writer(self):
         staged, target = self.root / 'staged', self.root / 'target'

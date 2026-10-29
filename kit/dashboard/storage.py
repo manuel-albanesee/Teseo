@@ -45,6 +45,16 @@ def _no_link(path):
         raise ContractError("linked_path", "Symlink e junction non ammessi nello storage", path.name)
 
 
+def _system_link(path):
+    """Link di sistema nella radice (macOS: /var, /tmp, /etc → /private/...): posseduti da root, non modificabili da un utente."""
+    if os.name == "nt" or path == Path(path.anchor) or path.parent != Path(path.anchor):
+        return False
+    try:
+        return path.is_symlink() and path.lstat().st_uid == 0
+    except OSError:
+        return False
+
+
 def _local_directory(root):
     for relative in (".teseo", ".teseo/local"):
         _no_link(root / relative)

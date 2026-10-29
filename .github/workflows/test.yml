@@ -44,6 +44,27 @@ jobs:
         run: |
           ruff check .
           mypy
+      - name: Diagnosi Git (temporanea)
+        # Windows: la suite riporta git_unavailable; qui si vede quale eccezione lo causa e dove sta git.
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os, subprocess, sys, shutil
+          sys.path.insert(0, ".")
+          from kit.dashboard import git_sync
+          print("::notice title=git_sync._executable::%s" % git_sync._executable("git"))
+          print("::notice title=shutil.which::%s" % shutil.which("git"))
+          print("::notice title=PATH assoluti::%s" % [d for d in os.environ.get("PATH", "").split(os.pathsep) if d and os.path.isabs(d)][:6])
+          exe = git_sync._executable("git") or shutil.which("git")
+          try:
+              done = subprocess.run([exe, "--version"], capture_output=True, env=git_sync._env(), shell=False, timeout=30)
+              print("::notice title=git --version::%s %s" % (done.returncode, done.stdout.decode()[:80]))
+              done = subprocess.run([exe, "-c", "core.attributesFile=" + os.devnull, "-c", "core.hooksPath=" + os.devnull, "status"], capture_output=True, env=git_sync._env(), cwd=".", shell=False, timeout=30)
+              print("::notice title=git status con -c NUL::%s %s" % (done.returncode, (done.stdout + done.stderr).decode(errors="replace")[:200].replace("\n", " ")))
+          except Exception as error:
+              print("::error title=eccezione::%s %s" % (type(error).__name__, error))
+          PY
       - name: Suite
         shell: bash
         run: |

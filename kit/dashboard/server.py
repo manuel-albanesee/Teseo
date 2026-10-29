@@ -340,8 +340,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return
             parts = target.path.split("/")
             try:
-                raw = parse_qs(target.query, keep_blank_values=True, strict_parsing=True,
-                               encoding="utf-8", errors="strict", max_num_fields=8)
+                # Python 3.10: parse_qs("", strict_parsing=True) solleva ValueError; da 3.11 restituisce {}. Query vuota = nessun parametro.
+                raw = (parse_qs(target.query, keep_blank_values=True, strict_parsing=True,
+                                encoding="utf-8", errors="strict", max_num_fields=8) if target.query else {})
                 if any(len(values) != 1 for values in raw.values()):
                     raise ValueError
                 parameters = {key: values[0] for key, values in raw.items()}

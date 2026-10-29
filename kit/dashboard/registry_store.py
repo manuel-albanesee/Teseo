@@ -5,7 +5,7 @@ import tempfile
 from uuid import UUID
 
 from .contracts import ContractError, canonical_json, parse_json
-from .storage import _no_link
+from .storage import _no_link, _system_link
 
 
 class RegistryStore:
@@ -14,7 +14,8 @@ class RegistryStore:
         if not path.is_absolute() or str(path).startswith(("\\", "//")):
             raise ContractError("invalid_registry", "Il registro richiede un file locale assoluto")
         for parent in (*reversed(path.parents), path):
-            _no_link(parent)
+            if not _system_link(parent):  # /var e /tmp di macOS sono link di root verso /private: ammessi; ogni altro link no
+                _no_link(parent)
         self.path = path.resolve()
         if not self.path.parent.is_dir():
             raise ContractError("invalid_registry", "La directory del registro deve già esistere")

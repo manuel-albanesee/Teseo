@@ -22,7 +22,7 @@ class CopilotIntegration(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="teseo copilot ")
         self.addCleanup(self.temp.cleanup)
-        self.vault = Path(self.temp.name) / "Vault con spazi"
+        self.vault = Path(self.temp.name).resolve() / "Vault con spazi"  # macOS: /var → /private/var
         with contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(installa.installa(self.vault, esempio=True), 0)
 

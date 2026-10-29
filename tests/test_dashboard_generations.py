@@ -22,7 +22,7 @@ class Generations(unittest.TestCase):
     def setUp(self):
         temp = tempfile.TemporaryDirectory(prefix="teseo generations ")
         self.addCleanup(temp.cleanup)
-        self.root = Path(temp.name)
+        self.root = Path(temp.name).resolve()  # macOS: /var è un link a /private/var e il codice lavora su percorsi risolti
         (self.root / "wiki").mkdir()
         (self.root / ".teseo").mkdir()
         (self.root / ".graph").mkdir()

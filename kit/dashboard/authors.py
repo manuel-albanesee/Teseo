@@ -28,6 +28,11 @@ def history_head(root):
     return out if re.fullmatch(r'[0-9a-f]{40}|[0-9a-f]{64}', out) else None
 
 
+def _date(value):
+    """Data ISO 8601 stabile: Git recente scrive «Z» per UTC, le versioni precedenti «+00:00»."""
+    return value[:-1] + '+00:00' if value.endswith('Z') else value
+
+
 def _name(value):
     return _CONTROL.sub('', value).strip()[:256] or None
 
@@ -73,10 +78,10 @@ def collect(root, pages):
                 continue
             item = info.get(page)
             if item is None:
-                item = info[page] = dict(modificato_da=_name(name), modificato_il=date, agente=agent.group(1) if agent else None,
+                item = info[page] = dict(modificato_da=_name(name), modificato_il=_date(date), agente=agent.group(1) if agent else None,
                                          modifiche=0, closed=False)
             if item['closed']:
                 continue
-            item.update(creato_da=_name(name), creato_il=date, modifiche=item['modifiche'] + 1, closed=status == 'A')
+            item.update(creato_da=_name(name), creato_il=_date(date), modifiche=item['modifiche'] + 1, closed=status == 'A')
     return sorted((page, item['creato_da'], item['creato_il'], item['modificato_da'], item['modificato_il'],
                    item['agente'], item['modifiche']) for page, item in info.items())

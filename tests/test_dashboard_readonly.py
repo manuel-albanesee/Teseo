@@ -23,7 +23,7 @@ class ReadonlyHTTP(unittest.TestCase):
     def setUp(self):
         temp = tempfile.TemporaryDirectory(prefix="teseo readonly ")
         self.addCleanup(temp.cleanup)
-        self.root = Path(temp.name)
+        self.root = Path(temp.name).resolve()  # macOS: /var → /private/var
         (self.root / "wiki").mkdir()
         (self.root / "raw").mkdir()
         (self.root / ".graph").mkdir()
