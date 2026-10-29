@@ -12,6 +12,7 @@ from pathlib import Path
 import re
 import sqlite3
 import stat
+import sys
 import unicodedata
 from uuid import UUID
 
@@ -35,7 +36,7 @@ def is_junction(path: str | Path) -> bool:
     try:
         info = path.lstat()
         # Solo i mount point NTFS: il bit generico di reparse point vale anche per OneDrive/Cloud Files e dedup.
-        return (getattr(info, "st_reparse_tag", 0) == stat.IO_REPARSE_TAG_MOUNT_POINT) and not path.is_symlink()
+        return (getattr(info, "st_reparse_tag", 0) == getattr(stat, "IO_REPARSE_TAG_MOUNT_POINT", None)) and not path.is_symlink()
     except OSError:
         return False
 
@@ -98,8 +99,10 @@ _LONGEST_INTERNAL_PATH = max(len(path) for path in (
 
 
 def _long_paths_enabled() -> bool:
+    if sys.platform != "win32":  # winreg esiste solo su Windows; il controllo di piattaforma è anche quello che mypy capisce
+        return False
+    import winreg
     try:
-        import winreg
         with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\FileSystem") as key:
             return winreg.QueryValueEx(key, "LongPathsEnabled")[0] == 1
     except OSError:

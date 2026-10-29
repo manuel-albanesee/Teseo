@@ -3,8 +3,12 @@
 target-version = "py310"
 exclude = ["tests/fixtures", "teseo-publisher-*"]
 
+# Regole volute: errori di sintassi e di nome (E, F) e avvisi di spazi (W). Il resto dell'insieme predefinito di ruff
+# (stile, modernizzazione, semplificazioni) non è una policy di questo progetto: si decide regola per regola, non in blocco.
+# E501: le righe lunghe sono comuni e volute nello stile compatto.
 [lint]
-ignore = ["E701", "E702"]
+select = ["E", "F", "W"]
+ignore = ["E701", "E702", "E501"]
 
 [lint.per-file-ignores]
 "kit/graph/*" = ["E731", "E741", "F401"]

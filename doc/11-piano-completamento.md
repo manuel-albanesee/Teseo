@@ -1,14 +1,14 @@
 # 11 — Piano per chiudere i punti aperti
 
-Stato: piano, non implementato. Parte dallo stato descritto in [08](08-analisi-avanzamento.md) e [10](10-editor-grafo-e-autori.md): le fasi 1–7 della roadmap collaborativa sono consegnate e provate su Linux con remoto Git locale. Qui sono raccolti i punti che restano aperti, in ordine di dipendenza, con file, rischi, verifica e stima. Ogni voce è consegnabile da sola (un branch `codex/<scopo>`), senza nuove dipendenze, con stile compatto e commenti in italiano.
+Stato: punti 1–3 implementati (vedi «Esiti» in fondo); i restanti sono ancora piano. Parte dallo stato descritto in [08](08-analisi-avanzamento.md) e [10](10-editor-grafo-e-autori.md): le fasi 1–7 della roadmap collaborativa sono consegnate e provate su Linux con remoto Git locale. Qui sono raccolti i punti che restano aperti, in ordine di dipendenza, con file, rischi, verifica e stima. Ogni voce è consegnabile da sola (un branch `codex/<scopo>`), senza nuove dipendenze, con stile compatto e commenti in italiano.
 
 ## Riepilogo
 
 | # | Punto aperto | Perché conta | Complessità |
 | --- | --- | --- | --- |
-| 1 | CI su Linux, Windows e macOS | Il codice nuovo è provato solo su Linux; nessuna CI nel repo | M |
-| 2 | Qualità statica (`mypy` Windows, `ruff`) | 4 errori `mypy` e ~360 rilievi di stile coprono eventuali regressioni | M |
-| 3 | Apply POSIX: durabilità e macOS | Niente `fsync` della cartella; su macOS nessun controllo dei volumi di rete | S |
+| 1 | CI su Linux, Windows e macOS — **fatto (workflow scritto, da vedere in esecuzione)** | Il codice nuovo è provato solo su Linux; nessuna CI nel repo | M |
+| 2 | Qualità statica (`mypy` Windows, `ruff`) — **fatto** | 4 errori `mypy` e ~360 rilievi di stile coprono eventuali regressioni | M |
+| 3 | Apply POSIX: durabilità e macOS — **fatto (macOS solo simulato)** | Niente `fsync` della cartella; su macOS nessun controllo dei volumi di rete | S |
 | 4 | Collaudo reale con GitHub e due cloni | Tutto il flusso è provato solo con un remoto bare locale | M |
 | 5 | Collaudo con editor non cooperanti (Obsidian) | L'esclusione degli scrittori esterni è solo dichiarata | M |
 | 6 | Client AI autenticati (passo 4) | L'automazione nativa è non verificata, resta il fallback manuale per tre client | L |
@@ -135,3 +135,9 @@ Ordine consigliato: 1 → 2 → 3 (fondamenta e regressioni), poi 4 → 5 (colla
 ## Come si verifica il piano nel suo insieme
 
 `python -m unittest discover -s tests -v`, `python installa.py --prova`, `ruff check .`, `mypy` sui tre sistemi (punti 1–2); smoke Playwright (`tests/dashboard_graph_smoke.js`, `tests/dashboard_autosync_smoke.js`); i rapporti di collaudo in `doc/evidence/step-11/` (punti 4–6) con data, versioni e esito; `doc/08` aggiornato a ogni voce chiusa.
+
+## Esiti dei punti 1–3
+
+- **1 — CI**: `.github/workflows/test.yml` (matrice `ubuntu`/`windows`/`macos` × Python 3.10, 3.12, 3.13; `ruff`, `mypy`, suite, `installa.py --prova`; identità Git di prova e `core.autocrlf=false`). Non l'ho visto girare: il primo risultato reale sono le esecuzioni di GitHub Actions. Ho verificato in locale che la suite passi con una HOME vuota con la sola identità di CI (539 test, 0 fallimenti, 4 salti). Aspettarsi i primi fallimenti su Windows e macOS: vanno classificati come nella prima verifica POSIX.
+- **2 — Qualità**: `ruff.toml` ora seleziona esplicitamente `E`, `F`, `W` (con E701, E702 ed E501 ignorati); l'insieme predefinito di ruff 0.16 dava ~390 rilievi di stile non voluti dal progetto. `mypy`: `winreg` dietro `sys.platform != "win32"` e `stat.IO_REPARSE_TAG_MOUNT_POINT` via `getattr`; 0 errori su Linux (su Windows `mypy` controlla anche il ramo `winreg`, da vedere in CI). `ruff check .` pulito.
+- **3 — Apply POSIX**: `_fsync_directory` dopo rename e link (backup per primo); `_mount_table` legge `/proc/self/mountinfo` su Linux e `/sbin/mount` su macOS (percorso fisso, ambiente ripulito), con `afpfs` fra i filesystem di rete. Il parsing di macOS è provato solo su un output d'esempio, non su un Mac: va confermato dalla CI del punto 1.

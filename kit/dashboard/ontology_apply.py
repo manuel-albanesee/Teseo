@@ -5,6 +5,8 @@ import html
 import os
 from pathlib import Path
 import re
+import subprocess
+import sys
 import threading
 from uuid import uuid4
 
@@ -24,25 +26,67 @@ def _confirmed(body):
         raise ContractError('manual_confirmation_required', 'Sospendere editor/hook esterni e revisionare diff, migrazioni e significato; apply automatico disabilitato')
 
 
-_REMOTE_FS = frozenset({'nfs', 'nfs4', 'cifs', 'smb3', 'smbfs', 'afs', 'ncpfs', 'fuse.sshfs', 'fuse.rclone', 'ceph', 'glusterfs'})
+_REMOTE_FS = frozenset({'nfs', 'nfs4', 'cifs', 'smb3', 'smbfs', 'afpfs', 'afs', 'ncpfs', 'fuse.sshfs', 'fuse.rclone', 'ceph', 'glusterfs'})
+_MOUNT_LINE = re.compile(r'^(?P<device>.*?) on (?P<point>/.*) \((?P<type>[^,)]+)(?:,[^)]*)?\)$')
+
+
+def _mounts_linux(text):
+    """[(punto di mount, tipo)] da /proc/self/mountinfo."""
+    found = []
+    for line in text.splitlines():
+        head, _, tail = line.partition(' - ')
+        fields = head.split(' ')
+        if tail and len(fields) > 4:
+            found.append((fields[4].replace('\\040', ' '), tail.split(' ')[0]))
+    return found
+
+
+def _mounts_darwin(text):
+    """[(punto di mount, tipo)] dall'output di `mount` di macOS: «dispositivo on /punto (tipo, opzioni)»."""
+    return [(m['point'], m['type']) for m in map(_MOUNT_LINE.match, text.splitlines()) if m]
+
+
+def _mount_table():
+    if sys.platform == 'darwin':
+        try:  # percorso fisso e ambiente ripulito: mai un `mount` trovato nel PATH o nella cartella corrente
+            done = subprocess.run(['/sbin/mount'], capture_output=True, timeout=5, env={'PATH': '/usr/bin:/bin:/sbin', 'LC_ALL': 'C'}, check=False)
+        except (OSError, subprocess.SubprocessError):
+            return []
+        return _mounts_darwin(done.stdout.decode('utf-8', 'replace'))
+    return _mounts_linux(Path('/proc/self/mountinfo').read_text(encoding='utf-8', errors='replace'))
 
 
 def _filesystem(root):
-    """Tipo di filesystem che contiene root da /proc/self/mountinfo (Linux); None se non determinabile."""
+    """Tipo di filesystem che contiene root (mount con il prefisso più lungo); None se non determinabile."""
     try:
         target, best, kind = str(Path(root).resolve(strict=True)), -1, None
-        for line in Path('/proc/self/mountinfo').read_text(encoding='utf-8', errors='replace').splitlines():
-            head, _, tail = line.partition(' - ')
-            point = head.split(' ')[4].replace('\\040', ' ')
-            if (target == point or target.startswith(point.rstrip('/') + '/')) and len(point) > best and tail:
-                best, kind = len(point), tail.split(' ')[0]
+        for point, fstype in _mount_table():
+            if (target == point or target.startswith(point.rstrip('/') + '/')) and len(point) > best:
+                best, kind = len(point), fstype
         return kind
-    except (OSError, IndexError):
+    except OSError:
         return None
 
 
+def _fsync_directory(path):
+    """fsync della cartella: rende durevole il nome appena spostato o creato (POSIX; su Windows non esiste)."""
+    if os.name == 'nt':
+        return
+    try:
+        descriptor = os.open(path, os.O_RDONLY)
+    except OSError:
+        return  # cartella non apribile in lettura: nessuna garanzia in più da chiedere
+    try:
+        os.fsync(descriptor)
+    except OSError as error:
+        if error.errno not in (errno.EINVAL, errno.ENOTSUP):  # filesystem che non sa sincronizzare le cartelle
+            raise
+    finally:
+        os.close(descriptor)
+
+
 def _local_volume(root):
-    if os.name != 'nt':  # Su POSIX si rifiutano i filesystem di rete noti; dove il tipo non è leggibile (macOS) non c'è controllo.
+    if os.name != 'nt':  # Su POSIX si rifiutano i filesystem di rete noti; dove il tipo non è leggibile non c'è controllo.
         if _filesystem(root) in _REMOTE_FS:
             raise ContractError('apply_platform_unavailable', 'Apply disponibile solo su un volume locale, non su un filesystem di rete')
         return
@@ -65,8 +109,11 @@ def _move_new(staged, target):
         if error.errno not in (errno.EPERM, errno.ENOTSUP, errno.EMLINK, errno.EXDEV) or os.path.lexists(target):
             raise
         os.rename(staged, target)  # filesystem senza hard link: resta solo la finestra di race fra il controllo e il rename
+        _fsync_directory(Path(target).parent)
         return
     os.unlink(staged)
+    for directory in {Path(target).parent, Path(staged).parent}:
+        _fsync_directory(directory)
 
 
 def _replace(target, staged, backup):
@@ -79,6 +126,7 @@ def _replace(target, staged, backup):
     """
     if os.name != 'nt':
         os.rename(target, backup)
+        _fsync_directory(Path(backup).parent)  # il backup deve essere durevole prima che il nome originale si possa perdere
         _move_new(staged, target)
         return
     library = ctypes.WinDLL('kernel32', use_last_error=True)

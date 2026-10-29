@@ -2,6 +2,8 @@
 import _shortpath  # noqa: F401
 import os
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -60,8 +62,46 @@ class Posix(unittest.TestCase):
 
     def test_filesystem_type_is_read_from_mountinfo_with_the_longest_mount_point(self):
         info = ('1 0 8:1 / / rw - ext4 /dev/sda1 rw\n2 1 0:5 / %s rw - nfs4 srv:/x rw\n' % self.root)
-        with mock.patch.object(Path, 'read_text', return_value=info):
+        with mock.patch.object(sys, 'platform', 'linux'), mock.patch.object(Path, 'read_text', return_value=info):
             self.assertEqual(ontology_apply._filesystem(self.root), 'nfs4')
+
+    def test_macos_mount_output_is_parsed_and_network_volumes_are_found(self):
+        output = ('/dev/disk3s1s1 on / (apfs, sealed, local, read-only, journaled)\n'
+                  '/dev/disk3s5 on /System/Volumes/Data (apfs, local, journaled, nobrowse)\n'
+                  '//ada@nas.local/vault on /Volumes/vault (smbfs, nodev, nosuid, mounted by ada)\n'
+                  'nas:/export on /Volumes/nfs share (nfs, nodev)\n')
+        self.assertEqual(ontology_apply._mounts_darwin(output),
+                         [('/', 'apfs'), ('/System/Volumes/Data', 'apfs'), ('/Volumes/vault', 'smbfs'), ('/Volumes/nfs share', 'nfs')])
+        done = subprocess.CompletedProcess([], 0, stdout=output.encode('utf-8'))
+        with mock.patch.object(sys, 'platform', 'darwin'), mock.patch('subprocess.run', return_value=done) as run, \
+                mock.patch.object(Path, 'resolve', return_value=Path('/Volumes/vault/Teseo')):
+            self.assertEqual(ontology_apply._filesystem(self.root), 'smbfs')
+        self.assertEqual(run.call_args.args[0], ['/sbin/mount'])
+        self.assertNotIn('shell', run.call_args.kwargs)
+
+    def test_macos_without_a_readable_mount_table_has_no_check(self):
+        with mock.patch.object(sys, 'platform', 'darwin'), mock.patch('subprocess.run', side_effect=OSError('no mount')):
+            self.assertIsNone(ontology_apply._filesystem(self.root))
+            ontology_apply._local_volume(self.root)
+
+    def test_directories_are_synced_after_a_replace_and_the_backup_first(self):
+        target, staged, backup = self.root / 'nota.md', self.root / 'sub' / 'staged', self.root / 'sub' / 'displaced'
+        (self.root / 'sub').mkdir()
+        target.write_bytes(b'vecchio')
+        staged.write_bytes(b'nuovo')
+        seen = []
+        with mock.patch.object(ontology_apply, '_fsync_directory', side_effect=seen.append):
+            ontology_apply._replace(target, staged, backup)
+        self.assertEqual(seen[0], backup.parent)
+        self.assertEqual(set(seen[1:]), {target.parent, staged.parent})
+
+    def test_fsync_directory_ignores_filesystems_that_cannot_sync_directories_but_not_real_errors(self):
+        import errno
+        with mock.patch('os.fsync', side_effect=OSError(errno.EINVAL, 'no')):
+            ontology_apply._fsync_directory(self.root)
+        with mock.patch('os.fsync', side_effect=OSError(errno.EIO, 'disco')), self.assertRaises(OSError):
+            ontology_apply._fsync_directory(self.root)
+        ontology_apply._fsync_directory(self.root / 'inesistente')
 
 
 if __name__ == '__main__':

@@ -12,7 +12,7 @@ cd Teseo
 python -m venv .venv          # Windows: py -3 -m venv .venv
 # Windows: .\.venv\Scripts\Activate.ps1   ·   macOS/Linux: source .venv/bin/activate
 python -m pip install -r kit/vault/requirements.txt
-python -m pip install pytest ruff mypy
+python -m pip install pytest ruff mypy   # ruff.toml seleziona E, F, W; la CI (.github/workflows/test.yml) esegue ruff, mypy e la suite su Linux, Windows e macOS
 ```
 
 L'unica dipendenza di runtime è PyYAML; pytest, ruff e mypy servono solo per lo sviluppo.
