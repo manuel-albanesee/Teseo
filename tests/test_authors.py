@@ -134,7 +134,12 @@ class AuthorsAPI(unittest.TestCase):
     def test_vault_without_history_has_an_empty_authors_table(self):
         self.assertEqual(len(rebuild(self.root).generation), 64)
         import shutil
-        shutil.rmtree(self.root / '.git')
+        import stat
+
+        def writable(function, path, _error):  # su Windows gli oggetti Git sono di sola lettura
+            os.chmod(path, stat.S_IWRITE)
+            function(path)
+        shutil.rmtree(self.root / '.git', onerror=writable)
         rebuild(self.root)
         status, _, body = self.get('authors')
         self.assertEqual((status, body['authors']), (200, []))

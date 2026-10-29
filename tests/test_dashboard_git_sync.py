@@ -661,3 +661,44 @@ class GitSync(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ExecutableSearch(unittest.TestCase):
+    """_executable: solo voci assolute di PATH, estensioni provate a mano (Python 3.10 su Windows non le prova)."""
+
+    def test_extensions_are_tried_in_order_and_relative_path_entries_are_ignored(self):
+        import tempfile
+        from unittest import mock
+        from kit.dashboard import git_sync
+        with tempfile.TemporaryDirectory() as temp:
+            folder = Path(temp).resolve()
+            (folder / 'git.EXE').write_bytes(b'x')
+            (folder / 'git.EXE').chmod(0o755)
+            with mock.patch.object(git_sync, '_pathext', return_value=['.CMD', '.EXE']), \
+                    mock.patch.dict('os.environ', {'PATH': os.pathsep.join(['relativa', '', str(folder)])}):
+                self.assertEqual(git_sync._executable('git'), str(folder / 'git.EXE'))
+                self.assertIsNone(git_sync._executable('inesistente'))
+
+    def test_a_relative_path_entry_is_never_searched_even_if_it_holds_the_binary(self):
+        import tempfile
+        from unittest import mock
+        from kit.dashboard import git_sync
+        with tempfile.TemporaryDirectory() as temp:
+            (Path(temp) / 'git').write_bytes(b'x')
+            (Path(temp) / 'git').chmod(0o755)
+            with mock.patch.object(git_sync, '_pathext', return_value=['']), mock.patch.dict('os.environ', {'PATH': '.'}):
+                cwd = os.getcwd()
+                os.chdir(temp)
+                try:
+                    self.assertIsNone(git_sync._executable('git'))
+                finally:
+                    os.chdir(cwd)
+
+    def test_pathext_is_empty_extension_on_posix_and_dotted_on_windows(self):
+        from unittest import mock
+        from kit.dashboard import git_sync
+        if os.name == 'nt':
+            with mock.patch.dict('os.environ', {'PATHEXT': '.EXE;.CMD;;bad'}):
+                self.assertEqual(git_sync._pathext(), ['.EXE', '.CMD'])
+        else:
+            self.assertEqual(git_sync._pathext(), [''])

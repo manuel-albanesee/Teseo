@@ -18,7 +18,9 @@ jobs:
   suite:
     name: ${{ matrix.os }} · Python ${{ matrix.python }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 40
+    timeout-minutes: 60
+    env:
+      TESEO_TEST_HTTP_TIMEOUT: "30"  # runner lenti (Windows): i test HTTP usano 5 s di norma
     strategy:
       fail-fast: false
       matrix:

@@ -32,15 +32,24 @@ _SECRET = re.compile(rb'(?:-----BEGIN (?:RSA |EC |DSA |OPENSSH |ENCRYPTED )?PRIV
                      rb'|\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})')
 
 
+def _pathext():
+    """Estensioni eseguibili da provare dopo il nome: solo su Windows, dalla variabile PATHEXT (con un valore di ripiego)."""
+    if os.name != 'nt':
+        return ['']
+    return [e for e in os.environ.get('PATHEXT', '.COM;.EXE;.BAT;.CMD').split(os.pathsep) if e.startswith('.')]
+
+
 def _executable(name):
-    # Windows CreateProcess and shutil.which may otherwise search cwd first.
-    # Vault files must never supply a git.exe/ssh.exe used by the coordinator.
+    # Windows CreateProcess and shutil.which may otherwise search cwd first, and shutil.which does not try PATHEXT for a
+    # path with a directory before Python 3.12 (git.exe was not found on 3.10). So: only absolute PATH entries, extensions
+    # tried by hand. Vault files must never supply a git.exe/ssh.exe used by the coordinator.
     for directory in os.environ.get('PATH', '').split(os.pathsep):
         if not directory or not Path(directory).is_absolute():
             continue
-        found = shutil.which(str(Path(directory) / name))
-        if found:
-            return str(Path(found).resolve(strict=True))
+        for extension in _pathext():
+            candidate = Path(directory) / (name + extension)
+            if candidate.is_file() and os.access(candidate, os.X_OK):
+                return str(candidate.resolve(strict=True))
     return None
 
 
@@ -189,6 +198,7 @@ def _invoke(root, args, *, input=None, env_extra=None, file_transport=False, che
         raise ContractError('git_unavailable', 'Git non disponibile')
     command = [str(Path(executable).resolve()), '-c', 'core.hooksPath=' + os.devnull, '-c', 'core.fsmonitor=false',
                '-c', 'core.autocrlf=false', '-c', 'core.attributesFile=' + os.devnull,
+               '-c', 'gc.auto=0', '-c', 'maintenance.auto=false',  # nessun gc in background: blocca la pulizia su Windows e scrive mentre si lavora
                '-c', 'core.quotePath=false', '-c', 'commit.gpgSign=false', '-c', 'tag.gpgSign=false',
                '-c', 'protocol.ext.allow=never', '-c', 'protocol.file.allow=' + ('always' if file_transport else 'never'),
                '-c', 'http.sslVerify=true', '-c', 'fetch.fsckObjects=true',

@@ -184,7 +184,7 @@ class Junctions(unittest.TestCase):
                 self.assertTrue(is_junction(link))
                 self.assertFalse(is_junction(target))
                 self.assertFalse(is_junction(Path(temp) / "missing"))
-                with mock.patch.object(Path, "is_junction", None):  # Python < 3.12
+                with mock.patch.object(Path, "is_junction", None, create=True):  # Python < 3.12
                     self.assertTrue(is_junction(link))
                     self.assertFalse(is_junction(target))
             finally:

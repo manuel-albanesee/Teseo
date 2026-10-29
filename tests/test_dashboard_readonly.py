@@ -60,7 +60,7 @@ class ReadonlyHTTP(unittest.TestCase):
                 request_headers["X-Teseo-CSRF"] = self.server.csrf_token
         request_headers.update(headers or {})
         body = json.dumps(data).encode("utf-8") if data is not None and not isinstance(data, bytes) else data
-        connection = http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=getattr(self, 'request_timeout', 5))
+        connection = http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=getattr(self, 'request_timeout', float(os.environ.get('TESEO_TEST_HTTP_TIMEOUT', '5'))))  # la CI su Windows è lenta
         try:
             connection.request(method, path, body=body, headers=request_headers)
             response = connection.getresponse()

@@ -69,11 +69,11 @@ SCRIPT = r"""
  }
 
  async function watchOperation(vaultId, identifier) {
-   const run=epoch, poll=++operationPoll;
+   const run=epoch, poll=++operationPoll;let unavailable=0;
    $('rebuild').disabled=true;
    while(run===epoch && poll===operationPoll && !stopping) {
      try {
-       const job=await api('/api/v1/vaults/'+encodeURIComponent(vaultId)+'/operations/'+encodeURIComponent(identifier));
+       const job=await api('/api/v1/vaults/'+encodeURIComponent(vaultId)+'/operations/'+encodeURIComponent(identifier));unavailable=0;
        if(run!==epoch || poll!==operationPoll || stopping)return;
        const terminal=['succeeded','rolled_back','failed','cancelled','blocked_external_change','recovery_required'].includes(job.state)&&!(job.kind==='graph_edit'&&job.publication?.state==='pending');  // la pubblicazione automatica segue l'apply: si continua a leggere finché non ha un esito
        $('operation').textContent=(job.kind==='rebuild'?'Rebuild ':job.kind==='graph_edit'?'Modifica del grafo ':'Operazione note ')+identifier+' · '+job.state;
@@ -83,6 +83,8 @@ SCRIPT = r"""
        if(job.error)$('operation').textContent+=' · '+job.error.code+': '+job.error.message+' '+(job.error.details||[]).join(' · ')+' · Correggi il problema e aggiorna la vista prima di riprovare.';
        if(terminal){$('rebuild').disabled=!state?.capabilities.rebuild;return;}
      } catch(error) {
+       // Journal momentaneamente occupato da una scrittura (503 ritentabile): qualche altro tentativo prima di arrendersi.
+       if(error.code==='operation_unavailable' && ++unavailable<=20){await new Promise(resolve=>setTimeout(resolve,1200));continue;}
        if(run===epoch && poll===operationPoll && !stopping)$('operation').textContent='Stato rebuild '+identifier+' non disponibile: '+error.message+'. Premi Aggiorna vista per riprendere il controllo.';
        return;
      }

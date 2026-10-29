@@ -81,6 +81,9 @@ class EditPublication(unittest.TestCase):
         for _ in range(600):
             status, _, data = self.request('GET', base + 'operations/' + identifier)
             record = json.loads(data)
+            if status != 200:  # lettura del journal occupata (503 ritentabile): si riprova
+                time.sleep(.2)
+                continue
             if record['state'] == 'succeeded' and record['publication'] and record['publication']['state'] != 'pending':
                 break
             time.sleep(.1)
