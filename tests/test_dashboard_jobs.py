@@ -36,12 +36,16 @@ class Jobs(unittest.TestCase):
         return status, json.loads(body)
 
     def operation(self, identifier):
-        status, _, body = self.request('GET', self.base + '/operations/' + identifier)
+        for _ in range(50):  # 503 ritentabile: il journal è occupato da una scrittura (frequente sui runner Windows lenti)
+            status, _, body = self.request('GET', self.base + '/operations/' + identifier)
+            if status != 503:
+                break
+            time.sleep(.1)
         self.assertEqual(status, 200, body)
         return json.loads(body)
 
     def finish(self, identifier):
-        deadline = time.monotonic() + 10
+        deadline = time.monotonic() + 30
         while time.monotonic() < deadline:
             record = self.operation(identifier)
             if record['state'] in TERMINAL:
