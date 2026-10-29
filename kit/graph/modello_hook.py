@@ -481,7 +481,8 @@ def inizio_sessione(evento, stato, sessione, processo):
     sessione["inizio"] = [adesso(), modello] if modello else None
     processo["modello"] = modello
     testo_avviso = AVVISO_OPUS if classe(modello) == "opus" else avviso(sessione, modello)
-    messaggi = [m for m in (testo_avviso, avvisi.remoti(VAULT)) if m]
+    # /clear e /compact non sono un nuovo avvio: niente fetch di rete e niente attesa a ogni ripulita del contesto
+    messaggi = [m for m in (testo_avviso, None if origine in ("clear", "compact") else avvisi.remoti(VAULT)) if m]
     if messaggi:
         print(json.dumps({"systemMessage": "\n".join(messaggi)}, ensure_ascii=False))
 

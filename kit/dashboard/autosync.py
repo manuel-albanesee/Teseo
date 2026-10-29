@@ -253,6 +253,8 @@ class Autosync:
     def _post(self, skill, agent, graph_check=True):
         repo = self._repository()
         opened = self._sessions(_OPEN)
+        if opened and skill == 'dashboard':
+            raise ContractError('autosync_session_open', 'Una skill è in corso (sessione aperta): la modifica resta nel vault e la pubblica il post della skill')
         if opened:
             session = opened[0]
         elif skill in ('manuale', 'dashboard'):  # modifiche fuori da una skill: la sessione nasce con la pubblicazione
@@ -302,7 +304,7 @@ class Autosync:
             repo = self._repository()
             head = repo.head()
             try:
-                remote = repo.fetch(config['remote_url'], config['branch'])
+                remote = repo.fetch(config['remote_url'], config['branch'], prefix='refs/teseo/notice/')
             except ContractError as error:
                 if error.code in _OFFLINE:
                     return _result('offline', 0, 'Offline: aggiornamenti remoti non verificabili', count=0)

@@ -227,6 +227,7 @@ class ApplyService:
     def __init__(self, registry, previews, edits=None, publisher=None):
         self.registry, self.previews, self.edits, self.publisher = registry, previews, edits, publisher
         self._publications = {}
+        self._publishers = {}
         self._mutex = threading.RLock()
         self._workers = {}
         self._requests = {}
@@ -391,20 +392,39 @@ class ApplyService:
         with self._mutex:
             return self._publications.get(identifier)
 
-    def _publish(self, identifier, root):
-        """Pubblicazione automatica dopo una modifica del grafo: a lock rilasciato, con esito mai bloccante per l'apply."""
+    def _publish(self, vault_id, identifier, root):
+        """Pubblicazione automatica dopo una modifica del grafo: in un thread proprio, a lock e slot rilasciati, così una
+        rete lenta non blocca altri apply. Esito mai bloccante per la modifica; poi il grafo si ricostruisce, perché il
+        commit appena fatto cambia gli autori."""
         try:
-            result = self.publisher(root)
+            result = dict(self.publisher(root))
         except Exception as error:
             _log_unexpected(error)
             result = {'state': 'failed', 'message': 'Pubblicazione non completata: usare Pubblicazione Git nella dashboard'}
+        if result.get('state') == 'published':
+            try:
+                from .graph_service import rebuild
+                rebuild(root)
+            except Exception as error:  # altra operazione sulle note in corso o lock occupato: il push è comunque avvenuto
+                _log_unexpected(error)
+                result['rebuild'] = 'failed'
+                result['message'] = (result.get('message') or '') + ' · Grafo da ricostruire (Ricostruisci grafo) per aggiornare gli autori'
         with self._mutex:
             self._publications[identifier] = result
+            self._publishers.pop(identifier, None)
+
+    def _start_publication(self, vault_id, identifier, root):
+        with self._mutex:
+            self._publications[identifier] = {'state': 'pending', 'message': 'Pubblicazione in corso'}
             while len(self._publications) > 64:
                 del self._publications[next(iter(self._publications))]
+            thread = threading.Thread(target=self._publish, args=(vault_id, identifier, root), daemon=False)
+            self._publishers[identifier] = thread
+        thread.start()
 
     def _run(self, vault_id, identifier, action):
         done = None
+        root = None
         try:
             root = self.registry.operation_root(vault_id)
             with VaultLock(root, timeout=5, recovery=True) as lock, Journal(lock) as journal:
@@ -412,7 +432,7 @@ class ApplyService:
                     record = journal.get(identifier)
                     if self._stop:
                         raise ContractError('service_stopping', 'Servizio in arresto: recovery esplicito richiesto')
-                    done = execute(journal, identifier, action)
+                    result = execute(journal, identifier, action)
                 except Exception as error:
                     if not isinstance(error, ContractError): _log_unexpected(error)
                     record = journal.get(identifier)
@@ -420,17 +440,21 @@ class ApplyService:
                         'code': error.code if isinstance(error, ContractError) else 'apply_interrupted',
                         'message': str(error)[:500] if isinstance(error, ContractError) else 'Applicazione interrotta: verificare snapshot, backup e stato dei file'})
                     journal.save_ontology(record)
+                else:
+                    done = result
+            if done is not None and not (done['kind'] == 'graph_edit' and done['state'] == 'succeeded' and action == 'finish' and self.publisher):
+                done = None
         except Exception as error:
             # Lock/identity/storage failure leaves a durable record for explicit recovery; la causa va almeno loggata.
+            done = None
             _log_unexpected(error)
-        try:
-            if done and done['kind'] == 'graph_edit' and done['state'] == 'succeeded' and action == 'finish' and self.publisher:
-                self._publish(identifier, root)
         finally:
             with self._mutex:
                 self._workers.pop(vault_id, None)
                 self._requests = {key: value for key, value in self._requests.items()
                                   if value[1]['operation_id'] != identifier}
+        if done is not None:
+            self._start_publication(vault_id, identifier, root)
 
     def request_stop(self):
         with self._mutex:
@@ -442,3 +466,7 @@ class ApplyService:
             workers = list(self._workers.values())
         for _, worker in workers:
             worker.join()
+        with self._mutex:
+            publishers = list(self._publishers.values())  # i worker hanno già avviato le pubblicazioni: si attendono come i rebuild
+        for publisher in publishers:
+            publisher.join()

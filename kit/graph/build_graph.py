@@ -257,6 +257,8 @@ def parse_documents(documents):
             errore = None
             if len(link) != 1:
                 errore = "la chiave deve essere un solo link tra virgolette"
+            elif t and any(a[:2] == (nome, t) for a in attributi):
+                errore = f"[[{t}]] compare più volte in relazioni_dettaglio"
             elif t and (nome, t, "causa") not in relazioni:
                 errore = f"[[{t}]] non è un effetto dichiarato con 'causa' in questa pagina"
             elif not isinstance(attr, dict) or not attr or set(attr) - {"confidenza", "evidenza"}:

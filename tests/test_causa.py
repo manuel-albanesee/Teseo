@@ -2,6 +2,7 @@
 import _shortpath  # noqa: F401
 from urllib.parse import quote
 import unittest
+from unittest import mock
 
 import test_dashboard_queries as queries
 from kit.dashboard.graph_service import rebuild
@@ -44,6 +45,12 @@ class Parser(unittest.TestCase):
                 parsed = build_graph.parse_documents(documents(A=page(['B'], extra), B=page(), C=page()))
                 self.assertEqual({item['code'] for item in parsed['problem_details']}, {'relation_detail_invalid'}, parsed['problemi'])
 
+    def test_two_details_for_the_same_target_are_a_problem_not_a_crash(self):
+        extra = 'relazioni_dettaglio:\n  "[[B]]": {confidenza: alta}\n  "[[B|bi]]": {evidenza: "x"}\n'
+        parsed = build_graph.parse_documents(documents(A=page(['B'], extra), B=page()))
+        self.assertEqual({item['code'] for item in parsed['problem_details']}, {'relation_detail_invalid'})
+        self.assertEqual(parsed['attributi'], [('A', 'B', 'causa', 'alta', None)])
+
     def test_unresolved_detail_target_is_an_unresolved_link(self):
         extra = 'relazioni_dettaglio:\n  "[[Fantasma]]": {confidenza: alta}\n'
         parsed = build_graph.parse_documents(documents(A=page(['B'], extra), B=page()))
@@ -79,6 +86,11 @@ class CausalAPI(unittest.TestCase):
         self.assertFalse(body['cycle'])
         self.assertEqual((body['edges'][0]['confidenza'], body['edges'][0]['evidenza']), ('media', 'dalla call'))
         self.assertTrue(self.causal(node='A', depth='3')[2]['cycle'])
+
+    def test_the_edge_cap_stops_the_whole_traversal(self):
+        with mock.patch('kit.dashboard.read_api.MAX_CAUSAL_EDGES', 2):
+            body = self.causal(node='A', depth='10')[2]
+        self.assertEqual((len(body['edges']), body['truncated']), (2, True))
 
     def test_causes_walk_backwards_and_isolated_chains_stay_apart(self):
         body = self.causal(node='D', direction='causes')[2]

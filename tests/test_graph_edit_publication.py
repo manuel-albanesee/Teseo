@@ -81,7 +81,7 @@ class EditPublication(unittest.TestCase):
         for _ in range(600):
             status, _, data = self.request('GET', base + 'operations/' + identifier)
             record = json.loads(data)
-            if record['state'] == 'succeeded' and record['publication'] and not self.server.applies.active(json.loads(body)['vault_id']):
+            if record['state'] == 'succeeded' and record['publication'] and record['publication']['state'] != 'pending':
                 break
             time.sleep(.1)
         self.assertEqual(record['state'], 'succeeded', record)

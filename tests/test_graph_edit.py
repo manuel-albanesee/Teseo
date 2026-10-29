@@ -2,8 +2,10 @@
 import _shortpath  # noqa: F401
 from datetime import date
 import json
+import threading
 import time
 import unittest
+from unittest import mock
 
 import test_dashboard_queries as fixture
 from kit.dashboard.contracts import ContractError
@@ -105,8 +107,14 @@ class Refusals(unittest.TestCase):
         self.assertEqual(code(page('tipo: x', 'tags: [a]'), {'op': 'set_tags', 'tags': ['a']}), 'edit_noop')
         self.assertEqual(code(page('tipo: x'), *[{'op': 'set_tipo', 'tipo': 'y'}] * 17), 'invalid_payload')
 
+    def test_ampersands_and_asterisks_in_values_are_not_anchors(self):
+        text = page('tipo: x', 'descrizione: "R&D e *nota*"', 'fonti: ["[[AT&T contratto]]"]', 'aliases: ["R&D"]')
+        result = edit(text, {'op': 'set_tags', 'tags': ['t']})
+        self.assertIn('descrizione: "R&D e *nota*"', result)
+        self.assertIn('tags: [t]', result)
+
     def test_ambiguous_yaml_is_left_to_the_author(self):
-        for lines in (('tipo: x', 'tipo: y'), ('tipo: &t x', 'base: *t'), ('tipo: x', '"chiave quotata": 1')):
+        for lines in (('tipo: x', 'tipo: y'), ('tipo: &t x', 'base: *t'), ('tipo: x', '"chiave quotata": 1'), ('x: &t {a: 1}', 'base: {<<: *t}')):
             with self.subTest(lines=lines):
                 self.assertEqual(code(page(*lines), {'op': 'set_tags', 'tags': ['t']}), 'edit_manual')
         self.assertEqual(code('senza frontmatter\n', {'op': 'set_tags', 'tags': ['t']}), 'edit_manual')
@@ -170,6 +178,40 @@ class Service(unittest.TestCase):
         self.assertEqual((status, body['error']['code']), (422, 'migration_invalid'))
         self.assertEqual(self.notes(), before)
 
+    def test_preexisting_problems_elsewhere_are_reported_apart_from_new_ones(self):
+        self.prepare()
+        (self.root / 'wiki/Rotta.md').write_text('---\ntipo: persona\nusa: "[[Fantasma]]"\n---\nx', encoding='utf-8')
+        preview = self.preview('Bruno', [{'op': 'set_tags', 'tags': ['x']}])
+        self.assertEqual((preview['valid'], preview['new_problems'], preview['preexisting_problems']), (False, 0, 1), preview)
+        self.assertIn('preesistenti', preview['risk'])
+        self.assertEqual({item['page'] for item in preview['problems']}, {'wiki/Rotta.md'})
+
+    def test_an_unparsable_vault_is_a_422_not_a_generic_failure(self):
+        self.prepare()
+        (self.root / 'wiki/Storta.md').write_text('---\ntipo: [\n---\nx', encoding='utf-8')
+        body = self.preview('Bruno', [{'op': 'set_tags', 'tags': ['x']}], expect=422)
+        self.assertEqual(body['error']['code'], 'preview_parse_failed')
+
+    def test_a_slow_preview_does_not_block_proposal_lookups(self):
+        self.prepare()
+        first = self.preview('Bruno', [{'op': 'set_tags', 'tags': ['x']}])
+        started, release = threading.Event(), threading.Event()
+        real = __import__('kit.dashboard.graph_edit', fromlist=['analyze']).analyze
+
+        def slow(*args):
+            started.set()
+            release.wait(10)
+            return real(*args)
+        with mock.patch('kit.dashboard.graph_edit.analyze', slow):
+            worker = threading.Thread(target=lambda: self.preview('Bruno', [{'op': 'set_tags', 'tags': ['y']}]))
+            worker.start()
+            self.assertTrue(started.wait(10))
+            began = time.monotonic()
+            self.server.edits.proposal(self.vault_id, first['preview_id'], first['proposal_hash'])
+            self.assertLess(time.monotonic() - began, 1)
+            release.set()
+            worker.join(10)
+
     def test_preview_idempotency_stale_digest_and_unknown_page(self):
         self.prepare()
         operations = [{'op': 'set_tags', 'tags': ['x']}]
@@ -192,6 +234,11 @@ class Service(unittest.TestCase):
         self.assertEqual(done['kind'], 'graph_edit')
         self.assertEqual(done['checkpoint']['changed_files'], ['wiki/Bruno.md'])
         self.assertIn('usa: "[[Carla]]"', (self.root / 'wiki/Bruno.md').read_text(encoding='utf-8'))
+        for _ in range(100):  # la pubblicazione è asincrona: prima pending, poi l'esito
+            done = self.get('operations/' + record['operation_id'])[2]
+            if done['publication']['state'] != 'pending':
+                break
+            time.sleep(.1)
         self.assertEqual(done['publication']['state'], 'disabled')
         status, _, graph = self.get('graph', {'relation': 'usa'})
         self.assertIn({'source_id': 'Bruno', 'target_id': 'Carla', 'type': 'usa'}, graph['edges'])
@@ -213,6 +260,33 @@ class Service(unittest.TestCase):
                    'mode': 'manual_paused', 'external_writers_paused': True, 'semantic_reviewed': True}
         status, _, data = self.request('POST', self.base + 'nodes/Bruno/edit/apply', payload)
         self.assertEqual((status, json.loads(data)['error']['code']), (428, 'precondition_required'))
+
+    def test_the_publication_runs_after_the_vault_is_released_and_is_visible_while_pending(self):
+        self.prepare()
+        entered, release = threading.Event(), threading.Event()
+
+        def publisher(root):
+            entered.set()
+            release.wait(20)
+            return {'state': 'published', 'message': 'ok'}
+        self.server.applies.publisher = publisher
+        first = self.preview('Bruno', [{'op': 'set_tags', 'tags': ['x']}])
+        status, record = self.apply('Bruno', first)
+        self.assertEqual(status, 202, record)
+        self.assertTrue(entered.wait(20))
+        done = self.get('operations/' + record['operation_id'])[2]
+        self.assertEqual((done['state'], done['publication']['state']), ('succeeded', 'pending'))
+        self.assertIsNone(self.server.applies.active(self.vault_id))  # un push lento non tiene occupato il vault
+        second = self.preview('Carla', [{'op': 'set_tags', 'tags': ['y']}])
+        status, other = self.apply('Carla', second, idempotency_key='edit_request_002')
+        self.assertEqual(status, 202, other)
+        release.set()
+        for _ in range(100):
+            if self.get('operations/' + record['operation_id'])[2]['publication']['state'] == 'published':
+                break
+            time.sleep(.1)
+        self.assertEqual(self.get('operations/' + record['operation_id'])[2]['publication']['state'], 'published')
+        self.finish(other['operation_id'])
 
     def test_a_replayed_apply_returns_the_same_operation(self):
         self.prepare()

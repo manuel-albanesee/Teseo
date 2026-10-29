@@ -52,5 +52,23 @@ class Notice(unittest.TestCase):
         self.assertLess(avvisi.TIMEOUT, 15)
 
 
+class SessionStartHook(unittest.TestCase):
+    def run_hook(self, source):
+        import contextlib
+        import io
+        import modello_hook
+        out = io.StringIO()
+        with mock.patch.object(modello_hook.avvisi, 'remoti', return_value='Teseo: 2 aggiornamenti') as notice, \
+                mock.patch.object(modello_hook, 'avviso', return_value=None), contextlib.redirect_stdout(out):
+            modello_hook.inizio_sessione({'source': source, 'model': 'claude-sonnet-5-5'}, {}, {}, {})
+        return notice.called, out.getvalue()
+
+    def test_the_notice_runs_on_startup_and_resume_but_not_on_clear_or_compact(self):
+        for source, expected in (('startup', True), ('resume', True), ('clear', False), ('compact', False)):
+            with self.subTest(source=source):
+                called, output = self.run_hook(source)
+                self.assertEqual((called, 'aggiornamenti' in output), (expected, expected))
+
+
 if __name__ == '__main__':
     unittest.main()

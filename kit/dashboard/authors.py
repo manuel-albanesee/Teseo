@@ -60,7 +60,10 @@ def collect(root, pages):
                 continue
             if status in 'RC' and len(paths) == 2:
                 final = final_of.get(paths[1], paths[1])
-                final_of[paths[0]] = final
+                if status == 'R':
+                    final_of[paths[0]] = final
+                else:
+                    status = 'A'  # una copia lascia viva la sorgente: per la destinazione è solo una nascita
             elif status == 'D':
                 continue
             else:

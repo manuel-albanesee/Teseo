@@ -10,7 +10,7 @@ NODE_SCRIPT = r"""
      const a=body.authors;
      if(!a){element('p','Nessun autore disponibile: serve un vault con storia Git e un grafo ricostruito dopo il primo commit.',container).className='hint';return;}
      element('p','Creata da '+(a.created_by||'?')+' il '+when(a.created_at)+' · ultima modifica di '+(a.modified_by||'?')+' il '+when(a.modified_at)
-       +(a.agent?' (agente '+a.agent+')':'')+' · '+a.changes+(a.changes===1?' commit':' commit'),container);
+       +(a.agent?' (agente '+a.agent+')':'')+' · '+a.changes+' commit',container);
    }
    function causal(container,node) {
      element('h4','Catena causale',container);

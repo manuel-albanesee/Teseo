@@ -5,6 +5,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 from urllib.parse import quote
 
 import test_dashboard_queries as queries
@@ -76,6 +77,14 @@ class Collect(unittest.TestCase):
         rows = {row[0]: row for row in collect(self.root, {'Anna', 'Bruno'})}
         self.assertEqual((rows['Anna'][3], rows['Bruno'][3], rows['Bruno'][6]), ('Ada', 'Bruno', 2))
 
+    def test_a_copy_is_a_birth_for_the_destination_and_leaves_the_source_history_alone(self):
+        log = ('\x1e' + '\x1f'.join(['c2', 'Bruno', '2026-10-02T10:00:00+00:00', 'copia', '']) + '\nC100\twiki/Sorgente.md\twiki/Copia.md\n'
+               '\x1e' + '\x1f'.join(['c1', 'Ada', '2026-10-01T10:00:00+00:00', 'inizio', '']) + '\nA\twiki/Sorgente.md\n')
+        with mock.patch('kit.dashboard.authors.history_head', return_value='0' * 40), mock.patch('kit.dashboard.authors._git', return_value=log):
+            rows = {row[0]: row for row in collect(self.root, {'Sorgente', 'Copia'})}
+        self.assertEqual((rows['Copia'][1], rows['Copia'][6]), ('Bruno', 1))
+        self.assertEqual((rows['Sorgente'][1], rows['Sorgente'][3], rows['Sorgente'][6]), ('Ada', 'Ada', 1))
+
     def test_deleted_pages_and_pages_outside_the_set_are_ignored(self):
         commit(self.root, 'uno', 'Ada', '2026-10-01T10:00:00+00:00', Anna='a', Morta='m')
         git(self.root, 'rm', '-q', 'wiki/Morta.md')
@@ -105,6 +114,13 @@ class AuthorsAPI(unittest.TestCase):
         self.assertEqual(status, 200, body)
         self.assertEqual((body['authors']['created_by'], body['authors']['modified_by'], body['authors']['changes']), ('Ada', 'Ada', 1))
         self.assertNotIn('@', str(body['authors']))
+
+    def test_a_commit_without_content_changes_makes_the_view_stale_until_the_next_rebuild(self):
+        self.assertFalse(self.get('status')[2]['stale'])
+        git(self.root, 'commit', '-q', '--allow-empty', '-m', 'vuoto', author='Carla', date='2026-10-05T10:00:00+00:00')
+        self.assertTrue(self.get('status')[2]['stale'])
+        rebuild(self.root)
+        self.assertFalse(self.get('status')[2]['stale'])
 
     def test_authors_endpoint_and_graph_filter(self):
         status, _, body = self.get('authors')

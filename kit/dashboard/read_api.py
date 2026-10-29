@@ -9,7 +9,7 @@ import secrets
 import sqlite3
 import time
 
-from .contracts import ContractError, canonical_json, parse_json, portable_path, file_hash
+from .contracts import ContractError, canonical_json, content_hash, parse_json, portable_path, file_hash
 from .storage import capture_snapshot, _no_link
 
 MAX_DOCUMENT_BYTES = 2 * 1024 * 1024
@@ -113,14 +113,29 @@ class ReadAPI:
                 result["capabilities"]["graph"] = True
                 result["stale"] = (result["live_content_revision"] != reference.content_revision
                                    if result["live_content_revision"] else None)
+                if result["stale"] is False and result["validation_version"] >= 4 and not self._history_current(root, reference, result):
+                    result["stale"] = True  # stessi contenuti ma HEAD diverso: gli autori del grafo sono indietro
                 if result["stale"]:
                     result["issues"].append(_issue("graph_stale", "warning",
-                        "Il vault è cambiato; le API mostrano l'ultima generazione pubblicata", reference.content_revision))
+                        "Il vault o la sua storia Git sono cambiati; le API mostrano l'ultima generazione pubblicata", reference.content_revision))
         except ContractError as error:
             if error.code == "revision_changed":
                 raise
             result["issues"].append(_issue(error.code, "warning", str(error), None))
         return result
+
+    @staticmethod
+    def _history_current(root, reference, status):
+        """False se l'HEAD Git attuale non è quello su cui la generazione è stata costruita (identità: contenuti + HEAD)."""
+        try:
+            from .authors import history_head
+            from .graph_service import BUILDER_VERSION
+            head = history_head(root)
+            expected = content_hash({"content_revision": reference.content_revision, "builder_version": BUILDER_VERSION,
+                                     **({"history": head} if head else {})})
+        except (ContractError, OSError):
+            return True
+        return status["validation_version"] != BUILDER_VERSION or expected == reference.generation
 
     def _encode_cursor(self, value):
         data = canonical_json(value)
@@ -287,29 +302,31 @@ class ReadAPI:
         with self._open(self.registry.root(vault_id), parameters.get("generation")) as (db, reference):
             if db.execute("SELECT 1 FROM entities WHERE id=?", (node,)).fetchone() is None:
                 raise ContractError("node_missing", "Nodo non presente nella generazione")
-            has_attributes = _has_table(db, "relation_attributes")
+            # Una sola query per nodo di frontiera: gli attributi d'arco arrivano con un LEFT JOIN (NULL se la tabella manca).
+            join, columns = (("LEFT JOIN relation_attributes a ON a.source_id=r.source_id AND a.target_id=r.target_id AND a.type=r.type",
+                              "a.confidenza,a.evidenza") if _has_table(db, "relation_attributes") else ("", "NULL,NULL"))
+            column = "r.source_id" if forward else "r.target_id"
             frontier, seen, edges, truncated = [node], {node}, [], False
             for level in range(int(depth)):
                 found = []
                 for current in frontier:
-                    column, other = ("source_id", "target_id") if forward else ("target_id", "source_id")
-                    rows = db.execute(f"SELECT source_id,target_id FROM relations WHERE type='causa' AND {column}=? "
-                                      "ORDER BY source_id,target_id", (current,)).fetchall()
-                    for source, target in rows:
+                    rows = db.execute(f"SELECT r.source_id,r.target_id,{columns} FROM relations r {join} "
+                                      f"WHERE r.type='causa' AND {column}=? ORDER BY r.source_id,r.target_id", (current,)).fetchall()
+                    for source, target, confidence, evidence in rows:
                         if len(edges) >= MAX_CAUSAL_EDGES:
                             truncated = True
                             break
-                        edges.append({"source_id": source, "target_id": target, "type": "causa", "level": level + 1})
+                        edges.append({"source_id": source, "target_id": target, "type": "causa", "level": level + 1,
+                                      "confidenza": confidence, "evidenza": evidence})
                         follow = target if forward else source
                         if follow not in seen:
                             seen.add(follow)
                             found.append(follow)
+                    if truncated:
+                        break
+                if truncated:
+                    break
                 frontier = found
-            if has_attributes:
-                for edge in edges:
-                    row = db.execute("SELECT confidenza,evidenza FROM relation_attributes WHERE source_id=? AND target_id=? "
-                                     "AND type='causa'", (edge["source_id"], edge["target_id"])).fetchone()
-                    edge["confidenza"], edge["evidenza"] = row if row else (None, None)
             marks = ",".join("?" * len(seen))
             nodes = [dict(zip(("id", "tipo", "descrizione"), row)) for row in db.execute(
                 f"SELECT id,tipo,descrizione FROM entities WHERE id IN ({marks}) ORDER BY id", tuple(seen))]

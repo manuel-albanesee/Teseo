@@ -149,6 +149,24 @@ class AutosyncFlow(unittest.TestCase):
         self.assertEqual(self.sync_b.pre('lint', 'codex')['received'], 1)
         self.assertEqual(self.sync_b.updates()['state'], 'current')
 
+    def test_a_dashboard_post_never_takes_over_a_running_skill_session(self):
+        self.sync_a.pre('ingest', 'claude')
+        self.append(self.a, 'wiki/Gestionale.md', '\nA metà di un ingest.\n')
+        before = git(self.remote, 'rev-parse', 'main')
+        result = self.sync_a.post('dashboard', 'umano', graph_check=False)
+        self.assertEqual((result['state'], result['error']['code']), ('blocked', 'autosync_session_open'), result)
+        self.assertEqual(git(self.remote, 'rev-parse', 'main'), before)
+        self.assertEqual([s['state'] for s in self.sync_a._sessions()], ['open'])
+        self.assertEqual(self.sync_a.post('ingest', 'claude')['state'], 'published')
+
+    def test_the_notice_fetch_never_touches_the_refs_a_pre_is_reading(self):
+        git(self.b, 'update-ref', 'refs/teseo/fetch/in-uso', git(self.b, 'rev-parse', 'HEAD'))
+        self.sync_b.updates()
+        self.sync_b.updates()
+        refs = git(self.b, 'for-each-ref', '--format=%(refname)', 'refs/teseo/').split()
+        self.assertIn('refs/teseo/fetch/in-uso', refs)
+        self.assertEqual(len([r for r in refs if r.startswith('refs/teseo/notice/')]), 1)
+
     def test_updates_are_silent_when_the_vault_is_not_collaborative(self):
         self.sync_a.service.disable_automatic(self.sync_a.vault_id)
         self.assertEqual((self.sync_a.updates()['state'], self.sync_a.updates()['exit']), ('disabled', 0))

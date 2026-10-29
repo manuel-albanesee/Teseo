@@ -46,7 +46,7 @@ SCRIPT = r"""
      for(const item of body.operations){const section=element('section',undefined,container);element('p',item.operation_id+' · '+item.kind+' · '+item.state,section);
        skills.render(item,section);
        if(item.error)element('p',item.error.code+' · '+item.error.message,section);
-       if(item.kind==='ontology_apply'&&item.state==='recovery_required'){
+       if(['ontology_apply','graph_edit'].includes(item.kind)&&item.state==='recovery_required'){
          element('p','Recovery manuale non protetto: sospendi editor/hook e verifica base, candidato e backup. Un conflitto estraneo blocca il recovery.',section);
          const input=element('input',undefined,section);input.type='checkbox';input.id='recover-'+item.operation_id;
          const label=element('label','Ho sospeso gli scrittori esterni e revisionato lo stato dei file e dei backup.',section);label.htmlFor=input.id;
@@ -75,7 +75,7 @@ SCRIPT = r"""
      try {
        const job=await api('/api/v1/vaults/'+encodeURIComponent(vaultId)+'/operations/'+encodeURIComponent(identifier));
        if(run!==epoch || poll!==operationPoll || stopping)return;
-       const terminal=['succeeded','rolled_back','failed','cancelled','blocked_external_change','recovery_required'].includes(job.state);
+       const terminal=['succeeded','rolled_back','failed','cancelled','blocked_external_change','recovery_required'].includes(job.state)&&!(job.kind==='graph_edit'&&job.publication?.state==='pending');  // la pubblicazione automatica segue l'apply: si continua a leggere finché non ha un esito
        $('operation').textContent=(job.kind==='rebuild'?'Rebuild ':job.kind==='graph_edit'?'Modifica del grafo ':'Operazione note ')+identifier+' · '+job.state;
        if(['succeeded','rolled_back'].includes(job.state))$('operation').textContent+=' · Completato. File cambiati: '+(job.checkpoint?.changed_files||[]).join(', ')+'. Premi Aggiorna vista per caricare la generazione pubblicata.';
        if(job.state==='recovery_required')$('operation').textContent+=' · Conserva base, candidato e backup. Sospendi gli editor e scegli recovery esplicito; nessun rollback automatico.';

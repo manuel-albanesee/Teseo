@@ -586,17 +586,19 @@ class GitRepository:
                 return None
         return head
 
-    def fetch(self, remote, branch):
+    def fetch(self, remote, branch, *, prefix='refs/teseo/fetch/'):
+        """Scarica il branch in un ref nuovo di `prefix`; i ref più vecchi dello stesso prefisso si eliminano. Prefissi diversi
+        non si toccano a vicenda: l'avviso di sessione non può cancellare il ref che un `pre` sta ancora leggendo."""
         remote = validate_remote(remote, allow_local_remote=self.allow_local_remote)
         branch = _branch(branch)
         self._safe_config()
-        ref = 'refs/teseo/fetch/' + str(uuid4())
+        ref = prefix + str(uuid4())
         self._bytes('fetch', '--no-tags', '--no-recurse-submodules', remote, branch + ':' + ref,
                     file_transport=self.allow_local_remote)
         oid = _oid(self.run('rev-parse', '--verify', ref).strip())
         # Un riferimento per fetch si accumulerebbe senza fine: conservo solo l'ultimo. Gli oggetti restano
         # nel database Git (Git non li elimina prima della sua finestra di grazia).
-        for old in self.run('for-each-ref', '--format=%(refname)', 'refs/teseo/fetch/').split():
+        for old in self.run('for-each-ref', '--format=%(refname)', prefix).split():
             if old != ref:
                 self._bytes('update-ref', '-d', old, check=False)
         return oid
