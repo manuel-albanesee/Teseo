@@ -32,6 +32,8 @@ Tempi: 73,7 secondi per l'intera sequenza (3–13 secondi per scenario).
 
 ## Che cosa il collaudo non copre
 
+> **Correzione del 2026-10-29 (dopo la rilettura del codice).** La riga «helper noti ammessi» del punto 1 dei difetti significa solo che l'elenco è nel codice. La configurazione reale di `gh` (chiavi per URL con percorso assoluto), di GCM e di `osxkeychain` (spesso a livello di sistema) **non viene letta** dal codice attuale: vedi [doc/12](../../12-piano-autenticazione-e-collaudo-avanzato.md), premessa. Il supporto a `gh` va considerato non verificato.
+
 - Repository privato, branch protetto, regole di repository (`git_policy`), autenticazione SSH, chiavi o token con scope limitati, e due account GitHub distinti.
 - Windows e macOS con un vero gestore di credenziali (`manager`, `osxkeychain`): qui la credenziale passa dal helper `store`; la lista degli helper è provata con test unitari, non con questi gestori.
 - Editor non cooperanti e client AI autenticati (punti 5 e 6 del piano).
