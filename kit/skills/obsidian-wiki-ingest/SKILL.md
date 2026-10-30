@@ -13,7 +13,19 @@ Il vault è un repo di file markdown a 3 livelli:
 - **La wiki** — pagine markdown generate e possedute interamente dall'LLM.
 - **Lo schema** — un file indice/convenzioni nel vault (es. `Wiki reference.md` o `CLAUDE.md`) che descrive struttura, convenzioni e workflow. Leggilo sempre per primo se esiste.
 
-## Procedura
+## Input
+
+Livello 3 = regole stabili del vault, livello 4 = materiale di questa esecuzione. I passi rimandati sono quelli di «Processo».
+
+| Livello | File | Sezione | Perché |
+| --- | --- | --- | --- |
+| 3 | `Wiki reference.md` | tutto | convenzioni, vocabolario delle relazioni e chiavi delle fonti (passi 1 e 5) |
+| 4 | `raw/` | la fonte grezza indicata dall'utente, per intero | materiale da distillare (passo 2) |
+| 4 | `wiki/*.md` | pagine toccate dalla fonte | pagine da aggiornare (passo 4) |
+| 4 | `index.md` | tutto | da aggiornare con le pagine nuove (passo 7) |
+| 4 | `log.md` | fine file | da aggiornare con la voce dell'ingest (passo 8) |
+
+## Processo
 
 **Client:** in Copilot CLI leggi `.github/copilot-instructions.md`: gli hook `.github/hooks/teseo.json` aggiungono il recall al prompt del modello e registrano le letture `view` riuscite. Usa il modello attivo della sessione; i ruoli Sol/Astra/Luna riguardano solo Codex. In Codex leggi anche `AGENTS.md`. Gli hook nativi sono in `.codex/hooks.json`; se hanno già fornito il recall, usa quel contesto. Per le letture da shell usa `.graph/leggi.py` con il token di turno fornito dall'hook, così la memoria registra le pagine effettivamente aperte. In PowerShell adatta gli esempi POSIX (`/dev/null`, `&&`) alla shell disponibile, mantenendo il controllo dei codici di uscita.
 
@@ -41,6 +53,30 @@ Il vault è un repo di file markdown a 3 livelli:
     - **Solo lacune** — se la fonte era piccola e l'utente vuole chiudere subito le domande che ha aperto;
     - **Più tardi** — ricorda che senza lint le pagine nuove non producono pagine per entropia e le contraddizioni con il resto del vault restano non registrate.
     Se il vault non ha le domande aperte, proponi solo il lint.
+
+## Checkpoint
+
+| Dopo il passo | L'agente presenta | L'utente decide |
+| --- | --- | --- |
+| 3 | riassunti delle note distillate (fonti singole importanti: vedi Note operative) | cosa enfatizzare e cosa correggere |
+| 11 | riepilogo: note create e aggiornate, relazioni e alias, contraddizioni, domande aperte per segnale | come proseguire: lint e poi lacune (consigliato), solo lint, solo lacune, più tardi |
+
+## Verifica
+
+| Controllo | Comando | Esito atteso |
+| --- | --- | --- |
+| Grafo allineato alle pagine (passo 6) | `python .graph/build_graph.py --check` | nessun problema, da rilanciare finché non restano |
+| Sincronizzazione prima (passo 0) | `python .graph/teseo_git.py pre` | exit 0; con exit 2 ci si ferma senza toccare il vault |
+| Pubblicazione dopo (passo 9) | `python .graph/teseo_git.py post` | exit 0; exit 3 senza rete, exit 2 bloccata |
+
+## Output
+
+| Artefatto | Posizione | Formato |
+| --- | --- | --- |
+| Pagine create e aggiornate | `wiki/*.md` | note atomiche con relazioni e alias nel frontmatter |
+| Indice | `index.md` | link, riassunto in una riga, metadati |
+| Voce di log | `log.md` | intestazione `## [AAAA-MM-GG] ingest` con relazioni, alias ed esito di `--check` |
+| Riepilogo | chat | note, relazioni, alias, contraddizioni, domande aperte |
 
 ## Note operative
 

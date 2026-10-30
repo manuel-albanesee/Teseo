@@ -29,7 +29,19 @@ resto del vault e al grafo.
   `⚠️ da verificare`, sistemi e processi senza referente. In quel caso non c'è archivio né rinvio: annota le
   risposte nel log.
 
-## Procedura
+## Input
+
+Livello 3 = regole stabili del vault, livello 4 = materiale di questa esecuzione. I passi rimandati sono quelli di «Processo».
+
+| Livello | File | Sezione | Perché |
+| --- | --- | --- | --- |
+| 3 | `Wiki reference.md` | tutto | chiave delle note dell'autore, frontmatter, vocabolario delle relazioni, dove stanno i punti aperti (Prerequisiti) |
+| 4 | `.graph/domande.py` | esito di `--json --strutturali` | elenco ordinato delle domande aperte (passo 1) |
+| 4 | `wiki/*.md` | le pagine indicate in `pagine` di ogni domanda | cosa dice già il vault (passo 2) |
+| 4 | `index.md` | voce del punto aperto | solo per i punti aperti (passo 2) |
+| 4 | `raw/` | fonti che potrebbero già rispondere | proporre la chiusura da lì (passo 2) |
+
+## Processo
 
 0. **Sincronizza.** Se esiste `.graph/teseo_git.py` (vault collaborativo): `python .graph/teseo_git.py pre --skill lacune --agente <claude|codex|copilot>` (il client che stai usando). Exit 0: prosegui e riporta all'utente quanto ricevuto (campo `message`). Exit 2: **fermati senza toccare il vault** e riporta il messaggio: serve un'azione dell'utente (modifiche non pubblicate, storie divergenti, pubblicazione da risolvere nella dashboard). Exit 3: la rete manca; prosegui e avvisa che la pubblicazione avverrà dopo. Se lo script non c'è o risponde «Autosync non attivo», salta il passo. Non eseguire mai `git` a mano nel vault.
 
@@ -110,6 +122,32 @@ resto del vault e al grafo.
      relazioni sostenute dal testo, propaga le risposte (`python .graph/domande.py --risposte`) e alla fine le segna
      come consolidate. Proponi di lanciarlo subito con la skill `obsidian-wiki-lint`; se l'autore preferisce dopo,
      ricorda che le risposte restano «da consolidare» finché un lint non le chiude.
+
+## Checkpoint
+
+| Dopo il passo | L'agente presenta | L'utente decide |
+| --- | --- | --- |
+| 1 | quante domande per segnale | se partire dall'inizio o da un'area (pagina, sistema, segnale) |
+| 2 | una sola domanda, concreta, con la pagina citata e il punto in cui sei | risposta nel merito, rinvio, salto o «basta così» |
+| 4 | contraddizione con un'altra pagina, se emerge | se confermare la correzione anche lì |
+| 6 | riepilogo della sessione e proposta di lint | se lanciare subito il lint |
+
+## Verifica
+
+| Controllo | Comando | Esito atteso |
+| --- | --- | --- |
+| Grafo dopo ogni risposta (passo 5) | `python .graph/build_graph.py --check` | nessun problema |
+| La domanda è chiusa (passo 5) | `python .graph/domande.py --json --strutturali` | la domanda non compare più |
+| Sincronizzazione e pubblicazione (passi 0 e 6) | `python .graph/teseo_git.py pre` e `post` | exit 0; exit 2 fermarsi, exit 3 senza rete |
+
+## Output
+
+| Artefatto | Posizione | Formato |
+| --- | --- | --- |
+| Risposte dell'autore | `wiki/*.md` | citate con la chiave delle note dell'autore, mai nelle pagine per entropia |
+| Archivio delle risposte | `.graph/domande.sqlite` (personale) | via `domande.py --risposta` |
+| Voce di log | `log.md` | intestazione `## [AAAA-MM-GG] lacune` con domande chiuse, rinviate e pagine toccate |
+| Riepilogo | chat | chiuse, rinviate, saltate, rimaste per segnale |
 
 ## Note operative
 

@@ -25,7 +25,19 @@ Se il vault ha un grafo tipizzato (es. `.graph/` con `build_graph.py` e `graph.s
 - **Nessi causali non sostenuti**: una relazione `causa` (o la sua `confidenza`/`evidenza` in `relazioni_dettaglio`) che la fonte citata non afferma, o che nasce da una semplice sequenza di fatti: toglila o segnalala come punto aperto, senza inventare nessi.
 - **Alias mancanti**: sigle, nomi di codice o forme «Cognome Nome» con cui una pagina compare nelle altre pagine o nelle fonti, ma che non sono nei suoi `aliases`.
 
-## Procedura
+## Input
+
+Livello 3 = regole stabili del vault, livello 4 = materiale di questa esecuzione. I passi rimandati sono quelli di «Processo».
+
+| Livello | File | Sezione | Perché |
+| --- | --- | --- | --- |
+| 3 | `Wiki reference.md` | tutto | convenzioni, vocabolario, pagine generate per entropia, manutenzione del vault |
+| 4 | `index.md` | tutto | mappa completa delle pagine (passo 1) |
+| 4 | `wiki/*.md` | tutte, o l'area indicata dall'utente | confronto dei claim fra pagine (passo 2) |
+| 4 | `.graph/graph.sqlite` | tabelle `entities`, `relations`, `aliases` | orfane e relazioni (passo 1) |
+| 4 | `log.md` | fine file | voce del lint (passo 6) |
+
+## Processo
 
 **Client:** in Copilot CLI leggi `.github/copilot-instructions.md`: gli hook `.github/hooks/teseo.json` aggiungono il recall al prompt del modello e registrano le letture `view` riuscite. Usa il modello attivo della sessione; i ruoli Sol/Astra/Luna riguardano solo Codex. In Codex leggi anche `AGENTS.md`. Gli hook nativi sono in `.codex/hooks.json`; se hanno già fornito il recall, usa quel contesto. Per le letture da shell usa `.graph/leggi.py` con il token di turno fornito dall'hook, così la memoria registra le pagine effettivamente aperte. In PowerShell adatta gli esempi POSIX (`/dev/null`, `&&`) alla shell disponibile, mantenendo il controllo dei codici di uscita.
 
@@ -48,6 +60,33 @@ Se il vault ha un grafo tipizzato (es. `.graph/` con `build_graph.py` e `graph.s
    `## [AAAA-MM-GG] lint | <ambito>`
 7. **Pubblica.** Con `--check` pulito e il log scritto, se esiste `.graph/teseo_git.py`: `python .graph/teseo_git.py post --skill lint --agente <claude|codex|copilot>`. Exit 0: riporta l'esito (`message`: commit pubblicato, oppure nulla da pubblicare). Exit 3: la rete manca e il commit è conservato; dillo e ricorda `python .graph/teseo_git.py riprendi`. Exit 2: pubblicazione bloccata (conflitto sulla stessa nota, grafo non valido, file fuori policy): riporta il messaggio e indica la dashboard (Pubblicazione Git → Risolvi), senza tentare altro con Git. Con «Autosync non attivo» non fare nulla.
 8. **Riporta un riepilogo** all'utente: numero di note, contraddizioni/nuovi punti aperti trovati, orfane, link rotti e, se c'è il grafo, esito del `--check` e relazioni/alias aggiunti o segnalati; se c'è il passo 5, le pagine generate per entropia (con le domande che coprono), l'esito di `--verifica`, e le domande aperte per l'utente, a cominciare da quelle scartate in questo lint e da quelle da decidere. Se restano domande aperte, proponi di smaltirle con la skill `obsidian-wiki-fill-gaps`, che le pone una alla volta e scrive le risposte nel vault.
+
+## Checkpoint
+
+| Dopo il passo | L'agente presenta | L'utente decide |
+| --- | --- | --- |
+| 3 | contraddizioni sostanziali (fatti legali, numerici, di business) elencate come punti aperti | quali riconciliare: non si correggono in silenzio |
+| 3 | correzioni ampie proposte, se emergono (vedi Note operative) | se applicarle su larga scala |
+| 8 | riepilogo: contraddizioni, orfane, pagine per entropia, domande aperte a cominciare da quelle scartate e rinviate 3 volte | quali portare alla skill lacune |
+
+## Verifica
+
+| Controllo | Comando | Esito atteso |
+| --- | --- | --- |
+| Problemi meccanici del grafo (passi 1, 3 e 5) | `python .graph/build_graph.py --check` | nessun problema |
+| Pagine generate per entropia (passo 5) | `python .graph/sintesi.py --verifica` | exit 0 |
+| Recupero delle pagine attese (passo 5, se il vault ha la misura) | `python .graph/misura.py` | non peggiora |
+| Sincronizzazione e pubblicazione (passi 0 e 7) | `python .graph/teseo_git.py pre` e `post` | exit 0; exit 2 fermarsi, exit 3 senza rete |
+
+## Output
+
+| Artefatto | Posizione | Formato |
+| --- | --- | --- |
+| Correzioni meccaniche, relazioni e alias | `wiki/*.md` | frontmatter e testo coerenti con il vocabolario |
+| Pagine generate per entropia | `wiki/*.md` con tag `entropia` | avviso in testa, link a ogni pagina della risposta |
+| Punti aperti | registro dei punti aperti dello schema o dell'index | una voce per contraddizione sostanziale |
+| Voce di log | `log.md` | intestazione `## [AAAA-MM-GG] lint` con l'ambito |
+| Riepilogo | chat | note, contraddizioni, orfane, esito di `--check` e di `--verifica` |
 
 ## Note operative
 

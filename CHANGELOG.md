@@ -8,6 +8,7 @@ e raggruppata per traguardo; le voci nuove si aggiungono sotto «Non rilasciato�
 
 ### Aggiunto
 
+- Voce A2 del [piano 14](doc/14-piano-icm.md): le quattro skill (`kit/skills/*/SKILL.md`) hanno la forma contratto (Input, Processo, Checkpoint, Verifica, Output) e sono validate da `contratti.py` nei test; il testo esistente è invariato (sono state aggiunte sezioni e «Procedura» è diventata «Processo»). Il comportamento reale con un client AI non è stato provato.
 - Integrazione ICM, voci A0 e A1 del [piano 14](doc/14-piano-icm.md) ([analisi](doc/analisi-icm-ecc.md)): `kit/graph/contratti.py` valida i contratti (sezioni Input / Processo / Checkpoint / Verifica / Output, file e sezioni citati, riferimenti in avanti, segnaposto, lunghezza; solo lettura, `--json`); `tests/test_istruzioni_coerenti.py` segnala quando le istruzioni duplicate per scelta divergono.
 - Adozione esplicita dei vault legacy (`installa.py --adotta`, pannello dashboard) ed export diagnostico senza contenuti; crea, rinomina ed elimina pagine dalla dashboard (`/pages/preview|apply`, link riscritti, anteprima e journal); layout Barnes-Hut con costruzione a blocchi fino a 2000 nodi; `TESEO_SNAPSHOT_MAX_MIB`; test di uno scrittore esterno durante l'apply.
 - Fase A di [doc/12](doc/12-piano-autenticazione-e-collaudo-avanzato.md): credential helper cercati in sistema, XDG e utente (anche chiavi per URL, formato di `gh auth setup-git`), nuovi errori `git_hostkey` e `git_not_found` con messaggi fissi e rimedio, `teseo_git.py diagnosi`, indicazione della modalità PR sui branch protetti.
