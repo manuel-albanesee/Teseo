@@ -35,6 +35,7 @@ Tutti i percorsi sotto `/api/v1/vaults/{id}`. GET non lancia modelli, Git o muta
 | `GET /nodes/{node_id}` | testo escaped, proprietà, fonti e archi; ID URL-encoded |
 | `GET /ontology` | tipi, relazioni, direzione, sezioni non interpretate e digest |
 | `GET /diagnostics` | lista `{code,severity,path,message,revision}` |
+| `GET /lavorazioni` | stato delle [lavorazioni](lavorazioni.md): per ciascuna fasi (COMPLETA, IN ATTESA, DA RIFARE con i motivi), ultima esecuzione, problemi della definizione e file di output; sola lettura, senza parametri, al più 50 lavorazioni |
 | `POST /rebuild` | job derivato con `operation_id`; nessuna modifica delle note |
 | `POST /ontology/preview` | dal 3.2: candidato e impatto sullo snapshot corrente, nessuna scrittura; [contratto](03-editor-ontologia.md#api-preview-disponibile-32) |
 | `POST /ontology/apply` | dal 3.4: apply manuale locale con conferme, If-Match e journal; [contratto](03-editor-ontologia.md) |

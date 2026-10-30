@@ -504,6 +504,7 @@ Uso:
 | `stato(vault, nome, esecuzione=None)` | Avanzamento di un'esecuzione (l'ultima se non indicata): {lavorazione, esecuzione, fasi:[{nome, stato, file, motivi}]}. |
 | `verifica(vault, nome, fase, esecuzione=None, citazioni=False)` | Controlli deterministici sull'output di una fase: [{codice, file, riga, messaggio}], vuoto se è tutto a posto. |
 | `promuovi(vault, nome, esecuzione=None, file=None, oggi=None)` | Copia l'output finale in raw/lavorazione-<nome>-<esecuzione>.md con la provenienza; mai sovrascrive. |
+| `pannello(vault, massimo=MAX_PANNELLO)` | Stato di tutte le lavorazioni per la dashboard: {presente, troncato, lavorazioni:[{nome, esecuzione, fasi, problemi, output}]}. |
 | `disegna(situazione)` | La pipeline in ASCII: una casella per fase e, sotto, il suo stato. |
 | `main(argv=None)` | — |
 
@@ -1223,6 +1224,10 @@ Rebuild derivati espliciti: journal persistente, lock comune, nessun apply note.
 | Classe | Descrizione |
 | --- | --- |
 | `RebuildCoordinator` | — |
+
+## `kit/dashboard/lavorazioni_ui.py`
+
+Pannello delle lavorazioni: stato delle pipeline ICM del vault, in sola lettura (nessun avvio di fasi).
 
 ## `kit/dashboard/node_ui.py`
 

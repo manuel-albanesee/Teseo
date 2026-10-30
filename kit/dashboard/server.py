@@ -379,6 +379,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                         reader = {"status": self.server.read_api.status, "graph": self.server.read_api.graph,
                                   "ontology": self.server.read_api.ontology,
                                   "authors": self.server.read_api.authors,
+                                  "lavorazioni": self.server.read_api.lavorazioni,
                                   "diagnostics-export": self.server.exporter.export,
                                   "causal": self.server.read_api.causal,
                                   "neighbors": self.server.read_api.neighbors,

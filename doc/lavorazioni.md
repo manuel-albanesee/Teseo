@@ -104,6 +104,15 @@ registra in `esecuzione.json`. Gli override non usano YAML: il tipo lo decide la
 
 La scheda richiede l'argomento a ogni esecuzione: `avvia NOME --param argomento="Nome della pagina"`.
 
+## Pannello nella dashboard
+
+Il pannello «Lavorazioni» della [dashboard](02-dashboard-consultazione.md) mostra, in **sola lettura**, lo stato di ogni lavorazione: le
+fasi con COMPLETA, IN ATTESA o DA RIFARE (e i motivi), l'ultima esecuzione, i problemi della definizione e i file di output. Legge
+`GET /api/v1/vaults/{id}/lavorazioni`, che non accetta parametri, non avvia processi e non scrive nulla; non segue collegamenti simbolici
+e limita il numero di lavorazioni, di fasi e la lunghezza dei testi. Le fasi non si avviano da lì: le esegue il client con la skill, come
+per ingest e lint ([4](04-coordinamento-ingest-lint.md)). Prova nel browser: `tests/dashboard_lavorazioni_fixture.py` e
+`tests/dashboard_lavorazioni_smoke.js`.
+
 ## Piano di ingest
 
 La stessa idea, applicata all'ingest: per una fonte singola importante la skill scrive prima `lavorazioni/_ingest/<fonte>-piano.md`

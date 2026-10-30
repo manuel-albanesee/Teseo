@@ -1,5 +1,6 @@
 """Workbench: consultazione e proposte ontologia, contenuti sempre inerti."""
 from .ontology_ui import EDITOR_SCRIPT
+from .lavorazioni_ui import LAVORAZIONI_SCRIPT
 from .skill_ui import SKILL_SCRIPT
 from .shared_ui import SHARED_SCRIPT
 from .sync_ui import SYNC_SCRIPT
@@ -9,7 +10,7 @@ from .admin_ui import ADMIN_SCRIPT
 SCRIPT = r"""
 (() => {
  'use strict';
-""" + EDITOR_SCRIPT + SKILL_SCRIPT + SHARED_SCRIPT + SYNC_SCRIPT + GRAPH_SCRIPT + NODE_SCRIPT + ADMIN_SCRIPT + r"""
+""" + EDITOR_SCRIPT + SKILL_SCRIPT + LAVORAZIONI_SCRIPT + SHARED_SCRIPT + SYNC_SCRIPT + GRAPH_SCRIPT + NODE_SCRIPT + ADMIN_SCRIPT + r"""
  const $ = id => document.getElementById(id);
  const token = new URLSearchParams(location.hash.slice(1)).get('session');
  history.replaceState(null, '', location.pathname);
@@ -38,6 +39,7 @@ SCRIPT = r"""
  const admin=createAdminPanel({api,element,getEpoch:()=>epoch,getVault:()=>$('vault').value,getState:()=>state,getNodes:()=>nodes.map(node=>node.id),stopped:()=>stopping,
    onAdopted:vaultId=>refreshVaults(vaultId),onOperation:(vault,id)=>watchOperation(vault,id)});
  const sync=createSyncPanel({api,element,getEpoch:()=>epoch,getVault:()=>$('vault').value,stopped:()=>stopping});
+ const lavorazioni=createLavorazioniPanel({api,element,getEpoch:()=>epoch,getVault:()=>$('vault').value,stopped:()=>stopping});
  $('skill-dispatch').addEventListener('click',async()=>{const vault=$('vault').value;if(!vault||stopping)return;try{await api('/api/v1/vaults/'+encodeURIComponent(vault)+'/dispatch',{});if(vault===$('vault').value)$('list-operations').click();}catch(error){$('operation').textContent=error.code+': '+error.message;}});
  $('list-operations').addEventListener('click',async()=>{
    const vault=$('vault').value,run=epoch;if(!vault||stopping)return;
@@ -186,6 +188,7 @@ SCRIPT = r"""
    skills.reset();
    shared.reset();
    sync.reset();
+   lavorazioni.reset();
    $('operation-list').replaceChildren();
    ++operationPoll;$('rebuild').disabled=true;$('operation').textContent='';
    const run=++epoch;++graphRequest;++detailRequest;state=null;invalid=false;loadingGraph=false;nodes=[];edges=[];cursor=null;filters={};
@@ -206,6 +209,7 @@ SCRIPT = r"""
      skills.mount(status);
      shared.mount(status);
      sync.mount(status);
+     lavorazioni.mount(status);
      if(status.active_operation_id)watchOperation(id,status.active_operation_id);
      else if(!status.capabilities.rebuild)$('operation').textContent='Rebuild non disponibile per questo formato. I vault legacy restano in sola lettura.';
      $('notice').textContent=(status.issues||[]).map(issue=>issue.code+': '+issue.message).join(' · ');

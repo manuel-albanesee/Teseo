@@ -37,14 +37,20 @@ import sys
 from datetime import date, timedelta
 from pathlib import Path
 
-import contratti
-from build_graph import LINK, PAGINE_SCHEMA, RIGA_FONTE, bersaglio, leggi_testo, valori
-from graph_db import GraphDatabaseError, connect_graph
+try:  # nel repository il modulo sta nel pacchetto kit.graph (lo importa la dashboard); nel vault gli script sono piatti in .graph/
+    from . import contratti
+    from .build_graph import LINK, PAGINE_SCHEMA, RIGA_FONTE, bersaglio, leggi_testo, valori
+    from .graph_db import GraphDatabaseError, connect_graph
+except ImportError:
+    import contratti
+    from build_graph import LINK, PAGINE_SCHEMA, RIGA_FONTE, bersaglio, leggi_testo, valori
+    from graph_db import GraphDatabaseError, connect_graph
 
 NOME = re.compile(r"^[a-z0-9][a-z0-9-]{0,40}$")
 FASE = re.compile(r"^(\d{2})-[a-z0-9][a-z0-9-]*$")
 ESECUZIONE = re.compile(r"^(\d{4}-\d{2}-\d{2})-(\d+)$")
 PERIODO = re.compile(r"^(\d+)([gs])$")
+NOME_PAGINA = re.compile(r"^[^/\\]+$")
 CITAZIONE_FONTE = re.compile(r"(?<!\[)\[([a-z0-9]+(?:-[a-z0-9]+)+)(?:\s[^\]\[]*)?\](?!\()")  # [call-2026-08-28 34:39]
 CODICE_INLINE = re.compile(r"`[^`\n]*`")
 RIFERIMENTO = re.compile(r"^\{([A-Za-z_][A-Za-z0-9_]*)\}$")
@@ -182,8 +188,8 @@ def elenco(vault):
     """Le lavorazioni del vault: nome, numero di fasi, id dell'ultima esecuzione (None se non ce ne sono)."""
     radice = _radice(vault)
     risultato = []
-    for base in sorted(radice.iterdir()) if radice.is_dir() else []:
-        if base.is_dir() and NOME.match(base.name):
+    for base in sorted(radice.iterdir()) if radice.is_dir() and not radice.is_symlink() else []:
+        if base.is_dir() and not base.is_symlink() and NOME.match(base.name):
             fasi = [f for f in _fasi(base) if FASE.match(f)]
             esecuzioni = _esecuzioni(base)
             risultato.append({"nome": base.name, "fasi": len(fasi), "esecuzione": esecuzioni[-1] if esecuzioni else None})
@@ -455,11 +461,16 @@ def _obsolescenza(vault, base, esecuzione, fasi):
         if indice == 0:
             cambiate = []
             for id_, impronta in sorted((registro.get("pagine") or {}).items()):
+                if not NOME_PAGINA.match(str(id_)) or id_ in (".", "..") or len(str(id_)) > 200:
+                    continue  # il registro è un file del vault: mai percorsi fuori da wiki/ né nomi che il filesystem rifiuta
                 file = Path(vault) / "wiki" / f"{id_}.md"
-                if not file.is_file():
-                    cambiate.append(f"pagina «{id_}» rimossa dopo la raccolta")
-                elif _sha(file) != impronta:
-                    cambiate.append(f"pagina «{id_}» modificata dopo la raccolta")
+                try:
+                    if not file.is_file():
+                        cambiate.append(f"pagina «{id_}» rimossa dopo la raccolta")
+                    elif _sha(file) != impronta:
+                        cambiate.append(f"pagina «{id_}» modificata dopo la raccolta")
+                except OSError:
+                    cambiate.append(f"pagina «{id_}» non leggibile")
             motivi += cambiate[:3] + ([f"e altre {len(cambiate) - 3} pagine"] if len(cambiate) > 3 else [])
             if registro.get("config_sha256") and (base / "config.md").is_file() and registro["config_sha256"] != _sha(base / "config.md"):
                 motivi.append("config.md modificato dopo l'avvio")
@@ -647,6 +658,42 @@ def promuovi(vault, nome, esecuzione=None, file=None, oggi=None):
     percorso = f"raw/{chiave}.md"
     return {"percorso": percorso, "chiave": chiave, "esecuzione": esecuzione, "file": file,
             "riga_fonti": f"| `{chiave}` | `{percorso}` | {oggi} · documento derivato dalla lavorazione {nome} (esecuzione {esecuzione}) |"}
+
+
+MAX_PANNELLO = 50
+MAX_TESTO = 300
+
+
+def _corto(testo):
+    testo = str(testo)
+    return testo if len(testo) <= MAX_TESTO else testo[:MAX_TESTO - 1] + "…"
+
+
+def pannello(vault, massimo=MAX_PANNELLO):
+    """Stato di tutte le lavorazioni per la dashboard: {presente, troncato, lavorazioni:[{nome, esecuzione, fasi, problemi, output}]}.
+
+    Solo lettura, con tetti (massimo lavorazioni, 300 caratteri per testo, 100 output): non segue collegamenti simbolici e
+    non fa fallire l'elenco per una lavorazione rotta, che compare con i suoi problemi o con un errore."""
+    radice = _radice(vault)
+    trovate = elenco(vault)
+    risultato = {"presente": radice.is_dir() and not radice.is_symlink(), "troncato": len(trovate) > massimo, "lavorazioni": []}
+    for voce in trovate[:massimo]:
+        nome = voce["nome"]
+        try:
+            situazione = stato(vault, nome)
+            problemi = [{"codice": q["codice"], "messaggio": _corto(q["messaggio"])} for q in valida(vault, nome)]
+        except (LavorazioneError, OSError) as errore:
+            risultato["lavorazioni"].append({"nome": nome, "esecuzione": None, "fasi": [], "output": [],
+                                             "problemi": [{"codice": getattr(errore, "codice", "illeggibile"),
+                                                           "messaggio": _corto(getattr(errore, "messaggio", errore))}]})
+            continue
+        fasi = [{"nome": f["nome"], "stato": f["stato"], "file": f["file"][:20], "motivi": [_corto(m) for m in f["motivi"][:5]]}
+                for f in situazione["fasi"][:30]]
+        base = f"lavorazioni/{nome}/esecuzioni/{situazione['esecuzione']}"
+        uscite = [f"{base}/{f['nome']}/{nome_file}" for f in situazione["fasi"] if f["stato"] != "IN ATTESA" for nome_file in f["file"][:20]]
+        risultato["lavorazioni"].append({"nome": nome, "esecuzione": situazione["esecuzione"], "fasi": fasi, "problemi": problemi[:10],
+                                         "output": uscite[:100] if situazione["esecuzione"] else []})
+    return risultato
 
 
 def disegna(situazione):

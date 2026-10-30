@@ -24,6 +24,7 @@ PAGE = """<!doctype html>
 <details id="pages-section" hidden><summary>Pagine · crea, rinomina, elimina</summary><div id="pages-panel"></div></details>
 <details id="adopt-section" hidden><summary>Adotta questo vault</summary><div id="adopt-panel"></div></details>
 <details><summary>Cicli ingest e lint</summary><div id="skill-panel"></div><button id="skill-dispatch" type="button">Ricontrolla coda</button></details>
+<details><summary>Lavorazioni</summary><div id="lavorazioni-panel"></div></details>
 <details><summary>Risposte e decisioni condivise</summary><div id="shared-panel"></div></details>
 <details><summary>Pubblicazione Git dei dati</summary><div id="sync-panel"></div></details>
 <nav aria-label="Viste del vault"><button data-view="graph" aria-pressed="true">Grafo</button><button data-view="ontology" aria-pressed="false">Ontologia</button><button data-view="diagnostics" aria-pressed="false">Diagnostica</button></nav>

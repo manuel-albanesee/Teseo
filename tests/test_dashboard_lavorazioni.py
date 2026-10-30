@@ -106,7 +106,7 @@ class RottaLavorazioni(unittest.TestCase):
     def test_richiede_la_sessione_e_rifiuta_i_parametri(self):
         self.assertIn(self.lavorazioni_non_autenticata()[0], (401, 403))
         stato, _, corpo = self.lavorazioni('?generation=' + 'a' * 64)
-        self.assertEqual(stato, 422, corpo)
+        self.assertEqual(stato, 400, corpo)
         self.assertEqual(json.loads(corpo)['error']['code'], 'invalid_query')
 
     def lavorazioni_non_autenticata(self):

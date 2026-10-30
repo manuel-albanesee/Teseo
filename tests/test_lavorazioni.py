@@ -1074,13 +1074,22 @@ class Pannello(Base):
         self.assertEqual((len(risposta['lavorazioni']), risposta['troncato']), (5, True))
 
     def test_testi_lunghi_sono_accorciati(self):
-        self.crea(config=CONFIG.replace('team operativo', 'x' * 900))
-        lavorazioni.avvia(self.vault, 'prova', oggi='2026-10-30')
-        pagina = self.vault / 'wiki/Console di rilascio.md'
-        pagina.rename(self.vault / ('wiki/' + 'nome ' + 'z' * 280 + '.md'))
-        for voce in lavorazioni.pannello(self.vault)['lavorazioni']:
-            for fase in voce['fasi']:
-                self.assertTrue(all(len(m) <= 300 for m in fase['motivi']))
+        self.assertEqual((len(lavorazioni._corto('x' * 500)), lavorazioni._corto('x' * 500)[-1]), (300, '…'))
+        self.assertEqual(lavorazioni._corto('breve'), 'breve')
+
+    def test_identificatore_enorme_nel_registro_non_rompe_lo_stato(self):
+        # Un nome oltre il limite del filesystem farebbe lanciare OSError a is_file(): lo stato, anche da riga di comando, cadrebbe.
+        self.crea()
+        e = lavorazioni.avvia(self.vault, 'prova', oggi='2026-10-30')
+        registro = Path(e['percorso']) / 'esecuzione.json'
+        dati = json.loads(registro.read_text(encoding='utf-8'))
+        dati['pagine'] = {'p' * 500: 'x', 'q' * 150: 'y'}
+        registro.write_text(json.dumps(dati), encoding='utf-8')
+        fase = lavorazioni.stato(self.vault, 'prova')['fasi'][0]
+        self.assertEqual(fase['stato'], 'DA RIFARE')
+        self.assertEqual(len(fase['motivi'][0]) < 300, True)
+        self.assertNotIn('p' * 500, ' '.join(fase['motivi']))
+        self.assertEqual(lavorazioni.pannello(self.vault)['lavorazioni'][0]['fasi'][0]['stato'], 'DA RIFARE')
 
     def test_non_segue_una_lavorazione_che_e_un_collegamento_simbolico(self):
         fuori = Path(tempfile.mkdtemp(prefix='teseo-fuori-', dir=self.vault.parent))

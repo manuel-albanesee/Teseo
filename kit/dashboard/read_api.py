@@ -27,6 +27,15 @@ def _parser():
     return build_graph
 
 
+def _lavorazioni():
+    # Modulo del runtime del servizio, come build_graph: mai caricato dal percorso del vault collegato.
+    try:
+        from ..graph import lavorazioni
+    except ImportError:
+        import lavorazioni
+    return lavorazioni
+
+
 def _revision(reference):
     return {"content_revision": reference.content_revision, "graph_generation": reference.generation}
 
@@ -345,6 +354,14 @@ class ReadAPI:
                     names.setdefault(name, {"name": name, "created": 0, "modified": 0})[key] = count
             return {**_revision(reference), "authors": sorted(names.values(), key=lambda item: item["name"])[:200],
                     "available": True}
+
+    def lavorazioni(self, vault_id, parameters):
+        """Stato delle lavorazioni (pipeline ICM) del vault: sola lettura, senza grafo né generazione."""
+        self._parameters(parameters, set())
+        try:
+            return _lavorazioni().pannello(self.registry.root(vault_id))
+        except OSError as error:
+            raise ContractError("lavorazioni_illeggibili", "La cartella lavorazioni/ non è leggibile") from error
 
     @staticmethod
     def _ontology(db, reference):
