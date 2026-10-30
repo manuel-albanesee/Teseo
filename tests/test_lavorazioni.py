@@ -524,7 +524,8 @@ class Modelli(Base):
 
         def esegui(*argomenti):
             fatto = subprocess.run([sys.executable, *argomenti], cwd=destinazione, capture_output=True, timeout=120)
-            return fatto.returncode, (fatto.stdout + fatto.stderr).decode('utf-8', 'replace')
+            # Su Windows un processo figlio scrive «\r\n»: si confrontano i fine riga normalizzati.
+            return fatto.returncode, (fatto.stdout + fatto.stderr).decode('utf-8', 'replace').replace('\r\n', '\n')
         self.assertEqual(esegui('.graph/build_graph.py', '--check')[0], 0)
         self.assertIn('creata', esegui('.graph/lavorazioni.py', 'nuova', 'mio', '--da', 'report-periodico')[1])
         self.assertEqual(esegui('.graph/lavorazioni.py', 'valida', 'mio'), (0, 'mio: ok\n'))
