@@ -102,7 +102,8 @@ Per cambiare il piano: aggiornare prima il contratto interessato, elencare motiv
 - [Analisi ECC dell'Interpretable Context Methodology](analisi-icm-ecc.md): integrabilità
   di ICM nelle istruzioni del vault; adottare convenzioni e ciclo «correggere la fonte», non le cartelle di fase.
 - [Guida completa e presentazione](presentazione/guida-teseo.md): concetto, funzionamento,
-  casistiche, evoluzione e casi d'uso aziendali, con diagrammi; deck in [presentazione/](presentazione/teseo-presentazione.pptx).
+  casistiche, evoluzione e casi d'uso aziendali, con diagrammi; presentazioni [teorica](presentazione/teseo-presentazione-teorica.pptx)
+  e [tecnica](presentazione/teseo-presentazione-tecnica.pptx).
 - [Riferimento API](api.md): moduli, classi e funzioni pubbliche, generato dai
   docstring con `script/genera_api_doc.py` (verificato da `tests/test_api_doc.py`).
 

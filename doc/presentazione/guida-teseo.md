@@ -1,6 +1,7 @@
 # Teseo — guida completa: concetto, funzionamento, evoluzione e casi d'uso
 
-Questa guida accompagna la presentazione [`teseo-presentazione.pptx`](teseo-presentazione.pptx) e ne è la versione
+Questa guida accompagna le due presentazioni: [teorica](teseo-presentazione-teorica.pptx) (le idee, 19 slide) e
+[tecnica](teseo-presentazione-tecnica.pptx) (il funzionamento nel dettaglio, 50 slide). Ne è la versione
 estesa: spiega **perché** Teseo esiste, **da quale idea parte**, **come l'ho adattata e rafforzata** nei suoi punti
 deboli, **come funziona** dal livello alto fino ai dettagli del motore, **come gestisce i casi difficili**, **come si sta
 evolvendo** e **dove si usa in azienda**.
