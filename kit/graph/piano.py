@@ -25,14 +25,16 @@ import sys
 from pathlib import Path
 
 import contratti
-from build_graph import LINK, bersaglio, norm, parse_ontology, tipo_ammesso
+from build_graph import bersaglio, norm, parse_ontology, tipo_ammesso
 from graph_db import GraphDatabaseError, connect_graph, graph_reference
 
 SEZIONI = {"pagine da creare": "creare", "pagine da aggiornare": "aggiornare", "relazioni": "relazioni", "alias": "alias",
            "contraddizioni con il vault": "contraddizioni"}
 FONTE = re.compile(r"raw/\S+?\.md")
-RELAZIONE = re.compile(r"^\s*[-*]\s*\[\[([^\]]+)\]\]\s*(?:→|->)\s*([A-Za-z_]\w*)\s*(?:→|->)\s*\[\[([^\]]+)\]\]")
-ALIAS = re.compile(r"«([^»]+)»")
+# Testi limitati e senza le parentesi che li aprono: lineari su input ostili (il LINK di build_graph e «([^»]+)» sono quadratici).
+COLLEGAMENTO = re.compile(r"!?\[\[([^\]\[\n]{1,300})\]\]")
+RELAZIONE = re.compile(r"^\s*[-*]\s*\[\[([^\]\[\n]{1,300})\]\]\s*(?:→|->)\s*([A-Za-z_]\w{0,63})\s*(?:→|->)\s*\[\[([^\]\[\n]{1,300})\]\]")
+ALIAS = re.compile(r"«([^»«\n]{1,200})»")
 TIPO = re.compile(r"\btipo:\s*([\w-]+)")
 NOME_NON_VALIDO = re.compile(r"[()/\\#|\[\]]")
 ELENCO = re.compile(r"^\s*[-*]\s+")
@@ -98,7 +100,7 @@ def controlla(vault, percorso):
 
     nuove, aggiornate, tipo_nuove = {}, {}, {}
     for n, riga in sezioni.get("creare", []):
-        collegamento = LINK.search(riga)
+        collegamento = COLLEGAMENTO.search(riga)
         if not collegamento:
             if "nessuna" not in riga.lower():
                 segnala("riga_non_valida", n, "serve una pagina come [[Nome]]")
@@ -120,7 +122,7 @@ def controlla(vault, percorso):
                 if catalogo is not None and tipo[1] not in catalogo:
                     segnala("tipo_non_ammesso", n, f"[[{nome}]]: tipo «{tipo[1]}» non è nel catalogo dei tipi di Wiki reference.md")
     for n, riga in sezioni.get("aggiornare", []):
-        collegamento = LINK.search(riga)
+        collegamento = COLLEGAMENTO.search(riga)
         if not collegamento:
             if "nessuna" not in riga.lower():
                 segnala("riga_non_valida", n, "serve una pagina come [[Nome]]")
@@ -164,7 +166,7 @@ def controlla(vault, percorso):
             segnala("tipi_non_ammessi", n, f"[[{bersaglio(da)}]] ({t_da}) —{relazione}→ [[{bersaglio(a)}]] ({t_a}): tipi non ammessi")
     visti = {}
     for n, riga in sezioni.get("alias", []):
-        collegamento = LINK.search(riga)
+        collegamento = COLLEGAMENTO.search(riga)
         if not collegamento:
             if "nessuna" not in riga.lower():
                 segnala("riga_non_valida", n, "usare [[Pagina]]: «alias», «altro alias»")

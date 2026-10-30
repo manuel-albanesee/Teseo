@@ -39,11 +39,11 @@ from pathlib import Path
 
 try:  # nel repository il modulo sta nel pacchetto kit.graph (lo importa la dashboard); nel vault gli script sono piatti in .graph/
     from . import contratti
-    from .build_graph import LINK, PAGINE_SCHEMA, RIGA_FONTE, bersaglio, leggi_testo, valori
+    from .build_graph import PAGINE_SCHEMA, RIGA_FONTE, bersaglio, leggi_testo, valori
     from .graph_db import GraphDatabaseError, connect_graph, graph_reference
 except ImportError:
     import contratti
-    from build_graph import LINK, PAGINE_SCHEMA, RIGA_FONTE, bersaglio, leggi_testo, valori
+    from build_graph import PAGINE_SCHEMA, RIGA_FONTE, bersaglio, leggi_testo, valori
     from graph_db import GraphDatabaseError, connect_graph, graph_reference
 
 NOME = re.compile(r"^[a-z0-9][a-z0-9-]{0,40}$")
@@ -53,6 +53,9 @@ PERIODO = re.compile(r"^(\d+)([gs])$")
 NOME_PAGINA = re.compile(r"^[^/\\]+$")
 CITAZIONE_FONTE = re.compile(r"(?<!\[)\[([a-z0-9]+(?:-[a-z0-9]+)+)(?:\s[^\]\[]*)?\](?!\()")  # [call-2026-08-28 34:39]
 CODICE_INLINE = re.compile(r"`[^`\n]*`")
+# Il LINK di build_graph ha un testo [^\]]+? che scorre fino a fine riga da ogni «[[»: quadratico su una riga di «[». Questo non può
+# contenere «[» né andare a capo e ha un tetto, quindi resta lineare anche su file ostili.
+LINK_SICURO = re.compile(r"!?\[\[([^\]\[\n]{1,300})\]\]")
 RIFERIMENTO = re.compile(r"^\{([A-Za-z_][A-Za-z0-9_]*)\}$")
 CHIAVI_SELEZIONE = {"collegate_a", "domanda", "profondita", "relazioni", "tipi", "modificate_da", "massimo"}
 NON_SI_SEGUONO = ("menziona", "documentato_in")  # collegamenti generici e verso le fonti: non descrivono la struttura
@@ -86,6 +89,8 @@ def _fasi(base):
 
 def _esecuzioni(base):
     cartella = base / "esecuzioni"
+    if cartella.is_symlink():  # mai leggere né scrivere fuori dalla lavorazione
+        return []
     trovate = [(m[1], int(m[2]), p.name) for p in (cartella.iterdir() if cartella.is_dir() else [])
                if p.is_dir() and (m := ESECUZIONE.match(p.name))]
     return [nome for _, _, nome in sorted(trovate)]
@@ -398,6 +403,8 @@ def avvia(vault, nome, override=(), oggi=None):
         date.fromisoformat(oggi)
     except ValueError as errore:
         raise LavorazioneError("data_non_valida", f"«{oggi}»: usare AAAA-MM-GG") from errore
+    if (base / "esecuzioni").is_symlink():
+        raise LavorazioneError("percorso_non_valido", "esecuzioni/ è un collegamento simbolico: serve una cartella ordinaria")
     selezione, parametri, origine = _risolvi(base, list(override))
     db = _apri_grafo(vault)
     try:
@@ -590,7 +597,7 @@ def verifica(vault, nome, fase, esecuzione=None, citazioni=False):
             testo = CODICE_INLINE.sub("", testo)
             if contratti.SEGNAPOSTO.search(testo):
                 segnala("segnaposto", percorso, n, f"segnaposto non compilato: {contratti.SEGNAPOSTO.search(testo)[0]}")
-            for m in LINK.finditer(testo):
+            for m in LINK_SICURO.finditer(testo):
                 bersaglio_ = bersaglio(m[1]).lower()
                 pagina = risolvi.get(bersaglio_)
                 if pagina is None and bersaglio_ not in PAGINE_SCHEMA:
@@ -605,7 +612,7 @@ def verifica(vault, nome, fase, esecuzione=None, citazioni=False):
                 if blocco[0].lstrip().startswith(("#", "|", ">")):
                     continue
                 pulito = CODICE_INLINE.sub("", " ".join(b.strip() for b in blocco))
-                if len(pulito) >= 40 and not LINK.search(pulito):
+                if len(pulito) >= 40 and not LINK_SICURO.search(pulito):
                     segnala("paragrafo_senza_citazione", percorso, n, "paragrafo senza alcun collegamento [[Pagina]]")
     return sorted(problemi, key=lambda q: (q["file"] or "", q["riga"] or 0))
 
