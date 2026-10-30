@@ -28,6 +28,7 @@ Scrive la bozza del report a partire dalla sola raccolta.
 
 | Controllo | Come | Esito atteso |
 | --- | --- | --- |
+| Link, fonti e segnaposto | `python .graph/lavorazioni.py verifica <nome> --fase 02 --citazioni` | nessun problema |
 | Ogni paragrafo cita almeno una pagina | rilettura della bozza | nessun paragrafo senza `[[Pagina]]` |
 | Nessun fatto fuori dalla raccolta | confronto con `raccolta.md` | nessuno |
 | Nessun «da verificare» risolto per conto proprio | ricerca del marcatore | marcatori invariati |

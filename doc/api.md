@@ -455,7 +455,8 @@ Uso:
   python .graph/lavorazioni.py nuova NOME --da MODELLO_O_LAVORAZIONE
   python .graph/lavorazioni.py valida NOME
   python .graph/lavorazioni.py avvia NOME [--param chiave=valore ...]   `selezione.massimo=5` o un parametro di config.md
-  python .graph/lavorazioni.py stato NOME [--esecuzione ID] [--json]
+  python .graph/lavorazioni.py stato NOME [--esecuzione ID] [--json]       COMPLETA, IN ATTESA o DA RIFARE (con i motivi)
+  python .graph/lavorazioni.py verifica NOME --fase 02 [--citazioni]       link, fonti e segnaposto dell'output di una fase
 
 | Classe | Descrizione |
 | --- | --- |
@@ -467,7 +468,8 @@ Uso:
 | `elenco(vault)` | Le lavorazioni del vault: nome, numero di fasi, id dell'ultima esecuzione (None se non ce ne sono). |
 | `nuova(vault, nome, da, modelli=None)` | Crea lavorazioni/<nome> copiando un modello o un'altra lavorazione (senza esecuzioni né collegamenti simbolici). |
 | `avvia(vault, nome, override=(), oggi=None)` | Crea una nuova esecuzione e svolge la raccolta; restituisce {id, percorso, pagine, troncata}. |
-| `stato(vault, nome, esecuzione=None)` | Avanzamento di un'esecuzione (l'ultima se non indicata): {lavorazione, esecuzione, fasi:[{nome, stato, file}]}. |
+| `stato(vault, nome, esecuzione=None)` | Avanzamento di un'esecuzione (l'ultima se non indicata): {lavorazione, esecuzione, fasi:[{nome, stato, file, motivi}]}. |
+| `verifica(vault, nome, fase, esecuzione=None, citazioni=False)` | Controlli deterministici sull'output di una fase: [{codice, file, riga, messaggio}], vuoto se è tutto a posto. |
 | `disegna(situazione)` | La pipeline in ASCII: una casella per fase e, sotto, il suo stato. |
 | `main(argv=None)` | — |
 

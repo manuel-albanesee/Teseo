@@ -22,7 +22,8 @@ Uso:
   python .graph/lavorazioni.py nuova NOME --da MODELLO_O_LAVORAZIONE
   python .graph/lavorazioni.py valida NOME
   python .graph/lavorazioni.py avvia NOME [--param chiave=valore ...]   `selezione.massimo=5` o un parametro di config.md
-  python .graph/lavorazioni.py stato NOME [--esecuzione ID] [--json]
+  python .graph/lavorazioni.py stato NOME [--esecuzione ID] [--json]       COMPLETA, IN ATTESA o DA RIFARE (con i motivi)
+  python .graph/lavorazioni.py verifica NOME --fase 02 [--citazioni]       link, fonti e segnaposto dell'output di una fase
 """
 import argparse
 import hashlib
@@ -35,13 +36,15 @@ from datetime import date, timedelta
 from pathlib import Path
 
 import contratti
-from build_graph import leggi_testo, valori
+from build_graph import LINK, PAGINE_SCHEMA, RIGA_FONTE, bersaglio, leggi_testo, valori
 from graph_db import GraphDatabaseError, connect_graph
 
 NOME = re.compile(r"^[a-z0-9][a-z0-9-]{0,40}$")
 FASE = re.compile(r"^(\d{2})-[a-z0-9][a-z0-9-]*$")
 ESECUZIONE = re.compile(r"^(\d{4}-\d{2}-\d{2})-(\d+)$")
 PERIODO = re.compile(r"^(\d+)([gs])$")
+CITAZIONE_FONTE = re.compile(r"(?<!\[)\[([a-z0-9]+(?:-[a-z0-9]+)+)(?:\s[^\]\[]*)?\](?!\()")  # [call-2026-08-28 34:39]
+CODICE_INLINE = re.compile(r"`[^`\n]*`")
 RIFERIMENTO = re.compile(r"^\{([A-Za-z_][A-Za-z0-9_]*)\}$")
 CHIAVI_SELEZIONE = {"collegate_a", "domanda", "profondita", "relazioni", "tipi", "modificate_da", "massimo"}
 NON_SI_SEGUONO = ("menziona", "documentato_in")  # collegamenti generici e verso le fonti: non descrivono la struttura
@@ -295,6 +298,16 @@ def _seleziona(db, selezione, oggi, origine=None):
     return [p for _, p in candidate[:massimo]], len(candidate), len(candidate) > massimo
 
 
+def _apri_grafo(vault):
+    grafo = Path(vault) / ".graph/graph.sqlite"
+    if not grafo.is_file():
+        raise LavorazioneError("grafo_assente", "grafo non trovato: eseguire python .graph/build_graph.py")
+    try:
+        return connect_graph(grafo)
+    except (sqlite3.Error, GraphDatabaseError) as errore:
+        raise LavorazioneError("grafo_non_leggibile", f"{errore}: rieseguire python .graph/build_graph.py") from errore
+
+
 def _pagina(vault, db, id_):
     riga = db.execute("SELECT tipo, aggiornato, path FROM entities WHERE id = ?", (id_,)).fetchone()
     percorso = Path(vault) / riga[2]
@@ -341,13 +354,7 @@ def avvia(vault, nome, override=(), oggi=None):
     except ValueError as errore:
         raise LavorazioneError("data_non_valida", f"«{oggi}»: usare AAAA-MM-GG") from errore
     selezione, parametri, origine = _risolvi(base, list(override))
-    grafo = Path(vault) / ".graph/graph.sqlite"
-    if not grafo.is_file():
-        raise LavorazioneError("grafo_assente", "grafo non trovato: eseguire python .graph/build_graph.py")
-    try:
-        db = connect_graph(grafo)
-    except (sqlite3.Error, GraphDatabaseError) as errore:
-        raise LavorazioneError("grafo_non_leggibile", f"{errore}: rieseguire python .graph/build_graph.py") from errore
+    db = _apri_grafo(vault)
     try:
         ids, candidate, troncata = _seleziona(db, selezione, oggi, origine)
         schede = {i: _pagina(vault, db, i) for i in ids}
@@ -382,8 +389,66 @@ def avvia(vault, nome, override=(), oggi=None):
     return {"id": id_esecuzione, "percorso": str(destinazione), "pagine": len(schede), "troncata": troncata}
 
 
+def _registro(base, esecuzione):
+    try:
+        dati = json.loads((base / "esecuzioni" / esecuzione / "esecuzione.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return dati if isinstance(dati, dict) else None
+
+
+def _ultima_modifica(cartella):
+    ore = [p.stat().st_mtime for p in cartella.rglob("*") if p.is_file() and not p.name.startswith(".")] if cartella.is_dir() else []
+    return max(ore, default=None)
+
+
+def _obsolescenza(vault, base, esecuzione, fasi):
+    """Marca DA RIFARE le fasi COMPLETE costruite su qualcosa che poi è cambiato; ne scrive i motivi. Solo lettura.
+
+    Cambiano la raccolta: una pagina raccolta (modificata o rimossa) o config.md; cambia una fase: il suo contratto o
+    l'output di una fase a monte più recente del suo (data di modifica del file). Una fase da rifare rende da rifare
+    anche le COMPLETE a valle. Senza esecuzione.json restano solo i confronti fra date."""
+    registro = _registro(base, esecuzione) or {}
+    precedenti, da_rifare = [], None
+    for indice, fase in enumerate(fasi):
+        fase["motivi"] = []
+        if fase["stato"] != "COMPLETA":
+            continue
+        motivi = fase["motivi"]
+        if indice == 0:
+            cambiate = []
+            for id_, impronta in sorted((registro.get("pagine") or {}).items()):
+                file = Path(vault) / "wiki" / f"{id_}.md"
+                if not file.is_file():
+                    cambiate.append(f"pagina «{id_}» rimossa dopo la raccolta")
+                elif _sha(file) != impronta:
+                    cambiate.append(f"pagina «{id_}» modificata dopo la raccolta")
+            motivi += cambiate[:3] + ([f"e altre {len(cambiate) - 3} pagine"] if len(cambiate) > 3 else [])
+            if registro.get("config_sha256") and (base / "config.md").is_file() and registro["config_sha256"] != _sha(base / "config.md"):
+                motivi.append("config.md modificato dopo l'avvio")
+            if motivi:
+                motivi.append("rieseguire «avvia» per una nuova raccolta")
+        contratto = base / "fasi" / fase["nome"] / "CONTEXT.md"
+        previsto = (registro.get("contratti") or {}).get(fase["nome"])
+        if previsto and contratto.is_file() and previsto != _sha(contratto):
+            motivi.append("contratto della fase modificato dopo l'esecuzione")
+        mia = _ultima_modifica(base / "esecuzioni" / esecuzione / fase["nome"])
+        for nome_a_monte, ora in precedenti:
+            if mia is not None and ora is not None and ora > mia:
+                motivi.append(f"output della fase {nome_a_monte} modificato dopo questo")
+                break
+        if da_rifare and not motivi:
+            motivi.append(f"a monte: {da_rifare} da rifare")
+        if motivi:
+            fase["stato"] = "DA RIFARE"
+            da_rifare = da_rifare or fase["nome"]
+        precedenti.append((fase["nome"], mia))
+
+
 def stato(vault, nome, esecuzione=None):
-    """Avanzamento di un'esecuzione (l'ultima se non indicata): {lavorazione, esecuzione, fasi:[{nome, stato, file}]}."""
+    """Avanzamento di un'esecuzione (l'ultima se non indicata): {lavorazione, esecuzione, fasi:[{nome, stato, file, motivi}]}.
+
+    Stato: COMPLETA, IN ATTESA, oppure DA RIFARE con i motivi (vedi _obsolescenza)."""
     base = _base(vault, nome)
     if esecuzione is not None and (not ESECUZIONE.match(esecuzione) or not (base / "esecuzioni" / esecuzione).is_dir()):
         raise LavorazioneError("esecuzione_inesistente", f"nessuna esecuzione «{esecuzione}» per {nome}")
@@ -393,8 +458,101 @@ def stato(vault, nome, esecuzione=None):
         cartella = base / "esecuzioni" / esecuzione / fase if esecuzione else None
         file = sorted(p.relative_to(cartella).as_posix() for p in cartella.rglob("*")
                       if p.is_file() and not p.name.startswith(".")) if cartella and cartella.is_dir() else []
-        fasi.append({"nome": fase, "stato": "COMPLETA" if file else "IN ATTESA", "file": file})
+        fasi.append({"nome": fase, "stato": "COMPLETA" if file else "IN ATTESA", "file": file, "motivi": []})
+    if esecuzione:
+        _obsolescenza(vault, base, esecuzione, fasi)
     return {"lavorazione": nome, "esecuzione": esecuzione, "fasi": fasi}
+
+
+def _fase(base, fase):
+    fasi = [f for f in _fasi(base) if FASE.match(f)]
+    scelta = next((f for f in fasi if isinstance(fase, str) and (f == fase or f.startswith(f"{fase}-"))), None)
+    if scelta is None:
+        raise LavorazioneError("fase_inesistente", f"nessuna fase «{fase}»: fasi {', '.join(fasi) or '(nessuna)'}")
+    return scelta, fasi
+
+
+def _blocchi(righe):
+    """Blocchi di righe consecutive non vuote fuori dal codice: [(riga iniziale, [testo])]."""
+    blocchi, corrente = [], []
+    for n, testo, fuori in righe:
+        if fuori and testo.strip():
+            corrente.append((n, testo))
+        elif corrente:
+            blocchi.append((corrente[0][0], [t for _, t in corrente]))
+            corrente = []
+    if corrente:
+        blocchi.append((corrente[0][0], [t for _, t in corrente]))
+    return blocchi
+
+
+def verifica(vault, nome, fase, esecuzione=None, citazioni=False):
+    """Controlli deterministici sull'output di una fase: [{codice, file, riga, messaggio}], vuoto se è tutto a posto.
+
+    Link `[[Pagina]]` esistenti e presenti nella raccolta, chiavi di fonte censite, nessun segnaposto; con `citazioni`
+    anche almeno un link per paragrafo. Solo lettura. La coerenza di significato resta alla Verifica del contratto."""
+    base = _base(vault, nome)
+    fase, fasi = _fase(base, fase)
+    if esecuzione is not None and (not ESECUZIONE.match(esecuzione) or not (base / "esecuzioni" / esecuzione).is_dir()):
+        raise LavorazioneError("esecuzione_inesistente", f"nessuna esecuzione «{esecuzione}» per {nome}")
+    esecuzione = esecuzione or next(iter(reversed(_esecuzioni(base))), None)
+    if esecuzione is None:
+        raise LavorazioneError("esecuzione_inesistente", f"{nome} non ha esecuzioni: eseguire «avvia»")
+    registro = _registro(base, esecuzione)
+    if registro is None:
+        raise LavorazioneError("registro_mancante", f"esecuzione.json di {esecuzione} assente o illeggibile")
+    cartella = base / "esecuzioni" / esecuzione / fase
+    file = sorted(p for p in cartella.rglob("*.md") if p.is_file() and not p.name.startswith(".")) if cartella.is_dir() else []
+    problemi = []
+
+    def segnala(codice, percorso, riga, messaggio):
+        problemi.append({"codice": codice, "file": percorso.relative_to(cartella).as_posix(), "riga": riga, "messaggio": messaggio})
+    if not file:
+        problemi.append({"codice": "fase_senza_output", "file": None, "riga": None,
+                         "messaggio": f"{fase} non ha output in esecuzioni/{esecuzione}/"})
+        return problemi
+    if fase == fasi[0]:
+        if not any(r.startswith("## [[") for r in file[0].read_text(encoding="utf-8").splitlines()):
+            segnala("raccolta_vuota", file[0], None, "nessuna pagina raccolta: rivedere la selezione in config.md")
+        return problemi
+    db = _apri_grafo(vault)
+    try:
+        risolvi = {r[0].lower(): r[0] for r in db.execute("SELECT id FROM entities WHERE path LIKE 'wiki/%'")}
+        risolvi.update({alias.lower(): id_ for id_, alias in db.execute("SELECT entity_id, alias FROM aliases")
+                        if id_ in risolvi.values()})
+        fonti = {r[0] for r in db.execute("SELECT id FROM entities WHERE tipo = 'fonte'")} | {"nota-utente"}
+    finally:
+        db.close()
+    schema = Path(vault) / "Wiki reference.md"
+    if schema.is_file():
+        fonti |= {m[1] for m in RIGA_FONTE.finditer(schema.read_text(encoding="utf-8"))}
+    raccolte = set(registro.get("pagine") or {})
+    for percorso in file:
+        righe = contratti.analizza(percorso.read_text(encoding="utf-8"))
+        for n, testo, fuori in righe:
+            if not fuori:
+                continue
+            testo = CODICE_INLINE.sub("", testo)
+            if contratti.SEGNAPOSTO.search(testo):
+                segnala("segnaposto", percorso, n, f"segnaposto non compilato: {contratti.SEGNAPOSTO.search(testo)[0]}")
+            for m in LINK.finditer(testo):
+                bersaglio_ = bersaglio(m[1]).lower()
+                pagina = risolvi.get(bersaglio_)
+                if pagina is None and bersaglio_ not in PAGINE_SCHEMA:
+                    segnala("link_inesistente", percorso, n, f"[[{bersaglio(m[1])}]]: nessuna pagina con questo nome")
+                elif pagina is not None and pagina not in raccolte:
+                    segnala("link_fuori_raccolta", percorso, n, f"[[{pagina}]] esiste ma non è nella raccolta di questa esecuzione")
+            for m in CITAZIONE_FONTE.finditer(testo):
+                if m[1] not in fonti:
+                    segnala("fonte_non_censita", percorso, n, f"[{m[1]}]: chiave di fonte non censita in Wiki reference.md")
+        if citazioni:
+            for n, blocco in _blocchi(righe):
+                if blocco[0].lstrip().startswith(("#", "|", ">")):
+                    continue
+                pulito = CODICE_INLINE.sub("", " ".join(b.strip() for b in blocco))
+                if len(pulito) >= 40 and not LINK.search(pulito):
+                    segnala("paragrafo_senza_citazione", percorso, n, "paragrafo senza alcun collegamento [[Pagina]]")
+    return sorted(problemi, key=lambda q: (q["file"] or "", q["riga"] or 0))
 
 
 def disegna(situazione):
@@ -403,7 +561,8 @@ def disegna(situazione):
     sotto = [f["stato"].center(len(c)) for f, c in zip(situazione["fasi"], caselle)]
     titolo = f"{situazione['lavorazione']} · " + (f"esecuzione {situazione['esecuzione']}" if situazione["esecuzione"]
                                                   else "nessuna esecuzione")
-    return "\n".join([titolo, " --> ".join(caselle), "     ".join(sotto).rstrip()])
+    motivi = [f"  {f['nome']}: {f['motivi'][0]}" for f in situazione["fasi"] if f["stato"] == "DA RIFARE" and f["motivi"]]
+    return "\n".join([titolo, " --> ".join(caselle), "     ".join(sotto).rstrip(), *motivi])
 
 
 def main(argv=None):
@@ -423,6 +582,12 @@ def main(argv=None):
     p.add_argument("nome")
     p.add_argument("--param", action="append", default=[], help="chiave=valore, solo per questa esecuzione")
     p.add_argument("--oggi", help="AAAA-MM-GG, per prove ripetibili")
+    p = sub.add_parser("verifica", help="controlli deterministici sull'output di una fase")
+    p.add_argument("nome")
+    p.add_argument("--fase", required=True, help="numero (02) o nome (02-sintesi)")
+    p.add_argument("--esecuzione")
+    p.add_argument("--citazioni", action="store_true", help="richiede almeno un [[link]] per paragrafo")
+    p.add_argument("--json", action="store_true")
     p = sub.add_parser("stato", help="avanzamento della pipeline")
     p.add_argument("nome")
     p.add_argument("--esecuzione")
@@ -451,6 +616,16 @@ def main(argv=None):
             e = avvia(args.vault, args.nome, args.param, args.oggi)
             print(f"esecuzione {e['id']}: {e['pagine']} pagine" + (" (troncata dal massimo)" if e["troncata"] else "")
                   + f" in {Path(e['percorso']).relative_to(args.vault).as_posix()}")
+        elif args.comando == "verifica":
+            problemi = verifica(args.vault, args.nome, args.fase, args.esecuzione, args.citazioni)
+            if args.json:
+                print(json.dumps(problemi, ensure_ascii=False, indent=2))
+            else:
+                for q in problemi:
+                    dove = f"{q['file']}:{q['riga']}: " if q["file"] and q["riga"] else (f"{q['file']}: " if q["file"] else "")
+                    print(f"{dove}{q['codice']}: {q['messaggio']}")
+                print(f"{args.nome} {args.fase}: " + (f"{len(problemi)} problemi" if problemi else "ok"))
+            return 1 if problemi else 0
         elif args.comando == "stato":
             situazione = stato(args.vault, args.nome, args.esecuzione)
             print(json.dumps(situazione, ensure_ascii=False, indent=2) if args.json else disegna(situazione))

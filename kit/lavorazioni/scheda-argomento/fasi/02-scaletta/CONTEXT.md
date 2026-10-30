@@ -27,6 +27,7 @@ Propone la struttura della scheda: sezioni e pagine che le sostengono. Nessun te
 
 | Controllo | Come | Esito atteso |
 | --- | --- | --- |
+| Link, fonti e segnaposto | `python .graph/lavorazioni.py verifica <nome> --fase 02` | nessun problema |
 | Ogni sezione ha almeno una pagina | rilettura | nessuna sezione senza pagine, o è segnata come lacuna |
 | Solo pagine della raccolta | confronto con `raccolta.md` | nessuna pagina estranea |
 

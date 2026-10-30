@@ -35,10 +35,29 @@ letture di `wiki/` che l'utente non ha chiesto, e ogni output è riconducibile a
 | `python .graph/lavorazioni.py nuova NOME --da MODELLO` | crea da un modello (`.graph/modelli/`) o da un'altra lavorazione, senza le sue esecuzioni |
 | `python .graph/lavorazioni.py valida NOME` | controlla config, fasi e contratti (anche con `contratti.py`) |
 | `python .graph/lavorazioni.py avvia NOME [--param chiave=valore]` | nuova esecuzione e raccolta |
-| `python .graph/lavorazioni.py stato NOME` | pipeline in ASCII (o `--json`) |
+| `python .graph/lavorazioni.py stato NOME` | pipeline in ASCII (o `--json`): COMPLETA, IN ATTESA o DA RIFARE con i motivi |
+| `python .graph/lavorazioni.py verifica NOME --fase 02 [--citazioni]` | controlli deterministici sull'output di una fase |
 
 Le fasi dopo la raccolta le esegue il client AI con la skill `obsidian-wiki-lavorazioni` («esegui la lavorazione X»): legge il
 contratto della fase, carica solo gli Input, scrive l'output, esegue la Verifica e si ferma ai Checkpoint.
+
+## Stato e verifica
+
+`stato` confronta l'esecuzione con ciò che è cambiato dopo e segna **DA RIFARE** una fase già completa se, dopo il suo output, è
+cambiato:
+
+- una pagina della raccolta (modificata o rimossa) o `config.md`: serve una nuova esecuzione con `avvia`;
+- il contratto della fase;
+- l'output di una fase a monte (data di modifica del file: una correzione dell'utente alla scaletta rende da rifare la stesura).
+
+Una fase da rifare rende da rifare anche le completate a valle; le fasi in attesa restano in attesa. Le pagine fuori dalla raccolta
+non contano. Il confronto fra output usa la data di modifica dei file: due scritture nello stesso secondo non si distinguono su
+alcuni filesystem.
+
+`verifica` controlla l'output di una fase senza scrivere nulla: ogni `[[link]]` deve essere una pagina esistente (anche tramite
+alias) **e** presente nella raccolta, le chiavi di fonte come `[call-2026-08-28 34:39]` devono essere censite in `Wiki reference.md`,
+non devono restare segnaposto `{{...}}`; con `--citazioni` ogni paragrafo di almeno 40 caratteri deve avere un link. Non giudica se
+un'affermazione è vera: quello resta alla Verifica del contratto, svolta dal modello.
 
 ## Configurazione
 

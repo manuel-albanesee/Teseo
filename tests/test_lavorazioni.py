@@ -762,6 +762,12 @@ class Verifica(Base):
         self.codici()
         self.assertEqual(prima, hash_albero(self.vault))
 
+    def test_i_problemi_escono_in_ordine_di_riga(self):
+        self.output('Vedi [[Pagina inventata]] ancora.\n\nParagrafo lungo e senza alcun collegamento a una pagina qualsiasi.\n\n'
+                    'Poi [[Altra inventata]].\n')
+        problemi = lavorazioni.verifica(self.vault, 'prova', '02', citazioni=True)
+        self.assertEqual([p['riga'] for p in problemi], [1, 3, 5])
+
     def test_un_esecuzione_precisa(self):
         self.output('ok [[Console di rilascio]]\n')
         seconda = lavorazioni.avvia(self.vault, 'prova', oggi='2026-10-30')

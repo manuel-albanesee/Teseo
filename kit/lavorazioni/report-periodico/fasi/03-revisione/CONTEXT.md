@@ -27,6 +27,7 @@ Controlla la bozza contro la raccolta e produce il report finale.
 
 | Controllo | Come | Esito atteso |
 | --- | --- | --- |
+| Link, fonti e segnaposto | `python .graph/lavorazioni.py verifica <nome> --fase 03 --citazioni` | nessun problema |
 | Ogni `[[Pagina]]` citata è nella raccolta | confronto dei collegamenti | nessun collegamento estraneo |
 | Ogni affermazione ha un riscontro | rilettura contro `raccolta.md` | o è sostenuta, o è in `note-revisione.md` |
 

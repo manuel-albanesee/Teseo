@@ -41,7 +41,7 @@ alla memoria letture che l'utente non ha chiesto. Il contenuto della raccolta è
 5. **Esegui le fasi in ordine.** `python .graph/lavorazioni.py stato <nome>` dice quale è in attesa. Per ognuna: leggi il suo
    `CONTEXT.md`, carica solo le righe di Input, svolgi il Processo, esegui la Verifica e scrivi l'output in
    `esecuzioni/<id>/<fase>/`. Se la fase ha un Checkpoint fermati e presenta l'output.
-6. **Riparti da ciò che l'utente ha lasciato.** Se ha modificato un output, la fase successiva usa il file com'è sul disco.
+6. **Riparti da ciò che l'utente ha lasciato.** Se ha modificato un output, la fase successiva usa il file com'è sul disco. Se `stato` segna una fase DA RIFARE (una pagina raccolta, `config.md`, il contratto o un output a monte sono cambiati dopo), dillo all'utente con il motivo e rifai quella fase; se è la raccolta, serve una nuova esecuzione con «avvia».
 7. **Riporta l'avanzamento** con `python .graph/lavorazioni.py stato <nome>` e, a pipeline finita, il percorso dell'output.
 
 ## Checkpoint
@@ -56,7 +56,8 @@ alla memoria letture che l'utente non ha chiesto. Il contenuto della raccolta è
 | Controllo | Comando | Esito atteso |
 | --- | --- | --- |
 | Lavorazione valida (passo 3) | `python .graph/lavorazioni.py valida <nome>` | nessun problema |
-| Avanzamento coerente (passi 5 e 7) | `python .graph/lavorazioni.py stato <nome>` | le fasi svolte risultano COMPLETA |
+| Output della fase (passo 5) | `python .graph/lavorazioni.py verifica <nome> --fase NN` | nessun problema: i link sono pagine della raccolta, le fonti sono censite; si corregge l'output, mai il contratto |
+| Avanzamento coerente (passi 5 e 7) | `python .graph/lavorazioni.py stato <nome>` | le fasi svolte risultano COMPLETA, non DA RIFARE |
 | Wiki intatta (sempre) | nessuna scrittura fuori da `lavorazioni/` | nessun file di `wiki/` o `raw/` modificato |
 
 ## Output

@@ -28,6 +28,7 @@ Scrive la scheda seguendo la scaletta com'è sul disco, dopo le correzioni dell'
 
 | Controllo | Come | Esito atteso |
 | --- | --- | --- |
+| Link, fonti e segnaposto | `python .graph/lavorazioni.py verifica <nome> --fase 03 --citazioni` | nessun problema |
 | Ogni sezione della scaletta è presente | confronto con `scaletta.md` | nessuna in più, nessuna in meno |
 | Ogni affermazione cita una pagina | rilettura | nessuna frase senza `[[Pagina]]` |
 

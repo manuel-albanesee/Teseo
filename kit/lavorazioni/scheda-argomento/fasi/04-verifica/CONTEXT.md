@@ -21,6 +21,7 @@ Confronta la scheda con la scaletta e con la raccolta: la fase 4 si controlla co
 
 | Controllo | Come | Esito atteso |
 | --- | --- | --- |
+| Link, fonti e segnaposto | `python .graph/lavorazioni.py verifica <nome> --fase 04` | nessun problema |
 | Sezioni coerenti con la scaletta | confronto dei titoli | nessuna differenza non dichiarata |
 | Affermazioni con riscontro | confronto con `raccolta.md` | tutte, oppure elencate in `verifica.md` |
 | Lacune dichiarate | ricerca dei marcatori nella scheda | tutte presenti |
