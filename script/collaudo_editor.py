@@ -46,6 +46,7 @@ class Writer(threading.Thread):
     def __init__(self, root, targets, pause=0.12):
         super().__init__(daemon=True)
         self.root, self.targets, self.pause, self.ledger, self.stop_event, self.count = root, targets, pause, {}, threading.Event(), 0
+        self.refused = 0
 
     def run(self):
         number = 0
@@ -54,18 +55,23 @@ class Writer(threading.Thread):
                 path = self.root / relative
                 number += 1
                 style = STYLES[number % 3]
-                if style == 'accodamento' and relative in self.ledger:
-                    text = self.ledger[relative] + f'riga {number}\n'
-                    with path.open('a', encoding='utf-8', newline='') as stream:
-                        stream.write(f'riga {number}\n')
-                else:
-                    text = f'---\ntipo: concetto\n---\n# Salvataggio {number} ({style})\n'
-                    if style == 'sul posto':
-                        path.write_text(text, encoding='utf-8', newline='')
+                try:
+                    if style == 'accodamento' and relative in self.ledger:
+                        text = self.ledger[relative] + f'riga {number}\n'
+                        with path.open('a', encoding='utf-8', newline='') as stream:
+                            stream.write(f'riga {number}\n')
                     else:
-                        temporary = self.root / '.editor-tmp'  # fuori dal perimetro dati, sullo stesso volume
-                        temporary.write_text(text, encoding='utf-8', newline='')
-                        temporary.replace(path)
+                        text = f'---\ntipo: concetto\n---\n# Salvataggio {number} ({style})\n'
+                        if style == 'sul posto':
+                            path.write_text(text, encoding='utf-8', newline='')
+                        else:
+                            temporary = self.root / '.editor-tmp'  # fuori dal perimetro dati, sullo stesso volume
+                            temporary.write_text(text, encoding='utf-8', newline='')
+                            temporary.replace(path)
+                except PermissionError:
+                    # Windows: un altro processo (Teseo che legge, antivirus, Obsidian) tiene il file aperto: l'editor vero riproverebbe.
+                    self.refused += 1
+                    continue
                 self.ledger[relative] = text
                 self.count += 1
             time.sleep(random.uniform(self.pause / 2, self.pause * 3))  # intervalli irregolari, come un autore vero
@@ -82,6 +88,21 @@ def wait_idle(server, vault_id, seconds=60):
             return True
         time.sleep(0.05)
     return False
+
+
+def diagnose(root):
+    """Stato del journal di un apply che non termina: tipo, stato ed errore di ogni operazione (nessun contenuto delle note)."""
+    import sqlite3
+    import json
+    try:
+        db = sqlite3.connect((root / '.teseo/local/operations.sqlite').as_uri() + '?mode=ro', uri=True, timeout=2)
+        try:
+            rows = [json.loads(row[0]) for row in db.execute('SELECT record FROM operations')]
+        finally:
+            db.close()
+        return '; '.join(f"{r.get('kind')}:{r.get('state')}:{(r.get('error') or {}).get('code')}" for r in rows) or 'journal vuoto'
+    except Exception as error:  # noqa: BLE001 - solo diagnostica
+        return 'journal non leggibile: ' + type(error).__name__
 
 
 def run_apply(server, vault_id, root, name, after_preview=None):
@@ -101,7 +122,7 @@ def run_apply(server, vault_id, root, name, after_preview=None):
     except ContractError as error:
         return 'rifiutato', error.code
     if not wait_idle(server, vault_id):
-        return 'bloccato', 'apply non terminato in 60 s'
+        return 'bloccato', 'apply non terminato in 60 s · ' + diagnose(root)
     record = server.operations.get(vault_id, job['operation_id'])
     return record['state'], (record.get('error') or {}).get('code')
 
