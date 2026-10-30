@@ -26,6 +26,7 @@ degli hook dei tre client. Per il piano dashboard/collaborazione vedi
 | `kit/graph/leggi.py` | Lettura da shell che insegna alla memoria solo con token di turno valido. |
 | `kit/graph/misura.py` | Banco di prova del recupero su domande configurate per vault. |
 | `kit/graph/sintesi.py` | Trova risposte distribuite fra più pagine, candidate a una pagina di sintesi (tag `entropia`). |
+| `kit/graph/contratti.py` | Valida i contratti ICM (Input, Processo, Checkpoint, Verifica, Output): file e sezioni citati, riferimenti in avanti, segnaposto. Solo lettura. |
 | `kit/dashboard/` | Servizio locale, UI, contratti e collaborazione: vedi i documenti dei passi 1–9. |
 
 Gli script di `kit/graph/` sono copiati dall'installatore nella `.graph/` del vault:

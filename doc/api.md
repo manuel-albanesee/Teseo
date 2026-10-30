@@ -276,6 +276,40 @@ deduzione di file letti dai comandi della shell: per quelli usare leggi.py.
 | `salva_sessione(evento)` | — |
 | `main()` | — |
 
+## `kit/graph/contratti.py`
+
+Validatore dei contratti ICM: sezioni, file citati negli Input, riferimenti in avanti, segnaposto, lunghezza.
+
+Un contratto (SKILL.md o CONTEXT.md di una fase) ha la forma canonica, nell'ordine:
+  ## Input (obbligatoria)    tabella Livello | File | Sezione | Perché: livello 3 = regole stabili, 4 = materiale dell'esecuzione
+  ## Processo (obbligatoria)
+  ## Checkpoint              facoltativa; se c'è sta fra Processo e Verifica
+  ## Verifica (obbligatoria)
+  ## Output (obbligatoria)
+Altre sezioni (note operative, descrizioni) sono ammesse in qualsiasi posizione.
+
+Controlli (errori, exit 1): sezione_mancante, sezioni_fuori_ordine, file_illeggibile, input_senza_tabella, input_colonne,
+input_file_mancante (solo livello 3: il livello 4 nasce a runtime), input_sezione_mancante (titolo «…» assente nel file
+citato), riferimento_in_avanti (una fase NN-* cita una fase con numero maggiore), segnaposto ({{NOME}} non compilato
+fuori dai blocchi di codice). Avviso (exit invariato): troppo_lungo. Solo lettura, nessun LLM.
+
+Nella colonna File conta il primo testo fra apici inversi; si ignorano le celle senza apici, i comandi (python, git…),
+i testi con virgolette o <>|*? e i percorsi con {segnaposto} di esecuzione. I percorsi si risolvono rispetto al
+contratto e a --radice (di norma la radice del vault).
+
+Uso:
+  python .graph/contratti.py kit/skills/obsidian-wiki-query/SKILL.md --radice kit/vault
+  python .graph/contratti.py lavorazioni/report/fasi/*/CONTEXT.md --radice . --json
+
+| Funzione | Descrizione |
+| --- | --- |
+| `analizza(testo)` | Righe (numero 1-based, testo, fuori_da_codice) senza il frontmatter; le righe dei blocchi recintati sono marcate. |
+| `titoli(righe)` | Titoli (numero di riga, livello, testo) fuori dai blocchi di codice. |
+| `celle(riga)` | Celle di una riga di tabella Markdown; il | dentro gli apici inversi o preceduto da \ non separa. |
+| `problema(codice, riga, messaggio)` | — |
+| `valida(percorso, radice=None, max_righe=MAX_RIGHE)` | Controlla un contratto: {file, errori, avvisi}, ogni problema {codice, riga, messaggio}. |
+| `main(argv=None)` | — |
+
 ## `kit/graph/copilot_hook.py`
 
 Hook Copilot CLI: recall nel prompt trasformato e memoria delle letture view.

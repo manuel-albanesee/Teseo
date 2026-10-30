@@ -120,6 +120,24 @@ class Input(Base):
         descrittivo = sostituisci(VALIDO, '`{esecuzione}/01-raccolta/raccolta.md`', 'contesto del recall o `python .graph/recall.py "<domanda>"`')
         self.assertEqual(self.codici(descrittivo), [])
 
+    def test_cella_senza_apici_e_descrittiva(self):
+        descrittiva = sostituisci(VALIDO, '`{esecuzione}/01-raccolta/raccolta.md`', 'il contesto del recall')
+        self.assertEqual(self.codici(descrittiva), [])
+
+    def test_senza_sezione_input_si_segnala_solo_la_mancanza(self):
+        senza = VALIDO.replace('## Input', '## Ingresso')
+        self.assertEqual(self.codici(senza), ['sezione_mancante'])
+
+    def test_contratto_fuori_dalla_radice_risolve_gli_input_dalla_radice(self):
+        # Caso delle skill: kit/skills/<nome>/SKILL.md controllata con --radice kit/vault.
+        altrove = tempfile.TemporaryDirectory()
+        self.addCleanup(altrove.cleanup)
+        contratto = Path(altrove.name) / 'SKILL.md'
+        contratto.write_text(VALIDO, encoding='utf-8')
+        esito = contratti.valida(contratto, radice=self.radice)
+        self.assertEqual(esito['errori'], [])
+        self.assertEqual(esito['file'], str(contratto))
+
     def test_sezione_inesistente_nel_file_citato(self):
         rotta = sostituisci(VALIDO, '«Relazioni tipizzate»', '«Relazioni inventate»')
         self.assertIn('input_sezione_mancante', self.codici(rotta))
