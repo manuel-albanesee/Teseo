@@ -109,9 +109,9 @@ class Rilevazione(unittest.TestCase):
         self.assertTrue(any('almeno due skill' in p for p in differenze(self.kit)))
 
     def test_skill_nuova_non_citata_nei_file_dei_client(self):
-        nuova = self.kit / 'skills/obsidian-wiki-lavorazioni'
+        nuova = self.kit / 'skills/obsidian-wiki-esempio'
         nuova.mkdir()
-        (nuova / 'SKILL.md').write_text('---\nname: obsidian-wiki-lavorazioni\n---\n', encoding='utf-8')
+        (nuova / 'SKILL.md').write_text('---\nname: obsidian-wiki-esempio\n---\n', encoding='utf-8')
         problemi = differenze(self.kit)
         self.assertEqual(sum('skill citate' in p for p in problemi), len(FILE_CLIENT))
 

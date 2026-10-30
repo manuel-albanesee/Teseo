@@ -228,7 +228,7 @@ class CopilotIntegration(unittest.TestCase):
         home = Path(self.temp.name) / "home"
         with mock.patch.object(Path, "home", return_value=home):
             installa.installa_skill("utente", self.vault, False, installa.Rapporto(), "copilot")
-        self.assertEqual(len(list((home / ".copilot/skills").glob("*/SKILL.md"))), 4)
+        self.assertEqual(len(list((home / ".copilot/skills").glob("*/SKILL.md"))), 5)
 
     def test_invalid_imported_claude_settings_fail_installation(self):
         for name in ("settings.json", "settings.local.json"):

@@ -332,7 +332,7 @@ def controlla_ambiente(rapporto, client="claude"):
 
 def controlla_vault(vault, rapporto):
     """Cosa manca a un vault già in uso perché il grafo lo veda bene. Solo lettura."""
-    nascoste = {".graph", ".claude", ".codex", ".agents", ".github", ".obsidian", ".git", ".trash", ".graph_backup", ".teseo"}
+    nascoste = {".graph", ".claude", ".codex", ".agents", ".github", ".obsidian", ".git", ".trash", ".graph_backup", ".teseo", "lavorazioni"}
     fuori = [p for p in vault.rglob("*.md")
              if not set(p.relative_to(vault).parts) & nascoste
              and p.relative_to(vault).parts[0] not in ("wiki", "raw")
@@ -354,7 +354,7 @@ def controlla_vault(vault, rapporto):
         rapporto.avviso("index.md senza «## Punti aperti nel vault»: le domande aperte di tipo «punto» non si calcolano")
 
 
-LOCALI = [".graph/", ".graph_backup/", ".claude/", ".codex/", ".agents/", ".github/", ".obsidian/", ".trash/",
+LOCALI = [".graph/", ".graph_backup/", ".claude/", ".codex/", ".agents/", ".github/", ".obsidian/", ".trash/", "lavorazioni/",
           "CLAUDE.md", "AGENTS.md"]
 
 
@@ -523,6 +523,11 @@ def installa(vault, skill="vault", aggiorna=False, esempio=False, client="tutti"
         nome = f".graph/{f.name}" + (" (facoltativo)" if f.name in FACOLTATIVI else "")
         if copia_file(f, vault / ".graph" / f.name, aggiorna, backup, rapporto, nome) == "diverso":
             diversi.append(f.name)
+    if not solo_integrazione and (KIT / "lavorazioni").is_dir():
+        for f in sorted(p for p in (KIT / "lavorazioni").rglob("*") if p.is_file()):
+            relativo = f.relative_to(KIT / "lavorazioni")
+            copia_file(f, vault / ".graph/modelli" / relativo, aggiorna, backup / "modelli" / relativo.parent, rapporto,
+                       f".graph/modelli/{relativo.as_posix()}")
     if not solo_integrazione:
         for f in sorted((KIT / "dashboard").glob("*.py")):
             nome = f".graph/dashboard/{f.name}"

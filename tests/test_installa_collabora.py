@@ -70,6 +70,22 @@ class CollaboraInstall(unittest.TestCase):
         self.assertIn('autosync', report)
         self.assertIn('raw/appunti.md', report)
 
+    def test_lavorazioni_non_sporcano_il_repository_dati_ne_bloccano_la_sincronizzazione(self):
+        # Un file non tracciato fermerebbe `pre` (autosync_unpublished): le lavorazioni sono personali.
+        vault = self.home / 'vault'
+        self.seed(vault)
+        self.install(vault)
+        (vault / 'lavorazioni/prova/esecuzioni/2026-10-30-1').mkdir(parents=True)
+        (vault / 'lavorazioni/prova/config.md').write_text('---\nselezione: {}\n---\n', encoding='utf-8')
+        (vault / 'lavorazioni/prova/esecuzioni/2026-10-30-1/esecuzione.json').write_text('{}\n', encoding='utf-8')
+        self.assertEqual(git(vault, 'status', '--porcelain'), '')
+        head = git(self.remote, 'rev-parse', 'main')
+        result = Autosync(vault, allow_local_remote=True).pre('ingest', 'claude')
+        self.assertEqual((result['exit'], result['state']), (0, result['state']), result['message'])
+        self.assertNotEqual(result['state'], 'blocked')
+        self.assertEqual(git(self.remote, 'rev-parse', 'main'), head)
+        self.assertNotIn('lavorazioni/prova/config.md', self.remote_files())
+
     def test_rerunning_the_same_command_is_idempotent_after_a_complete_install(self):
         vault = self.home / 'vault'
         self.seed(vault)

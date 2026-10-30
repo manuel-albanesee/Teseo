@@ -61,7 +61,8 @@ class CodexIntegration(unittest.TestCase):
                 self.assertEqual((vault / ".codex/hooks.json").exists(), "codex" in selected)
                 self.assertEqual((vault / "AGENTS.md").exists(), "codex" in selected)
                 self.assertEqual((vault / ".github/hooks/teseo.json").exists(), "copilot" in selected)
-                for name in ("obsidian-wiki-query", "obsidian-wiki-fill-gaps", "obsidian-wiki-lint", "obsidian-wiki-ingest"):
+                for name in ("obsidian-wiki-query", "obsidian-wiki-fill-gaps", "obsidian-wiki-lint", "obsidian-wiki-ingest",
+                             "obsidian-wiki-lavorazioni"):
                     if "codex" in selected:
                         self.assertTrue((vault / ".agents/skills" / name / "SKILL.md").is_file())
 
@@ -126,7 +127,7 @@ class CodexIntegration(unittest.TestCase):
         path.write_text("skill personalizzata", encoding="utf-8")
         installa.installa_skill("vault", self.vault, True, installa.Rapporto(), "codex")
         self.assertIn("name: obsidian-wiki-query", path.read_text(encoding="utf-8"))
-        self.assertEqual(len(list((self.vault / ".agents/skills").rglob("SKILL.md"))), 4)
+        self.assertEqual(len(list((self.vault / ".agents/skills").rglob("SKILL.md"))), 5)
         backups = list((self.vault / ".graph_backup").glob("*/skills/codex/obsidian-wiki-query/SKILL.md"))
         self.assertEqual(len(backups), 1)
         self.assertEqual(backups[0].read_text(encoding="utf-8"), "skill personalizzata")
@@ -211,7 +212,7 @@ class DefaultInstallation(unittest.TestCase):
                      ".github/hooks/teseo.json", ".github/copilot-instructions.md"):
             self.assertTrue((vault / name).is_file(), f"Configurazione locale mancante: {name}")
         for client_dir in (".claude", ".agents", ".github"):
-            for skill in ("ingest", "query", "lint", "fill-gaps"):
+            for skill in ("ingest", "query", "lint", "fill-gaps", "lavorazioni"):
                 self.assertTrue((vault / client_dir / "skills" / f"obsidian-wiki-{skill}" / "SKILL.md").is_file())
             self.assertFalse((home / client_dir).exists(), "L'installazione predefinita deve restare nel vault")
         self.assertFalse((home / ".copilot").exists())

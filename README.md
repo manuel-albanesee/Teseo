@@ -132,7 +132,7 @@ python installa.py "C:/Obsidian/MioVault"
 python installa.py "$HOME/Documents/MioVault"
 ```
 
-Il comando senza opzioni prepara **tutti e tre i client dentro il vault**, incluse le quattro skill per ciascuno.
+Il comando senza opzioni prepara **tutti e tre i client dentro il vault**, incluse le cinque skill per ciascuno.
 Puoi preparare i file anche dei client che non hai installato. Per sceglierne uno solo:
 
 ```sh
@@ -500,7 +500,7 @@ memoria e conservazione dei dati. Per esplorare il codice:
 | --- | --- |
 | [installa.py](installa.py) | Installazione, aggiornamenti e configurazione dei client. |
 | [kit/graph/](kit/graph/) | Grafo, recall, hook, memoria, domande aperte e misure. |
-| [kit/skills/](kit/skills/) | Le quattro operazioni della wiki. |
+| [kit/skills/](kit/skills/) | Le operazioni della wiki: ingest, query, lint, lacune e lavorazioni. |
 | [kit/vault/](kit/vault/) | Modelli delle convenzioni e delle configurazioni. |
 | [kit/esempio/](kit/esempio/) | Vault dimostrativo e banco di prova. |
 | [tests/](tests/) | Test di regressione delle integrazioni. |
@@ -521,6 +521,7 @@ memoria e conservazione dei dati. Per esplorare il codice:
 | `python .graph/misura.py` | Misura il recupero sulle domande configurate per il vault. |
 | `python .graph/domande.py` | Elenca le domande aperte per l'autore. |
 | `python .graph/sintesi.py` | Trova risposte distribuite tra più pagine, candidate alla sintesi. |
+| `python .graph/lavorazioni.py elenco` | Elenca le lavorazioni (pipeline a fasi che leggono la wiki e producono documenti derivati); `nuova`, `valida`, `avvia`, `stato`. |
 | `python .graph/contratti.py FILE --radice .` | Controlla che un contratto (skill o fase) abbia sezioni, Input e riferimenti validi. |
 | `python .graph/memoria.py --turni` | Confronta pagine suggerite e pagine lette, turno per turno. |
 

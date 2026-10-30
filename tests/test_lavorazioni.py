@@ -70,7 +70,8 @@ class Base(unittest.TestCase):
         for nome in ('Wiki reference.md', 'index.md', 'log.md'):
             shutil.copy(KIT / 'vault' / nome, self.vault / nome)
         (self.vault / '.graph').mkdir()
-        build_graph.costruisci(self.vault, self.vault / '.graph/graph.sqlite')
+        with redirect_stdout(io.StringIO()):
+            build_graph.costruisci(self.vault, self.vault / '.graph/graph.sqlite')
 
     def crea(self, nome='prova', config=CONFIG, fasi=FASI, contratto=CONTRATTO):
         base = self.vault / 'lavorazioni' / nome

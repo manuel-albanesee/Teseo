@@ -429,6 +429,48 @@ Apertura readonly e revisione fissata per connessione, anche nel kit installato.
 | `resolve_graph(path)` | — |
 | `connect_graph(path, reference=None)` | — |
 
+## `kit/graph/lavorazioni.py`
+
+Lavorazioni: pipeline ICM ripetibili che leggono la wiki e producono documenti derivati, senza scriverla.
+
+Una lavorazione è una cartella `lavorazioni/<nome>/` del vault con `CONTEXT.md` (scopo), `config.md` (la «fabbrica»:
+frontmatter YAML con `selezione` e `parametri`, più le regole in prosa), `fasi/NN-nome/CONTEXT.md` (un contratto per fase,
+vedi contratti.py) ed `esecuzioni/AAAA-MM-GG-N/` (materiale di ogni esecuzione). La prima fase è la raccolta ed è
+eseguita da questo script, non dal modello: sceglie le pagine dal grafo e le scrive in `raccolta.md` con l'impronta SHA-256
+di ciascuna. Le fasi successive leggono solo la raccolta, così la memoria di Teseo non registra letture di `wiki/` che
+l'utente non ha chiesto. Le lavorazioni non scrivono mai in `wiki/` né in `raw/`.
+
+Selezione (`selezione` in config.md; tutte le chiavi sono facoltative):
+  collegate_a    pagina di partenza («[[Pagina]]» o «Pagina»)
+  domanda        domanda i cui nomi di pagina riconosciuti (recall) sono punti di partenza
+  profondita     passi dalle pagine di partenza lungo le relazioni (predefinito 1)
+  relazioni      relazioni da seguire, in entrambe le direzioni (predefinito: tutte le tipizzate)
+  tipi           solo pagine di questi tipi
+  modificate_da  `7g` (giorni) o `2s` (settimane): solo pagine con `aggiornato` recente
+  massimo        tetto di pagine (predefinito 40); se taglia, la raccolta lo dichiara
+Senza punti di partenza si parte da tutte le pagine. Un valore «{nome}» è sostituito dal parametro omonimo.
+
+Uso:
+  python .graph/lavorazioni.py elenco [--json]
+  python .graph/lavorazioni.py nuova NOME --da MODELLO_O_LAVORAZIONE
+  python .graph/lavorazioni.py valida NOME
+  python .graph/lavorazioni.py avvia NOME [--param chiave=valore ...]   `selezione.massimo=5` o un parametro di config.md
+  python .graph/lavorazioni.py stato NOME [--esecuzione ID] [--json]
+
+| Classe | Descrizione |
+| --- | --- |
+| `LavorazioneError` | — |
+
+| Funzione | Descrizione |
+| --- | --- |
+| `valida(vault, nome)` | Problemi di una lavorazione: elenco di {codice, messaggio}, vuoto se è valida. |
+| `elenco(vault)` | Le lavorazioni del vault: nome, numero di fasi, id dell'ultima esecuzione (None se non ce ne sono). |
+| `nuova(vault, nome, da, modelli=None)` | Crea lavorazioni/<nome> copiando un modello o un'altra lavorazione (senza esecuzioni né collegamenti simbolici). |
+| `avvia(vault, nome, override=(), oggi=None)` | Crea una nuova esecuzione e svolge la raccolta; restituisce {id, percorso, pagine, troncata}. |
+| `stato(vault, nome, esecuzione=None)` | Avanzamento di un'esecuzione (l'ultima se non indicata): {lavorazione, esecuzione, fasi:[{nome, stato, file}]}. |
+| `disegna(situazione)` | La pipeline in ASCII: una casella per fase e, sotto, il suo stato. |
+| `main(argv=None)` | — |
+
 ## `kit/graph/learn_hook.py`
 
 Hook PostToolUse (Read) e Stop: collega alla domanda in sospeso le pagine di wiki/ lette, e a fine turno le archivia.
