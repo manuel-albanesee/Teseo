@@ -8,6 +8,7 @@ from pathlib import Path
 import shutil
 import sys
 import tempfile
+import time
 import unittest
 
 KIT = Path(__file__).resolve().parents[1] / 'kit'
@@ -191,6 +192,18 @@ class VaultGestito(Base):
         rebuild(self.vault)
         self.assertFalse((self.vault / '.graph/graph.sqlite').exists())
         self.assertEqual(self.controlla(PIANO), [])
+
+
+class Robustezza(Base):
+    def test_riga_di_alias_e_di_parentesi_ostili_non_bloccano_il_controllo(self):
+        ostile = sostituisci(PIANO, '«slot di rilascio», «finestra»', '«' * 40000 + ' ' + '[' * 40000)
+        inizio = time.perf_counter()
+        self.controlla(ostile)
+        self.assertLess(time.perf_counter() - inizio, 3.0)
+
+    def test_collegamento_con_testo_enorme_non_e_un_collegamento(self):
+        self.assertIn('riga_non_valida', self.codici(sostituisci(PIANO, '- [[Rilascio in produzione]] — aggiungere',
+                                                                '- [[' + 'x' * 400 + ']] — aggiungere')))
 
 
 class SkillECheck(unittest.TestCase):

@@ -11,6 +11,7 @@ from pathlib import Path
 import shutil
 import sys
 import tempfile
+import time
 import unittest
 
 KIT = Path(__file__).resolve().parents[1] / 'kit'
@@ -1147,6 +1148,39 @@ class VaultGestito(Base):
         with self.assertRaises(lavorazioni.LavorazioneError) as errore:
             lavorazioni.avvia(self.vault, 'prova', oggi='2026-10-30')
         self.assertEqual(errore.exception.codice, 'grafo_assente')
+
+
+class Robustezza(Base):
+    """Input ostili o enormi nei file del vault non devono bloccare né far scrivere fuori dalla lavorazione."""
+    TEMPO_MASSIMO = 3.0  # i casi lineari impiegano millisecondi; quelli quadratici minuti
+
+    def test_verifica_non_si_blocca_su_una_riga_di_parentesi_quadre(self):
+        self.crea()
+        e = lavorazioni.avvia(self.vault, 'prova', oggi='2026-10-30')
+        scrivi_output(e, '02-sintesi', 'sintesi.md', '[' * 40000 + '\n[[' + 'x' * 40000 + '\n' + '[[a]]' * 8000 + '\n', 1_800_000_100)
+        inizio = time.perf_counter()
+        problemi = lavorazioni.verifica(self.vault, 'prova', '02')
+        self.assertLess(time.perf_counter() - inizio, self.TEMPO_MASSIMO)
+        self.assertEqual({p['codice'] for p in problemi} - {'link_inesistente'}, set())
+
+    def test_i_link_con_testo_enorme_non_sono_link(self):
+        self.crea()
+        e = lavorazioni.avvia(self.vault, 'prova', oggi='2026-10-30')
+        scrivi_output(e, '02-sintesi', 'sintesi.md', '[[' + 'x' * 400 + ']] e [[Console di rilascio]]\n', 1_800_000_100)
+        self.assertEqual(lavorazioni.verifica(self.vault, 'prova', '02'), [])
+
+    def test_avvia_rifiuta_una_cartella_esecuzioni_che_e_un_collegamento_simbolico(self):
+        base = self.crea()
+        fuori = Path(tempfile.mkdtemp(prefix='teseo-fuori-', dir=self.vault.parent))
+        self.addCleanup(shutil.rmtree, fuori, True)
+        try:
+            (base / 'esecuzioni').symlink_to(fuori, target_is_directory=True)
+        except OSError:
+            self.skipTest('collegamenti simbolici non disponibili')
+        with self.assertRaises(lavorazioni.LavorazioneError) as errore:
+            lavorazioni.avvia(self.vault, 'prova', oggi='2026-10-30')
+        self.assertEqual(errore.exception.codice, 'percorso_non_valido')
+        self.assertEqual(list(fuori.iterdir()), [])
 
 
 class Riga(Base):
