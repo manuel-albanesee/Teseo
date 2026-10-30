@@ -147,15 +147,20 @@ def main(argv=None):
     args = parser.parse_args(argv)
     base = Path(args.cartella) if args.cartella else Path(tempfile.mkdtemp(prefix='teseo-editor-'))
     base.mkdir(parents=True, exist_ok=True)
-    print(f'Cartella di prova: {base} (un vault nuovo per ogni giro: {base / "giro-N"})')
+    print(f'Cartella di prova: {base} (un vault nuovo per ogni giro e scenario: giro-N-R, giro-N-N, giro-N-P)')
+    first = None
     if not args.senza_attesa:
-        input('Apri la cartella del PRIMO giro in Obsidian come vault se vuoi osservarlo; lo script crea i vault in sequenza. Premi Invio per cominciare… ')
+        # Il vault del primo giro esiste già prima dell'attesa: si può aprire in Obsidian e lasciarlo indicizzare prima del test.
+        first = create(base / 'giro-1-R', 120)
+        (first / '.obsidian').mkdir(exist_ok=True)
+        input(f'Apri in Obsidian (Apri cartella come vault) questa cartella e attendi che finisca di indicizzare:\n  {first}\nPoi premi Invio per cominciare… ')
+        time.sleep(3)
     rows, failures, saves = [], [], 0
     for giro in range(1, args.giri + 1):
         row = [giro]
         problems = []
         for scenario in SCENARIOS:
-            root = create(base / f'giro-{giro}-{scenario[0]}', 120)
+            root = first if first and giro == 1 and scenario[0] == 'R' else create(base / f'giro-{giro}-{scenario[0]}', 120)
             (root / '.obsidian').mkdir(exist_ok=True)
             server = DashboardServer()
             vault_id = server.registry.attach(str(root))['vault_id']
@@ -186,7 +191,7 @@ def main(argv=None):
     lines = [f'# Collaudo con editor non cooperante ({date.today().isoformat()})', '',
              f'- Sistema: {platform.platform()} · Python {platform.python_version()} · Teseo {KIT_VERSION}',
              f'- Giri eseguiti: {len(rows)} di {args.giri} · salvataggi dello scrittore: {saves}',
-             f'- Obsidian aperto sul vault: {"non dichiarato (--senza-attesa)" if args.senza_attesa else "sì, solo sul vault del primo giro (confermato dall’utente)"}',
+             f'- Obsidian aperto sul vault: {"non dichiarato (--senza-attesa)" if args.senza_attesa else "sì, solo sul vault giro-1-R, aperto prima dell’avvio (confermato dall’utente)"}',
              f'- Esito: **{verdict}** (nessun byte dello scrittore perso né sovrascritto; ' + ', '.join(f'{k}: {v}' for k, v in sorted(counts.items())) + ')',
              '- `recovery_required` è l\'esito previsto quando un salvataggio arriva durante la scrittura: i dati sono salvi ma il vault resta fermo in `recovery_required` finché una persona non risolve.', '', '| Giro | ' + ' | '.join(f'{c} ({d})' for c, d in SCENARIOS) + ' | Controllo |', '| --- | --- | --- | --- | --- |']
     lines += ['| ' + ' | '.join([str(row[0]), *(f'{o[0]} {o[1] or ""}' for o in row[1:-1]), row[-1]]) + ' |' for row in rows]
