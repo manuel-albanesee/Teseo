@@ -1,6 +1,6 @@
 # 13 — Decisione: apply automatico
 
-Stato: **decisione proposta, da confermare dal proprietario del progetto.** Chiude il punto 12 di [11](11-piano-completamento.md). Se il proprietario sceglie diversamente, i criteri in fondo dicono che cosa servirebbe.
+Stato: **decisione confermata dal proprietario del progetto (2026-10-30): l'apply automatico resta non previsto, per scelta di prodotto.** Chiude il punto 12 di [11](11-piano-completamento.md). Se il proprietario sceglie diversamente, i criteri in fondo dicono che cosa servirebbe.
 
 ## Decisione
 

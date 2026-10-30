@@ -389,7 +389,10 @@ class ApplyService:
                     from .graph_service import rebuild
                     rebuild(resolve_path(root, record['checkpoint']['candidate_path']))
                 except Exception:
-                    journal.transition(identifier, 'failed', error={'code': 'prepare_failed', 'message': 'Preparazione non completata; nessuna nota applicata'})
+                    try:
+                        journal.transition(identifier, 'failed', error={'code': 'prepare_failed', 'message': 'Preparazione non completata; nessuna nota applicata'})
+                    except ContractError:
+                        pass  # già in uno stato finale (per esempio blocked_external_change): resta l'errore originale, non invalid_transition
                     raise
             self._requests[key] = (content_hash(payload), record)
             self._launch(vault_id, identifier, 'finish')
