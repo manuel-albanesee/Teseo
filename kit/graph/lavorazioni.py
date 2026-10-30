@@ -34,8 +34,6 @@ import sys
 from datetime import date, timedelta
 from pathlib import Path
 
-import yaml
-
 import contratti
 from build_graph import leggi_testo, valori
 from graph_db import GraphDatabaseError, connect_graph
@@ -117,7 +115,7 @@ def _controlla_selezione(selezione):
         if chiave in ("tipi", "relazioni") and not (isinstance(valore, list) and all(isinstance(v, str) for v in valore)):
             return "config_tipo", f"{chiave}: serve un elenco di testi"
         if chiave in ("collegate_a", "domanda") and not isinstance(valore, str):
-            return "config_tipo", f"{chiave}: serve un testo"
+            return "config_tipo", f"{chiave}: serve un testo (un wikilink va tra virgolette: \"[[Pagina]]\")"
         if chiave == "modificate_da" and not (isinstance(valore, str) and PERIODO.match(valore)):
             return "config_tipo", "modificate_da: serve un periodo come 7g (giorni) o 2s (settimane)"
     return None
@@ -206,15 +204,22 @@ def nuova(vault, nome, da, modelli=None):
     return destinazione
 
 
-def _tipizza(valore):
+def _converti(chiave, valore, esempio=None):
+    """Valore di un override secondo il tipo della chiave: niente YAML, così «[[Pagina]]» resta un testo."""
+    valore = valore.strip()
     try:
-        return yaml.safe_load(valore)
-    except yaml.YAMLError as errore:
-        raise LavorazioneError("override_non_valido", f"valore non leggibile: {valore}") from errore
+        if chiave in ("profondita", "massimo") or (isinstance(esempio, int) and not isinstance(esempio, bool)):
+            return int(valore)
+        if chiave in ("tipi", "relazioni"):
+            return [v.strip() for v in valore.split(",") if v.strip()]
+    except ValueError as errore:
+        raise LavorazioneError("override_non_valido", f"{chiave}: «{valore}» non è un numero intero") from errore
+    return valore
 
 
 def _risolvi(base, override):
-    """(selezione effettiva, parametri effettivi) dopo override e sostituzione dei riferimenti «{nome}»."""
+    """(selezione, parametri, origine): valori effettivi dopo override e sostituzione dei riferimenti «{nome}»;
+    origine dice da quale parametro viene ogni chiave di selezione che ne cita uno."""
     try:
         selezione, parametri = _config(base)
     except (ValueError, KeyError) as errore:
@@ -228,34 +233,37 @@ def _risolvi(base, override):
         if chiave.startswith("selezione."):
             if chiave[10:] not in CHIAVI_SELEZIONE:
                 raise LavorazioneError("override_sconosciuto", f"«{chiave}» non è una chiave di selezione")
-            selezione[chiave[10:]] = _tipizza(valore)
+            selezione[chiave[10:]] = _converti(chiave[10:], valore)
         elif chiave in parametri:
-            parametri[chiave] = _tipizza(valore)
+            parametri[chiave] = _converti(chiave, valore, parametri[chiave])
         else:
             raise LavorazioneError("override_sconosciuto", f"«{chiave}» non è un parametro di config.md")
+    origine = {}
     for chiave, valore in list(selezione.items()):
         if isinstance(valore, str) and (m := RIFERIMENTO.match(valore)):
             if m[1] not in parametri:
                 raise LavorazioneError("parametro_mancante", f"selezione.{chiave} cita il parametro {{{m[1]}}} che non esiste")
-            selezione[chiave] = parametri[m[1]]
+            selezione[chiave], origine[chiave] = parametri[m[1]], m[1]
     errore = _controlla_selezione(selezione)
     if errore:
         raise LavorazioneError(*errore)
-    return selezione, parametri
+    return selezione, parametri, origine
 
 
 def _nome_pagina(testo):
     return re.sub(r"^\[\[(.*?)(\|.*)?\]\]$", r"\1", str(testo).strip()).strip()
 
 
-def _seleziona(db, selezione, oggi):
+def _seleziona(db, selezione, oggi, origine=None):
     """(ids ordinati, candidate, troncata). Ordine: distanza dalla partenza, poi nome: stesso grafo, stessa raccolta."""
     pagine = {r[0]: r for r in db.execute("SELECT id, tipo, aggiornato FROM entities WHERE path LIKE 'wiki/%'")}
     partenze = []
-    if selezione.get("collegate_a"):
+    if selezione.get("collegate_a") is not None:
         nome = _nome_pagina(selezione["collegate_a"])
         if nome not in pagine:
-            raise LavorazioneError("pagina_inesistente", f"collegate_a: nessuna pagina «{nome}»")
+            parametro = (origine or {}).get("collegate_a")
+            raise LavorazioneError("pagina_inesistente", f"collegate_a: nessuna pagina «{nome}»"
+                                   + (f"; indicarla con --param {parametro}=NOME_PAGINA" if parametro and not nome else ""))
         partenze.append(nome)
     if selezione.get("domanda"):
         import recall  # importato qui: serve solo con la domanda e porta con sé l'intero motore del recall
@@ -332,7 +340,7 @@ def avvia(vault, nome, override=(), oggi=None):
         date.fromisoformat(oggi)
     except ValueError as errore:
         raise LavorazioneError("data_non_valida", f"«{oggi}»: usare AAAA-MM-GG") from errore
-    selezione, parametri = _risolvi(base, list(override))
+    selezione, parametri, origine = _risolvi(base, list(override))
     grafo = Path(vault) / ".graph/graph.sqlite"
     if not grafo.is_file():
         raise LavorazioneError("grafo_assente", "grafo non trovato: eseguire python .graph/build_graph.py")
@@ -341,7 +349,7 @@ def avvia(vault, nome, override=(), oggi=None):
     except (sqlite3.Error, GraphDatabaseError) as errore:
         raise LavorazioneError("grafo_non_leggibile", f"{errore}: rieseguire python .graph/build_graph.py") from errore
     try:
-        ids, candidate, troncata = _seleziona(db, selezione, oggi)
+        ids, candidate, troncata = _seleziona(db, selezione, oggi, origine)
         schede = {i: _pagina(vault, db, i) for i in ids}
         revisione = getattr(db, "content_revision", None)
     except sqlite3.Error as errore:
@@ -431,7 +439,8 @@ def main(argv=None):
                 print(f"{t['nome']}: {t['fasi']} fasi · " + (f"ultima esecuzione {t['esecuzione']}" if t["esecuzione"] else "nessuna esecuzione"))
         elif args.comando == "nuova":
             print(f"creata {nuova(args.vault, args.nome, args.da, args.modelli).relative_to(args.vault).as_posix()}: "
-                  f"compilare config.md, poi python .graph/lavorazioni.py valida {args.nome}")
+                  f"adattare config.md se serve (o chiedere di «impostare» la lavorazione), poi "
+                  f"python .graph/lavorazioni.py valida {args.nome}")
         elif args.comando == "valida":
             problemi = valida(args.vault, args.nome)
             for q in problemi:

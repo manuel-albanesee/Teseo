@@ -666,6 +666,10 @@ def prova(client="tutti", dashboard=False):
             ("misura --routing", [".graph/misura.py", "--routing"], " OK"),
             ("sintesi --verifica", [".graph/sintesi.py", "--verifica"], "nessun problema"),
             ("banco --verifica", [".graph/banco.py", "--verifica"], "nessun problema"),
+            ("lavorazioni nuova", [".graph/lavorazioni.py", "nuova", "prova-report", "--da", "report-periodico"], "creata"),
+            ("lavorazioni valida", [".graph/lavorazioni.py", "valida", "prova-report"], "prova-report: ok"),
+            ("lavorazioni avvia", [".graph/lavorazioni.py", "avvia", "prova-report", "--oggi", "2026-10-23"], "2 pagine"),
+            ("lavorazioni stato", [".graph/lavorazioni.py", "stato", "prova-report"], "COMPLETA"),
         ]
         falliti = 0
         for nome, argomenti, atteso in controlli:

@@ -97,6 +97,7 @@ Per cambiare il piano: aggiornare prima il contratto interessato, elencare motiv
   dal banco, baseline, regola di non regressione e strategie di miglioramento.
 - [Analisi ECC del retrieval](analisi-retrieval-ecc.md): varianti del recall misurate
   sul banco con gate e holdout; raccomanda il ripiego a cascata.
+- [Lavorazioni](lavorazioni.md): guida alle pipeline ICM che leggono la wiki e producono documenti derivati.
 - [Analisi ECC dell'Interpretable Context Methodology](analisi-icm-ecc.md): integrabilità
   di ICM nelle istruzioni del vault; adottare convenzioni e ciclo «correggere la fonte», non le cartelle di fase.
 - [Riferimento API](api.md): moduli, classi e funzioni pubbliche, generato dai

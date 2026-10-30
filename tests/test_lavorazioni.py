@@ -367,7 +367,8 @@ class Raccolta(Base):
 
     def test_override_di_elenchi_separati_da_virgola(self):
         self.crea()
-        e = lavorazioni.avvia(self.vault, 'prova', override=['selezione.profondita=3', 'selezione.tipi=processo, persona'],
+        e = lavorazioni.avvia(self.vault, 'prova', override=['selezione.profondita=3', 'selezione.tipi=processo, persona',
+                                                              'selezione.relazioni=usa, richiede, parte_di, referente'],
                               oggi='2026-10-30')
         self.assertEqual(self.pagine(e), ['Anna Rossi', 'Incident settimanale', 'Rilascio in produzione'])
 
