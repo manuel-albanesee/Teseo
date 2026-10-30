@@ -26,7 +26,7 @@ from pathlib import Path
 
 import contratti
 from build_graph import LINK, bersaglio, norm, parse_ontology, tipo_ammesso
-from graph_db import GraphDatabaseError, connect_graph
+from graph_db import GraphDatabaseError, connect_graph, graph_reference
 
 SEZIONI = {"pagine da creare": "creare", "pagine da aggiornare": "aggiornare", "relazioni": "relazioni", "alias": "alias",
            "contraddizioni con il vault": "contraddizioni"}
@@ -51,11 +51,12 @@ def controlla(vault, percorso):
         testo = Path(percorso).read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as errore:
         raise PianoError("piano_illeggibile", f"{percorso}: {errore}") from errore
-    grafo = vault / ".graph/graph.sqlite"
-    if not grafo.is_file():
-        raise PianoError("grafo_assente", "grafo non trovato: eseguire python .graph/build_graph.py")
+    grafo = vault / ".graph/graph.sqlite"  # nei vault gestiti dalla dashboard il grafo è la generazione corrente
     try:
-        db = connect_graph(grafo)
+        riferimento = graph_reference(grafo)
+        if not riferimento.path.is_file():
+            raise PianoError("grafo_assente", "grafo non trovato: eseguire python .graph/build_graph.py")
+        db = connect_graph(grafo, riferimento)
         try:
             pagine = {id_.lower(): id_ for (id_,) in db.execute("SELECT id FROM entities WHERE path LIKE 'wiki/%'")}
             tipi = dict(db.execute("SELECT id, tipo FROM entities WHERE path LIKE 'wiki/%'").fetchall())

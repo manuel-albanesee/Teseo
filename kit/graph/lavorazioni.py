@@ -40,11 +40,11 @@ from pathlib import Path
 try:  # nel repository il modulo sta nel pacchetto kit.graph (lo importa la dashboard); nel vault gli script sono piatti in .graph/
     from . import contratti
     from .build_graph import LINK, PAGINE_SCHEMA, RIGA_FONTE, bersaglio, leggi_testo, valori
-    from .graph_db import GraphDatabaseError, connect_graph
+    from .graph_db import GraphDatabaseError, connect_graph, graph_reference
 except ImportError:
     import contratti
     from build_graph import LINK, PAGINE_SCHEMA, RIGA_FONTE, bersaglio, leggi_testo, valori
-    from graph_db import GraphDatabaseError, connect_graph
+    from graph_db import GraphDatabaseError, connect_graph, graph_reference
 
 NOME = re.compile(r"^[a-z0-9][a-z0-9-]{0,40}$")
 FASE = re.compile(r"^(\d{2})-[a-z0-9][a-z0-9-]*$")
@@ -342,11 +342,13 @@ def _seleziona(db, selezione, oggi, origine=None):
 
 
 def _apri_grafo(vault):
+    """Apre il grafo in sola lettura: il file .graph/graph.sqlite o, nei vault gestiti dalla dashboard, la generazione corrente."""
     grafo = Path(vault) / ".graph/graph.sqlite"
-    if not grafo.is_file():
-        raise LavorazioneError("grafo_assente", "grafo non trovato: eseguire python .graph/build_graph.py")
     try:
-        return connect_graph(grafo)
+        riferimento = graph_reference(grafo)
+        if not riferimento.path.is_file():
+            raise LavorazioneError("grafo_assente", "grafo non trovato: eseguire python .graph/build_graph.py")
+        return connect_graph(grafo, riferimento)
     except (sqlite3.Error, GraphDatabaseError) as errore:
         raise LavorazioneError("grafo_non_leggibile", f"{errore}: rieseguire python .graph/build_graph.py") from errore
 
