@@ -22,6 +22,7 @@ Livello 3 = regole stabili del vault, livello 4 = materiale di questa esecuzione
 | 3 | `Wiki reference.md` | tutto | convenzioni, vocabolario delle relazioni e chiavi delle fonti (passi 1 e 5) |
 | 4 | `raw/` | la fonte grezza indicata dall'utente, per intero | materiale da distillare (passo 2) |
 | 4 | `wiki/*.md` | pagine toccate dalla fonte | pagine da aggiornare (passo 4) |
+| 4 | `lavorazioni/_ingest/<fonte>-piano.md` | tutto, com'è sul disco dopo le correzioni dell'utente | guida i passi 3–5 (passo 2b, solo con piano) |
 | 4 | `index.md` | tutto | da aggiornare con le pagine nuove (passo 7) |
 | 4 | `log.md` | fine file | da aggiornare con la voce dell'ingest (passo 8) |
 
@@ -33,6 +34,28 @@ Livello 3 = regole stabili del vault, livello 4 = materiale di questa esecuzione
 
 1. **Localizza il vault e lo schema.** Se non è ovvio dal contesto, chiedi o cerca il file indice/convenzioni (spesso in root del vault). Non riscrivere le convenzioni esistenti senza motivo: seguile.
 2. **Leggi la fonte grezza** per intero (o a blocchi se molto lunga). Se disponibile, usa i timestamp/riferimenti originali (es. `[mm:ss → mm:ss]`) per poterli citare nelle note.
+2b. **Piano** (solo per una fonte singola importante o se l'utente lo chiede; mai nei batch a bassa supervisione). Prima di scrivere
+   pagine, scrivi `lavorazioni/_ingest/<fonte>-piano.md` (cartella personale, fuori da Git; creala se manca) e controllalo:
+   `python .graph/piano.py lavorazioni/_ingest/<fonte>-piano.md`, correggendo finché non restano problemi. Formato:
+
+   ```markdown
+   # Piano di ingest — raw/<fonte>.md
+   ## Pagine da creare
+   - [[Nome]] — tipo: processo — motivo
+   ## Pagine da aggiornare
+   - [[Nome]] — motivo
+   ## Relazioni
+   - [[Da]] → relazione → [[A]]
+   ## Alias
+   - [[Nome]]: «alias», «altro alias»
+   ## Contraddizioni con il vault
+   - [[Nome]]: cosa dice la fonte e cosa dice la pagina, oppure «nessuna»
+   ```
+
+   **Fermati e presenta il piano**: l'utente lo corregge (anche in Obsidian). Rileggilo dal disco e ricontrollalo. I passi 3–5 seguono il
+   piano com'è sul disco: non aggiungere pagine, relazioni o alias che non vi siano. Se leggendo capisci che manca qualcosa, proponi la
+   modifica al piano invece di scriverla di nascosto.
+
 3. **Distilla, non trascrivere.** Ogni nota è **atomica**, in stile enciclopedico, un concetto/entità per nota — non un riassunto lineare né una copia verbatim della fonte. Collega densamente con `[[wikilink]]` alle note esistenti e a quelle nuove.
 4. **Aggiorna la wiki esistente**, non solo crea pagine nuove: una singola fonte tocca tipicamente 10-15 pagine (nuove entità, aggiornamento di pagine concetto, note su dove la nuova fonte contraddice o rafforza claim precedenti).
 5. **Dichiara relazioni e alias nel frontmatter**, se lo schema definisce un vocabolario di relazioni tipizzate (es. sezione «Relazioni tipizzate» in `Wiki reference.md`). Per ogni pagina creata o toccata:
@@ -58,6 +81,7 @@ Livello 3 = regole stabili del vault, livello 4 = materiale di questa esecuzione
 
 | Dopo il passo | L'agente presenta | L'utente decide |
 | --- | --- | --- |
+| 2b | il piano: pagine da creare e aggiornare, relazioni, alias, contraddizioni con il vault (solo con piano) | cosa scrivere: la scrittura segue il file corretto |
 | 3 | riassunti delle note distillate (fonti singole importanti: vedi Note operative) | cosa enfatizzare e cosa correggere |
 | 11 | riepilogo: note create e aggiornate, relazioni e alias, contraddizioni, domande aperte per segnale | come proseguire: lint e poi lacune (consigliato), solo lint, solo lacune, più tardi |
 
@@ -65,6 +89,7 @@ Livello 3 = regole stabili del vault, livello 4 = materiale di questa esecuzione
 
 | Controllo | Comando | Esito atteso |
 | --- | --- | --- |
+| Piano coerente con il vault (passo 2b, solo con piano) | `python .graph/piano.py lavorazioni/_ingest/<fonte>-piano.md` | nessun problema, prima di scrivere pagine |
 | Grafo allineato alle pagine (passo 6) | `python .graph/build_graph.py --check` | nessun problema, da rilanciare finché non restano |
 | Sincronizzazione prima (passo 0) | `python .graph/teseo_git.py pre` | exit 0; con exit 2 ci si ferma senza toccare il vault |
 | Pubblicazione dopo (passo 9) | `python .graph/teseo_git.py post` | exit 0; exit 3 senza rete, exit 2 bloccata |
@@ -73,6 +98,7 @@ Livello 3 = regole stabili del vault, livello 4 = materiale di questa esecuzione
 
 | Artefatto | Posizione | Formato |
 | --- | --- | --- |
+| Piano (solo con piano) | `lavorazioni/_ingest/<fonte>-piano.md` | Markdown personale, fuori da Git |
 | Pagine create e aggiornate | `wiki/*.md` | note atomiche con relazioni e alias nel frontmatter |
 | Indice | `index.md` | link, riassunto in una riga, metadati |
 | Voce di log | `log.md` | intestazione `## [AAAA-MM-GG] ingest` con relazioni, alias ed esito di `--check` |

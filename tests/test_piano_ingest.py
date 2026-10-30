@@ -182,6 +182,36 @@ class ConCatalogo(Base):
         self.assertIn('tipo_non_ammesso', self.codici(sostituisci(PIANO, 'tipo: processo', 'tipo: inventato')))
 
 
+class SkillECheck(unittest.TestCase):
+    """Il formato scritto nella skill di ingest e quello che piano.py controlla sono due copie: devono coincidere."""
+
+    def test_il_formato_nella_skill_ha_le_sezioni_che_il_controllo_si_aspetta(self):
+        skill = (KIT / 'skills/obsidian-wiki-ingest/SKILL.md').read_text(encoding='utf-8')
+        blocco = skill.split('```markdown', 1)[1].split('```', 1)[0]
+        titoli = [r[3:].strip().lower() for r in (riga.strip() for riga in blocco.splitlines()) if r.startswith('## ')]
+        self.assertEqual(sorted(titoli), sorted(piano.SEZIONI))
+
+    def test_il_piano_della_skill_riconosciuto_dal_controllo_non_ha_sezioni_mancanti(self):
+        skill = (KIT / 'skills/obsidian-wiki-ingest/SKILL.md').read_text(encoding='utf-8')
+        blocco = '\n'.join(r.strip() for r in skill.split('```markdown', 1)[1].split('```', 1)[0].splitlines())
+        with tempfile.TemporaryDirectory() as cartella:
+            vault = Path(cartella)
+            shutil.copytree(KIT / 'esempio/wiki', vault / 'wiki')
+            (vault / 'raw').mkdir()
+            (vault / 'Wiki reference.md').write_text((KIT / 'vault/Wiki reference.md').read_text(encoding='utf-8'), encoding='utf-8')
+            (vault / '.graph').mkdir()
+            with redirect_stdout(io.StringIO()):
+                build_graph.costruisci(vault, vault / '.graph/graph.sqlite')
+            (vault / 'piano.md').write_text(blocco, encoding='utf-8')
+            self.assertNotIn('sezione_mancante', [p['codice'] for p in piano.controlla(vault, vault / 'piano.md')])
+
+    def test_la_skill_chiede_di_controllare_il_piano_e_di_fermarsi(self):
+        skill = (KIT / 'skills/obsidian-wiki-ingest/SKILL.md').read_text(encoding='utf-8')
+        self.assertIn('python .graph/piano.py', skill)
+        self.assertIn('Fermati e presenta il piano', skill)
+        self.assertIn('2b.', skill)
+
+
 class Riga(Base):
     def esegui(self, *argomenti):
         uscita, errori = io.StringIO(), io.StringIO()

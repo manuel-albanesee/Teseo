@@ -26,6 +26,7 @@ degli hook dei tre client. Per il piano dashboard/collaborazione vedi
 | `kit/graph/leggi.py` | Lettura da shell che insegna alla memoria solo con token di turno valido. |
 | `kit/graph/misura.py` | Banco di prova del recupero su domande configurate per vault. |
 | `kit/graph/sintesi.py` | Trova risposte distribuite fra più pagine, candidate a una pagina di sintesi (tag `entropia`). |
+| `kit/graph/piano.py` | Controlla un piano di ingest contro il grafo e il vocabolario prima che si scrivano le pagine. Solo lettura. |
 | `kit/graph/lavorazioni.py` | Lavorazioni ICM: validazione, creazione da modello, raccolta deterministica dal grafo con impronte SHA-256, stato delle fasi. Non scrive in `wiki/` né in `raw/`. |
 | `kit/graph/contratti.py` | Valida i contratti ICM (Input, Processo, Checkpoint, Verifica, Output): file e sezioni citati, riferimenti in avanti, segnaposto. Solo lettura. |
 | `kit/dashboard/` | Servizio locale, UI, contratti e collaborazione: vedi i documenti dei passi 1–9. |

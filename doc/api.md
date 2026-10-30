@@ -717,6 +717,36 @@ Gli offset sono byte UTF-8; il serializer sostituisce solo tabelle riconosciute.
 | `serialize(document, *, types=None, relations=None)` | — |
 | `propose_type_catalog(document, observed_types=())` | — |
 
+## `kit/graph/piano.py`
+
+Controllo del piano di ingest: lo verifica prima che si scrivano le pagine, così l'utente corregge un file e non quindici.
+
+Un piano (di norma `lavorazioni/_ingest/<fonte>-piano.md`, personale e fuori da Git) ha un titolo con la fonte e cinque sezioni:
+
+  # Piano di ingest — raw/manuale-rilascio.md
+  ## Pagine da creare            - [[Finestra di rilascio]] — tipo: processo — motivo
+  ## Pagine da aggiornare        - [[Rilascio in produzione]] — motivo
+  ## Relazioni                   - [[Rilascio in produzione]] → richiede → [[Finestra di rilascio]]
+  ## Alias                       - [[Finestra di rilascio]]: «slot di rilascio», «finestra»
+  ## Contraddizioni con il vault - testo libero, oppure «nessuna»
+
+Controlli (exit 1 se ne trova): la fonte esiste in raw/; le cinque sezioni ci sono; le pagine da creare non esistono (e hanno un
+tipo del catalogo, se il vault lo definisce) e quelle da aggiornare sì; nessun doppione né nome con ( ) / # | [ ]; le relazioni
+stanno nel vocabolario, con tipi ammessi, e partono da una pagina del piano; gli alias sono di pagine del piano e non collidono
+con nomi o alias esistenti. Solo lettura: non scrive nulla e non giudica se il piano è giusto, solo se è coerente col vault.
+
+Uso:
+  python .graph/piano.py lavorazioni/_ingest/manuale-rilascio-piano.md [--json]
+
+| Classe | Descrizione |
+| --- | --- |
+| `PianoError` | — |
+
+| Funzione | Descrizione |
+| --- | --- |
+| `controlla(vault, percorso)` | Problemi del piano: elenco di {codice, riga, messaggio} in ordine di riga, vuoto se è coerente col vault. |
+| `main(argv=None)` | — |
+
 ## `kit/graph/recall.py`
 
 Richiama dal grafo i fatti legati a una domanda, da mettere nel contesto prima di rispondere.

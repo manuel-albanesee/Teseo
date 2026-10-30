@@ -103,6 +103,17 @@ registra in `esecuzione.json`. Gli override non usano YAML: il tipo lo decide la
 
 La scheda richiede l'argomento a ogni esecuzione: `avvia NOME --param argomento="Nome della pagina"`.
 
+## Piano di ingest
+
+La stessa idea, applicata all'ingest: per una fonte singola importante la skill scrive prima `lavorazioni/_ingest/<fonte>-piano.md`
+(pagine da creare e da aggiornare, relazioni, alias, contraddizioni con il vault), lo controlla con `python .graph/piano.py` e
+**si ferma**: correggere un file costa meno che correggere quindici pagine. La scrittura segue il piano com'è sul disco.
+
+`piano.py` controlla che il piano sia coerente col vault, non che sia giusto: la fonte esista in `raw/`, le pagine da creare non
+esistano (e abbiano un tipo del catalogo, se il vault lo definisce) e quelle da aggiornare sì, i nomi non abbiano `( ) / # | [ ]`, le
+relazioni siano nel vocabolario con tipi ammessi e partano da una pagina del piano, gli alias non collidano con nomi o alias
+esistenti. Nei batch a bassa supervisione il piano si salta.
+
 ## Limiti
 
 - Le lavorazioni sono **personali**: `lavorazioni/` è esclusa da Git nei vault collaborativi, perché un file non tracciato
