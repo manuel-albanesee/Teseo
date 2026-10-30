@@ -1037,6 +1037,75 @@ class Esporta(Base):
         self.assertNotIn('istruzioni', uscita)
 
 
+class Pannello(Base):
+    """Stato di tutte le lavorazioni per la dashboard: sola lettura, limitato e senza seguire collegamenti simbolici."""
+
+    def test_senza_cartella_lavorazioni(self):
+        self.assertEqual(lavorazioni.pannello(self.vault), {'presente': False, 'troncato': False, 'lavorazioni': []})
+
+    def test_lavorazione_con_un_esecuzione(self):
+        self.crea()
+        lavorazioni.avvia(self.vault, 'prova', oggi='2026-10-30')
+        voce = lavorazioni.pannello(self.vault)['lavorazioni'][0]
+        self.assertEqual((voce['nome'], voce['esecuzione'], voce['problemi']), ('prova', '2026-10-30-1', []))
+        self.assertEqual([(f['nome'], f['stato']) for f in voce['fasi']],
+                         [('01-raccolta', 'COMPLETA'), ('02-sintesi', 'IN ATTESA'), ('03-revisione', 'IN ATTESA')])
+        self.assertEqual(voce['output'], ['lavorazioni/prova/esecuzioni/2026-10-30-1/01-raccolta/raccolta.md'])
+        json.dumps(voce)
+
+    def test_fase_da_rifare_porta_i_motivi(self):
+        self.crea()
+        lavorazioni.avvia(self.vault, 'prova', oggi='2026-10-30')
+        (self.vault / 'wiki/Console di rilascio.md').unlink()
+        fase = lavorazioni.pannello(self.vault)['lavorazioni'][0]['fasi'][0]
+        self.assertEqual(fase['stato'], 'DA RIFARE')
+        self.assertIn('rimossa', fase['motivi'][0])
+
+    def test_lavorazione_non_valida_mostra_i_problemi_senza_errori(self):
+        self.crea(config=None)
+        voce = lavorazioni.pannello(self.vault)['lavorazioni'][0]
+        self.assertIn('config_mancante', [q['codice'] for q in voce['problemi']])
+        self.assertIsNone(voce['esecuzione'])
+
+    def test_massimo_di_lavorazioni(self):
+        for n in range(7):
+            self.crea(f'l{n}', fasi=('01-raccolta',))
+        risposta = lavorazioni.pannello(self.vault, massimo=5)
+        self.assertEqual((len(risposta['lavorazioni']), risposta['troncato']), (5, True))
+
+    def test_testi_lunghi_sono_accorciati(self):
+        self.crea(config=CONFIG.replace('team operativo', 'x' * 900))
+        lavorazioni.avvia(self.vault, 'prova', oggi='2026-10-30')
+        pagina = self.vault / 'wiki/Console di rilascio.md'
+        pagina.rename(self.vault / ('wiki/' + 'nome ' + 'z' * 280 + '.md'))
+        for voce in lavorazioni.pannello(self.vault)['lavorazioni']:
+            for fase in voce['fasi']:
+                self.assertTrue(all(len(m) <= 300 for m in fase['motivi']))
+
+    def test_non_segue_una_lavorazione_che_e_un_collegamento_simbolico(self):
+        fuori = Path(tempfile.mkdtemp(prefix='teseo-fuori-', dir=self.vault.parent))
+        self.addCleanup(shutil.rmtree, fuori, True)
+        (fuori / 'fasi/01-raccolta').mkdir(parents=True)
+        (fuori / 'CONTEXT.md').write_text('# fuori\n', encoding='utf-8')
+        (self.vault / 'lavorazioni').mkdir()
+        try:
+            (self.vault / 'lavorazioni/esterna').symlink_to(fuori, target_is_directory=True)
+        except OSError:
+            self.skipTest('collegamenti simbolici non disponibili')
+        self.assertEqual(lavorazioni.elenco(self.vault), [])
+        self.assertEqual(lavorazioni.pannello(self.vault)['lavorazioni'], [])
+
+    def test_identificatori_ostili_nel_registro_non_fanno_leggere_fuori_da_wiki(self):
+        self.crea()
+        e = lavorazioni.avvia(self.vault, 'prova', oggi='2026-10-30')
+        registro = Path(e['percorso']) / 'esecuzione.json'
+        dati = json.loads(registro.read_text(encoding='utf-8'))
+        dati['pagine'] = {'../Wiki reference': 'x', '../../fuori': 'y', 'sotto/cartella': 'z', '..': 'w', '': 'v'}
+        registro.write_text(json.dumps(dati), encoding='utf-8')
+        fase = lavorazioni.stato(self.vault, 'prova')['fasi'][0]
+        self.assertEqual((fase['stato'], fase['motivi']), ('COMPLETA', []))
+
+
 class Riga(Base):
     def esegui(self, *argomenti):
         uscita, errori = io.StringIO(), io.StringIO()
