@@ -182,6 +182,17 @@ class ConCatalogo(Base):
         self.assertIn('tipo_non_ammesso', self.codici(sostituisci(PIANO, 'tipo: processo', 'tipo: inventato')))
 
 
+class VaultGestito(Base):
+    def test_il_piano_si_controlla_anche_con_il_grafo_in_generazioni(self):
+        (self.vault / '.teseo').mkdir()
+        shutil.copy(KIT.parent / 'tests/fixtures/dashboard/project-v1.json', self.vault / '.teseo/project.json')
+        (self.vault / '.graph/graph.sqlite').unlink()
+        from kit.dashboard.graph_service import rebuild  # il vault gestito costruisce una generazione, non il file semplice
+        rebuild(self.vault)
+        self.assertFalse((self.vault / '.graph/graph.sqlite').exists())
+        self.assertEqual(self.controlla(PIANO), [])
+
+
 class SkillECheck(unittest.TestCase):
     """Il formato scritto nella skill di ingest e quello che piano.py controlla sono due copie: devono coincidere."""
 

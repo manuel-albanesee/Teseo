@@ -1115,6 +1115,40 @@ class Pannello(Base):
         self.assertEqual((fase['stato'], fase['motivi']), ('COMPLETA', []))
 
 
+class VaultGestito(Base):
+    """Nei vault gestiti dalla dashboard il grafo è una generazione in .teseo/local, non il file .graph/graph.sqlite."""
+
+    def setUp(self):
+        super().setUp()
+        (self.vault / '.teseo').mkdir()
+        shutil.copy(KIT.parent / 'tests/fixtures/dashboard/project-v1.json', self.vault / '.teseo/project.json')
+        (self.vault / '.graph/graph.sqlite').unlink()  # costruito dalla classe base, prima del manifest
+        from kit.dashboard.graph_service import rebuild  # il vault gestito costruisce una generazione, non il file semplice
+        rebuild(self.vault)
+        self.assertTrue((self.vault / '.teseo/local/graph-current.json').is_file(), 'il vault deve usare le generazioni')
+        self.assertFalse((self.vault / '.graph/graph.sqlite').exists(), 'nel vault gestito il file semplice non esiste')
+
+    def test_avvia_usa_la_generazione_corrente(self):
+        self.crea()
+        e = lavorazioni.avvia(self.vault, 'prova', oggi='2026-10-30')
+        self.assertEqual(self.pagine(e), ['Console di rilascio', 'Rilascio in produzione'])
+        dati = json.loads((Path(e['percorso']) / 'esecuzione.json').read_text(encoding='utf-8'))
+        self.assertRegex(dati['revisione_grafo'], r'^[0-9a-f]{64}$')
+
+    def test_verifica_usa_la_generazione_corrente(self):
+        self.crea()
+        e = lavorazioni.avvia(self.vault, 'prova', oggi='2026-10-30')
+        scrivi_output(e, '02-sintesi', 'sintesi.md', 'ok [[Console di rilascio]]\n', 1_800_000_100)
+        self.assertEqual(lavorazioni.verifica(self.vault, 'prova', '02'), [])
+
+    def test_senza_alcun_grafo_chiede_di_costruirlo(self):
+        self.crea()
+        shutil.rmtree(self.vault / '.teseo/local')
+        with self.assertRaises(lavorazioni.LavorazioneError) as errore:
+            lavorazioni.avvia(self.vault, 'prova', oggi='2026-10-30')
+        self.assertEqual(errore.exception.codice, 'grafo_assente')
+
+
 class Riga(Base):
     def esegui(self, *argomenti):
         uscita, errori = io.StringIO(), io.StringIO()
