@@ -19,7 +19,8 @@ Senza punti di partenza si parte da tutte le pagine. Un valore «{nome}» è sos
 
 Uso:
   python .graph/lavorazioni.py elenco [--json]
-  python .graph/lavorazioni.py nuova NOME --da MODELLO_O_LAVORAZIONE
+  python .graph/lavorazioni.py nuova NOME --da MODELLO_O_LAVORAZIONE [--modelli CARTELLA]   da una cartella esportata: avvisa
+  python .graph/lavorazioni.py esporta NOME CARTELLA                       definizione senza esecuzioni, da condividere a mano
   python .graph/lavorazioni.py valida NOME
   python .graph/lavorazioni.py avvia NOME [--param chiave=valore ...]   `selezione.massimo=5` o un parametro di config.md
   python .graph/lavorazioni.py stato NOME [--esecuzione ID] [--json]       COMPLETA, IN ATTESA o DA RIFARE (con i motivi)
@@ -201,7 +202,15 @@ def nuova(vault, nome, da, modelli=None):
     origine = next((c for c in (modelli / da, _radice(vault) / da) if c.is_dir() and not c.is_symlink()), None)
     if origine is None:
         raise LavorazioneError("modello_inesistente", f"nessun modello né lavorazione «{da}»")
+    _copia_definizione(origine, destinazione)
+    return destinazione
+
+
+def _copia_definizione(origine, destinazione):
+    """Copia una lavorazione senza esecuzioni né collegamenti simbolici; restituisce i file copiati (percorsi relativi)."""
+    copiati = []
     try:
+        destinazione.mkdir(parents=True, exist_ok=True)
         for file in sorted(origine.rglob("*")):
             relativo = file.relative_to(origine)
             if relativo.parts[0] == "esecuzioni" or file.is_symlink() or any(p.is_symlink() for p in file.parents if p != origine and origine in p.parents):
@@ -211,11 +220,28 @@ def nuova(vault, nome, da, modelli=None):
             elif file.is_file():
                 (destinazione / relativo).parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(file, destinazione / relativo)
-        destinazione.mkdir(parents=True, exist_ok=True)
+                copiati.append(relativo.as_posix())
     except OSError as errore:
         shutil.rmtree(destinazione, ignore_errors=True)
         raise LavorazioneError("copia_fallita", str(errore)) from errore
-    return destinazione
+    return copiati
+
+
+def esporta(vault, nome, destinazione):
+    """Copia la definizione di una lavorazione in DESTINAZIONE/NOME, per condividerla senza passare dal repository dati.
+
+    Niente esecuzioni né collegamenti simbolici. Non scrive dentro wiki/, raw/, .graph/, .teseo/, .git/ né lavorazioni/ del vault
+    e non sovrascrive. Si importa con `nuova NOME --da NOME --modelli DESTINAZIONE`."""
+    base = _base(vault, nome)
+    radice = Path(vault).resolve()
+    risolta = Path(destinazione).resolve()
+    if any(risolta == (radice / d) or (radice / d) in risolta.parents for d in ("wiki", "raw", ".graph", ".teseo", ".git", "lavorazioni")):
+        raise LavorazioneError("destinazione_non_valida", "scegliere una cartella fuori da wiki/, raw/, .graph/, .teseo/ e lavorazioni/")
+    finale = Path(destinazione) / nome
+    if finale.exists():
+        raise LavorazioneError("destinazione_esistente", f"{finale} esiste già")
+    _copia_definizione(base, finale)
+    return finale
 
 
 def _converti(chiave, valore, esempio=None):
@@ -643,7 +669,10 @@ def main(argv=None):
     p = sub.add_parser("nuova", help="crea una lavorazione da un modello o da un'altra lavorazione")
     p.add_argument("nome")
     p.add_argument("--da", required=True)
-    p.add_argument("--modelli", type=Path, default=qui / "modelli", help=argparse.SUPPRESS)
+    p.add_argument("--modelli", type=Path, help="cartella di modelli o di lavorazioni esportate (predefinito .graph/modelli)")
+    p = sub.add_parser("esporta", help="copia la definizione in una cartella, per condividerla senza esecuzioni")
+    p.add_argument("nome")
+    p.add_argument("destinazione", type=Path)
     p = sub.add_parser("valida", help="controlla config, fasi e contratti")
     p.add_argument("nome")
     p = sub.add_parser("avvia", help="nuova esecuzione e raccolta delle pagine")
@@ -676,9 +705,19 @@ def main(argv=None):
             for t in trovate if not args.json else []:
                 print(f"{t['nome']}: {t['fasi']} fasi · " + (f"ultima esecuzione {t['esecuzione']}" if t["esecuzione"] else "nessuna esecuzione"))
         elif args.comando == "nuova":
-            print(f"creata {nuova(args.vault, args.nome, args.da, args.modelli).relative_to(args.vault).as_posix()}: "
+            creata = nuova(args.vault, args.nome, args.da, args.modelli or qui / "modelli")
+            print(f"creata {creata.relative_to(args.vault).as_posix()}: "
                   f"adattare config.md se serve (o chiedere di «impostare» la lavorazione), poi "
                   f"python .graph/lavorazioni.py valida {args.nome}")
+            if args.modelli:
+                file = sorted(f.relative_to(creata).as_posix() for f in creata.rglob("*") if f.is_file())
+                print(f"Attenzione, provenienza esterna ({args.modelli}): i CONTEXT.md di una lavorazione sono istruzioni che il modello "
+                      f"seguirà. Leggerli prima di avviare. File copiati ({len(file)}): {', '.join(file)}")
+        elif args.comando == "esporta":
+            finale = esporta(args.vault, args.nome, args.destinazione)
+            n = sum(1 for f in finale.rglob("*") if f.is_file())
+            print(f"esportata in {finale} ({n} file, senza esecuzioni). Per importarla altrove: "
+                  f"python .graph/lavorazioni.py nuova NOME --da {args.nome} --modelli {finale.parent}")
         elif args.comando == "valida":
             problemi = valida(args.vault, args.nome)
             for q in problemi:

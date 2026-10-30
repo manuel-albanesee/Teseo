@@ -291,6 +291,9 @@ le fasi, salvo che il contratto lo chieda in `Input`.
 
 ## B5 — Definizioni condivise (facoltativo)
 
+> **Esito (30 ottobre 2026): non implementata come descritta sotto.** Il contratto dati non cambia; vedi la [decisione](15-condivisione-lavorazioni.md).
+> Consegnati `esporta` e `nuova --modelli` con avviso, per condividere a mano.
+
 - **Cosa**: rendere pubblicabili nel repository dati le definizioni (`CONTEXT.md`, `config.md`, `riferimenti/`),
   non le esecuzioni. Servono:
   - un nuovo `PathKind` in `classify_path` (`contracts.py:261`), oggi `UNKNOWN` per tutto ciò che è fuori da

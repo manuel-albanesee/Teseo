@@ -482,7 +482,8 @@ Senza punti di partenza si parte da tutte le pagine. Un valore «{nome}» è sos
 
 Uso:
   python .graph/lavorazioni.py elenco [--json]
-  python .graph/lavorazioni.py nuova NOME --da MODELLO_O_LAVORAZIONE
+  python .graph/lavorazioni.py nuova NOME --da MODELLO_O_LAVORAZIONE [--modelli CARTELLA]   da una cartella esportata: avvisa
+  python .graph/lavorazioni.py esporta NOME CARTELLA                       definizione senza esecuzioni, da condividere a mano
   python .graph/lavorazioni.py valida NOME
   python .graph/lavorazioni.py avvia NOME [--param chiave=valore ...]   `selezione.massimo=5` o un parametro di config.md
   python .graph/lavorazioni.py stato NOME [--esecuzione ID] [--json]       COMPLETA, IN ATTESA o DA RIFARE (con i motivi)
@@ -498,6 +499,7 @@ Uso:
 | `valida(vault, nome)` | Problemi di una lavorazione: elenco di {codice, messaggio}, vuoto se è valida. |
 | `elenco(vault)` | Le lavorazioni del vault: nome, numero di fasi, id dell'ultima esecuzione (None se non ce ne sono). |
 | `nuova(vault, nome, da, modelli=None)` | Crea lavorazioni/<nome> copiando un modello o un'altra lavorazione (senza esecuzioni né collegamenti simbolici). |
+| `esporta(vault, nome, destinazione)` | Copia la definizione di una lavorazione in DESTINAZIONE/NOME, per condividerla senza passare dal repository dati. |
 | `avvia(vault, nome, override=(), oggi=None)` | Crea una nuova esecuzione e svolge la raccolta; restituisce {id, percorso, pagine, troncata}. |
 | `stato(vault, nome, esecuzione=None)` | Avanzamento di un'esecuzione (l'ultima se non indicata): {lavorazione, esecuzione, fasi:[{nome, stato, file, motivi}]}. |
 | `verifica(vault, nome, fase, esecuzione=None, citazioni=False)` | Controlli deterministici sull'output di una fase: [{codice, file, riga, messaggio}], vuoto se è tutto a posto. |

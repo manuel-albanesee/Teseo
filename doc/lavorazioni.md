@@ -38,6 +38,7 @@ letture di `wiki/` che l'utente non ha chiesto, e ogni output è riconducibile a
 | `python .graph/lavorazioni.py stato NOME` | pipeline in ASCII (o `--json`): COMPLETA, IN ATTESA o DA RIFARE con i motivi |
 | `python .graph/lavorazioni.py verifica NOME --fase 02 [--citazioni]` | controlli deterministici sull'output di una fase |
 | `python .graph/lavorazioni.py promuovi NOME [--file 03-x/out.md]` | output finale → nuova fonte in `raw/`, poi ingest |
+| `python .graph/lavorazioni.py esporta NOME CARTELLA` | definizione senza esecuzioni, da condividere a mano |
 
 Le fasi dopo la raccolta le esegue il client AI con la skill `obsidian-wiki-lavorazioni` («esegui la lavorazione X»): legge il
 contratto della fase, carica solo gli Input, scrive l'output, esegue la Verifica e si ferma ai Checkpoint.
@@ -117,7 +118,9 @@ esistenti. Nei batch a bassa supervisione il piano si salta.
 ## Limiti
 
 - Le lavorazioni sono **personali**: `lavorazioni/` è esclusa da Git nei vault collaborativi, perché un file non tracciato
-  fermerebbe la sincronizzazione prima di ogni skill. Condividerne le definizioni è una voce a parte del piano.
+  fermerebbe la sincronizzazione prima di ogni skill. Per condividerne una: `esporta NOME CARTELLA` e, dall'altra parte,
+  `nuova NOME --da NOME --modelli CARTELLA`, che avvisa che i contratti importati sono istruzioni da leggere prima di avviare.
+  La condivisione tramite il repository dati non è prevista: vedi la [decisione](15-condivisione-lavorazioni.md).
 - Un'esecuzione alla volta per lavorazione; nessun ramo automatico fra fasi: decide l'utente.
 - Il recall automatico arriva comunque a ogni prompt: la skill dice di ignorarlo durante le fasi.
 - Il comportamento del modello nelle fasi di scrittura non è verificato da test automatici: sono provati il motore, i contratti e
