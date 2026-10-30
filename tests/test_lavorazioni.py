@@ -3,6 +3,7 @@ import _shortpath  # noqa: F401
 import hashlib
 import io
 import json
+import os
 import re
 import subprocess
 from contextlib import redirect_stderr, redirect_stdout
@@ -493,6 +494,15 @@ class Modelli(Base):
         self.assertIn('Rilascio in produzione', trovate)
         self.assertIn('Console di rilascio', trovate)
 
+    def test_le_fasi_di_scrittura_indicano_il_comando_di_verifica(self):
+        for modello, fasi in (('report-periodico', ('02-sintesi', '03-revisione')),
+                              ('scheda-argomento', ('02-scaletta', '03-stesura', '04-verifica'))):
+            base = self.da_modello(modello)
+            for fase in fasi:
+                with self.subTest(modello=modello, fase=fase):
+                    testo = (base / 'fasi' / fase / 'CONTEXT.md').read_text(encoding='utf-8')
+                    self.assertIn(f'python .graph/lavorazioni.py verifica <nome> --fase {fase[:2]}', testo)
+
     def test_installazione_distribuisce_i_modelli_e_funziona_da_riga_di_comando(self):
         # Scenario completo senza modello AI: installa, crea da modello, valida, avvia, stato.
         destinazione = Path(tempfile.mkdtemp(prefix='teseo-lav-', dir=self.vault.parent))
@@ -559,6 +569,221 @@ class Stato(Base):
         self.assertIn('[01-raccolta] --> [02-sintesi] --> [03-revisione]', disegno)
         self.assertIn('COMPLETA', disegno)
         self.assertIn('IN ATTESA', disegno)
+
+
+def scrivi_output(esecuzione, fase, nome, testo, ora):
+    """Scrive un output di fase con una data di modifica precisa, per rendere deterministico il confronto fra fasi."""
+    percorso = Path(esecuzione['percorso']) / fase / nome
+    percorso.parent.mkdir(parents=True, exist_ok=True)
+    percorso.write_text(testo, encoding='utf-8')
+    os.utime(percorso, (ora, ora))
+    return percorso
+
+
+class Obsolescenza(Base):
+    """Una fase è DA RIFARE se, dopo il suo output, è cambiato qualcosa da cui dipende."""
+
+    T0 = 1_800_000_000
+
+    def esecuzione(self):
+        self.crea()
+        e = lavorazioni.avvia(self.vault, 'prova', oggi='2026-10-30')
+        raccolta = Path(e['percorso']) / '01-raccolta/raccolta.md'
+        os.utime(raccolta, (self.T0, self.T0))
+        scrivi_output(e, '02-sintesi', 'sintesi.md', 'bozza', self.T0 + 10)
+        scrivi_output(e, '03-revisione', 'report.md', 'finale', self.T0 + 20)
+        return e
+
+    def stati(self):
+        s = lavorazioni.stato(self.vault, 'prova')
+        return {f['nome']: f['stato'] for f in s['fasi']}, {f['nome']: f['motivi'] for f in s['fasi']}
+
+    def test_esecuzione_appena_fatta_non_ha_fasi_da_rifare(self):
+        self.esecuzione()
+        stati, motivi = self.stati()
+        self.assertEqual(list(stati.values()), ['COMPLETA'] * 3)
+        self.assertEqual(list(motivi.values()), [[], [], []])
+
+    def test_pagina_della_raccolta_modificata_rende_da_rifare_la_raccolta_e_le_fasi_a_valle(self):
+        self.esecuzione()
+        pagina = self.vault / 'wiki/Console di rilascio.md'
+        pagina.write_text(pagina.read_text(encoding='utf-8') + '\nNuovo fatto.\n', encoding='utf-8')
+        stati, motivi = self.stati()
+        self.assertEqual(list(stati.values()), ['DA RIFARE'] * 3)
+        self.assertIn('Console di rilascio', motivi['01-raccolta'][0])
+        self.assertIn('01-raccolta', motivi['02-sintesi'][0])
+
+    def test_le_fasi_in_attesa_restano_in_attesa(self):
+        e = self.esecuzione()
+        shutil.rmtree(Path(e['percorso']) / '03-revisione')
+        pagina = self.vault / 'wiki/Console di rilascio.md'
+        pagina.write_text(pagina.read_text(encoding='utf-8') + '\nNuovo fatto.\n', encoding='utf-8')
+        self.assertEqual(list(self.stati()[0].values()), ['DA RIFARE', 'DA RIFARE', 'IN ATTESA'])
+
+    def test_pagina_fuori_dalla_raccolta_non_conta(self):
+        self.esecuzione()
+        pagina = self.vault / 'wiki/Anna Rossi.md'
+        pagina.write_text(pagina.read_text(encoding='utf-8') + '\nNuovo fatto.\n', encoding='utf-8')
+        self.assertEqual(list(self.stati()[0].values()), ['COMPLETA'] * 3)
+
+    def test_pagina_rimossa(self):
+        self.esecuzione()
+        (self.vault / 'wiki/Console di rilascio.md').unlink()
+        self.assertIn('rimossa', self.stati()[1]['01-raccolta'][0])
+
+    def test_config_modificato(self):
+        self.esecuzione()
+        config = self.vault / 'lavorazioni/prova/config.md'
+        config.write_text(config.read_text(encoding='utf-8') + '\nNuova regola.\n', encoding='utf-8')
+        stati, motivi = self.stati()
+        self.assertEqual(stati['01-raccolta'], 'DA RIFARE')
+        self.assertIn('config.md', motivi['01-raccolta'][0])
+
+    def test_contratto_modificato_rifa_quella_fase_e_le_successive_ma_non_le_precedenti(self):
+        self.esecuzione()
+        contratto = self.vault / 'lavorazioni/prova/fasi/02-sintesi/CONTEXT.md'
+        contratto.write_text(contratto.read_text(encoding='utf-8') + '\n2. Nuovo passo.\n', encoding='utf-8')
+        stati, motivi = self.stati()
+        self.assertEqual(list(stati.values()), ['COMPLETA', 'DA RIFARE', 'DA RIFARE'])
+        self.assertIn('contratto', motivi['02-sintesi'][0])
+
+    def test_output_di_una_fase_modificato_dopo_quello_della_fase_successiva(self):
+        e = self.esecuzione()
+        scrivi_output(e, '02-sintesi', 'sintesi.md', 'bozza corretta dall\'utente', self.T0 + 30)
+        stati, motivi = self.stati()
+        self.assertEqual(list(stati.values()), ['COMPLETA', 'COMPLETA', 'DA RIFARE'])
+        self.assertIn('02-sintesi', motivi['03-revisione'][0])
+
+    def test_correzione_della_raccolta_dopo_la_sintesi(self):
+        e = self.esecuzione()
+        os.utime(Path(e['percorso']) / '01-raccolta/raccolta.md', (self.T0 + 15, self.T0 + 15))
+        stati, _ = self.stati()
+        self.assertEqual(list(stati.values()), ['COMPLETA', 'DA RIFARE', 'DA RIFARE'])
+
+    def test_senza_registro_non_si_blocca(self):
+        e = self.esecuzione()
+        (Path(e['percorso']) / 'esecuzione.json').write_text('non è json', encoding='utf-8')
+        self.assertEqual(list(self.stati()[0].values()), ['COMPLETA'] * 3)
+
+    def test_disegno_indica_il_motivo(self):
+        self.esecuzione()
+        (self.vault / 'wiki/Console di rilascio.md').unlink()
+        disegno = lavorazioni.disegna(lavorazioni.stato(self.vault, 'prova'))
+        self.assertIn('DA RIFARE', disegno)
+        self.assertIn('rimossa', disegno)
+
+    def test_stato_json_da_riga_di_comando_ha_i_motivi(self):
+        self.esecuzione()
+        (self.vault / 'wiki/Console di rilascio.md').unlink()
+        uscita = io.StringIO()
+        with redirect_stdout(uscita):
+            lavorazioni.main(['--vault', str(self.vault), 'stato', 'prova', '--json'])
+        self.assertIn('rimossa', json.loads(uscita.getvalue())['fasi'][0]['motivi'][0])
+
+
+class Verifica(Base):
+    """Controlli deterministici sull'output di una fase; la coerenza di significato resta al modello."""
+
+    def setUp(self):
+        super().setUp()
+        self.crea()
+        self.e = lavorazioni.avvia(self.vault, 'prova', oggi='2026-10-30')
+
+    def output(self, testo, fase='02-sintesi', nome='sintesi.md'):
+        scrivi_output(self.e, fase, nome, testo, 1_800_000_100)
+
+    def codici(self, fase='02', **opzioni):
+        return [p['codice'] for p in lavorazioni.verifica(self.vault, 'prova', fase, **opzioni)]
+
+    def test_output_con_link_alla_raccolta_e_valido(self):
+        self.output('# Sintesi\n\nIl rilascio passa dalla [[Console di rilascio]] [call-2026-09-10 34:39] e da [[Rilascio in produzione]].\n')
+        self.assertEqual(self.codici(), [])
+
+    def test_link_a_una_pagina_inventata(self):
+        self.output('Vedi [[Pagina inventata]].\n')
+        self.assertEqual(self.codici(), ['link_inesistente'])
+
+    def test_link_a_una_pagina_che_esiste_ma_non_e_nella_raccolta(self):
+        self.output('Referente: [[Anna Rossi]].\n')
+        self.assertEqual(self.codici(), ['link_fuori_raccolta'])
+
+    def test_link_con_testo_sezione_alias_e_maiuscole(self):
+        self.output('[[Console di rilascio|la console]] [[console di rilascio#Dettagli]] [[console]] [[wiki/Console di rilascio]]\n')
+        self.assertEqual(self.codici(), [])
+
+    def test_codice_non_conta(self):
+        self.output('`[[Pagina inventata]]`\n\n```\n[[Altra inventata]] {{X}} [nota-fantasma]\n```\n')
+        self.assertEqual(self.codici(), [])
+
+    def test_fonte_non_censita_e_fonti_ammesse(self):
+        self.output('Frase [nota-fantasma]. Altra [call-2026-09-10] e [nota-utente] e [x] e [testo-link](http://esempio.it).\n')
+        problemi = lavorazioni.verifica(self.vault, 'prova', '02')
+        self.assertEqual([(p['codice'], p['riga']) for p in problemi], [('fonte_non_censita', 1)])
+        self.assertIn('nota-fantasma', problemi[0]['messaggio'])
+
+    def test_segnaposto(self):
+        self.output('Destinatari: {{DESTINATARI}}\n')
+        self.assertEqual(self.codici(), ['segnaposto'])
+
+    def test_fase_senza_output(self):
+        self.assertEqual(self.codici(), ['fase_senza_output'])
+
+    def test_citazioni_per_paragrafo_solo_se_richieste(self):
+        self.output('# Titolo\n\nQuesto paragrafo è abbastanza lungo ma non cita nessuna pagina del vault.\n\n'
+                    '| a | b |\n| --- | --- |\n\n> citazione lunga senza collegamento a nessuna pagina del vault qui\n\n'
+                    'Breve.\n\nQuesto invece cita la [[Console di rilascio]] come richiesto dal contratto della fase.\n')
+        self.assertEqual(self.codici(), [])
+        problemi = lavorazioni.verifica(self.vault, 'prova', '02', citazioni=True)
+        self.assertEqual([(p['codice'], p['riga']) for p in problemi], [('paragrafo_senza_citazione', 3)])
+
+    def test_verifica_sulla_raccolta(self):
+        self.assertEqual(self.codici('01'), [])
+        (Path(self.e['percorso']) / '01-raccolta/raccolta.md').write_text('# Raccolta\n\nNessuna pagina selezionata: x.\n', encoding='utf-8')
+        self.assertEqual(self.codici('01'), ['raccolta_vuota'])
+
+    def test_la_fase_si_indica_con_numero_o_nome(self):
+        self.output('ok [[Console di rilascio]]\n')
+        self.assertEqual(self.codici('02'), self.codici('02-sintesi'))
+        for fase in ('09', 'sintesi', '../x'):
+            with self.subTest(fase=fase), self.assertRaises(lavorazioni.LavorazioneError) as errore:
+                lavorazioni.verifica(self.vault, 'prova', fase)
+            self.assertEqual(errore.exception.codice, 'fase_inesistente')
+
+    def test_senza_registro_non_si_puo_verificare(self):
+        self.output('ok\n')
+        (Path(self.e['percorso']) / 'esecuzione.json').unlink()
+        with self.assertRaises(lavorazioni.LavorazioneError) as errore:
+            lavorazioni.verifica(self.vault, 'prova', '02')
+        self.assertEqual(errore.exception.codice, 'registro_mancante')
+
+    def test_non_scrive_nulla(self):
+        self.output('Vedi [[Pagina inventata]].\n')
+        prima = hash_albero(self.vault)
+        self.codici()
+        self.assertEqual(prima, hash_albero(self.vault))
+
+    def test_un_esecuzione_precisa(self):
+        self.output('ok [[Console di rilascio]]\n')
+        seconda = lavorazioni.avvia(self.vault, 'prova', oggi='2026-10-30')
+        self.assertEqual(self.codici('02', esecuzione=self.e['id']), [])
+        self.assertEqual(self.codici('02', esecuzione=seconda['id']), ['fase_senza_output'])
+
+    def test_riga_di_comando(self):
+        uscita, errori = io.StringIO(), io.StringIO()
+
+        def esegui(*argomenti):
+            uscita.seek(0), uscita.truncate(), errori.seek(0), errori.truncate()
+            with redirect_stdout(uscita), redirect_stderr(errori):
+                return lavorazioni.main(['--vault', str(self.vault), 'verifica', 'prova', *argomenti])
+        self.output('ok [[Console di rilascio]]\n')
+        self.assertEqual(esegui('--fase', '02'), 0)
+        self.assertIn('ok', uscita.getvalue())
+        self.output('rotto [[Pagina inventata]]\n')
+        self.assertEqual(esegui('--fase', '02'), 1)
+        self.assertIn('link_inesistente', uscita.getvalue())
+        self.assertEqual(json.loads((esegui('--fase', '02', '--json'), uscita.getvalue())[1])[0]['codice'], 'link_inesistente')
+        self.assertEqual(esegui('--fase', '09'), 1)
+        self.assertIn('fase_inesistente', errori.getvalue())
 
 
 class Riga(Base):
