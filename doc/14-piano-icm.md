@@ -1,6 +1,6 @@
 # 14 — Piano: convenzioni ICM nelle istruzioni e pipeline di lavorazione della wiki
 
-Stato: **proposta del 30 ottobre 2026, nulla implementato.** Parte dall'[analisi ECC dell'ICM](analisi-icm-ecc.md).
+Stato: **proposta del 30 ottobre 2026, nulla implementato.** Sviluppo sul branch `ICM_Integration`, creato da `codex/dashboard-foundations` (0e8e440); nessun merge nel branch di partenza, una consegna verificata per commit. Parte dall'[analisi ECC dell'ICM](analisi-icm-ecc.md).
 Due linee di lavoro: **A**, le istruzioni del vault (skill, file di livello 0, schema) riscritte con le convenzioni ICM;
 **B**, un motore di *lavorazioni*: pipeline ICM configurabili che leggono la wiki e producono documenti derivati
 (report, schede, slide), senza toccare `wiki/`. Ogni voce è consegnabile da sola su un branch `codex/<scopo>`, senza
