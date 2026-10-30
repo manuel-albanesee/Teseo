@@ -56,6 +56,11 @@ Livello 3 = regole stabili del vault, livello 4 = materiale di questa esecuzione
    - Alla fine `python .graph/sintesi.py --verifica` deve dare exit 0: avviso, `riguarda`, domanda coperta, nessuna fonte estranea alle pagine linkate. Correggi le pagine generate finché non passa. Se il vault ha una misura del recall (es. `.graph/misura.py`), rilanciala: non deve peggiorare.
    - Le pagine esistenti non si toccano: se una pagina generata rivela un errore in un'altra, è un punto aperto.
    - **Domande aperte** (`python .graph/domande.py`): punti aperti, `⚠️ da verificare`, referenti mancanti, domande scartate. Sono le uniche da rivolgere all'utente: non rispondere al posto suo. Se lo script ha `--da-decidere`, elenca nel riepilogo le domande già rinviate 3 volte: vanno decise, perché il recall le mostra solo quando si parla delle loro pagine.
+5b. **Correzioni ricorrenti** (solo in un vault collaborativo con autosync: serve la storia Git attribuita). `python .graph/correzioni.py`
+   dice quali correzioni fatte a mano a pagine scritte da ingest o lint si ripetono (stessa relazione tolta, alias aggiunti, tipo
+   cambiato…). Se propone qualcosa **non cambiare nulla**: riportalo nel riepilogo (passo 8) e al checkpoint, perché rivedere
+   `Wiki reference.md` o una skill è una decisione dell'utente. Senza proposte o senza storia attribuita basta una riga.
+
 6. **Appendi un'entry al log** (es. `log.md`):
    `## [AAAA-MM-GG] lint | <ambito>`
 7. **Pubblica.** Con `--check` pulito e il log scritto, se esiste `.graph/teseo_git.py`: `python .graph/teseo_git.py post --skill lint --agente <claude|codex|copilot>`. Exit 0: riporta l'esito (`message`: commit pubblicato, oppure nulla da pubblicare). Exit 3: la rete manca e il commit è conservato; dillo e ricorda `python .graph/teseo_git.py riprendi`. Exit 2: pubblicazione bloccata (conflitto sulla stessa nota, grafo non valido, file fuori policy): riporta il messaggio e indica la dashboard (Pubblicazione Git → Risolvi), senza tentare altro con Git. Con «Autosync non attivo» non fare nulla.
@@ -67,6 +72,7 @@ Livello 3 = regole stabili del vault, livello 4 = materiale di questa esecuzione
 | --- | --- | --- |
 | 3 | contraddizioni sostanziali (fatti legali, numerici, di business) elencate come punti aperti | quali riconciliare: non si correggono in silenzio |
 | 3 | correzioni ampie proposte, se emergono (vedi Note operative) | se applicarle su larga scala |
+| 5b | le correzioni a mano che si ripetono: categoria, quante volte, su quali pagine, dove rivedere le istruzioni | se cambiare `Wiki reference.md` o la skill: il lint non lo fa da solo |
 | 8 | riepilogo: contraddizioni, orfane, pagine per entropia, domande aperte a cominciare da quelle scartate e rinviate 3 volte | quali portare alla skill lacune |
 
 ## Verifica
@@ -76,6 +82,7 @@ Livello 3 = regole stabili del vault, livello 4 = materiale di questa esecuzione
 | Problemi meccanici del grafo (passi 1, 3 e 5) | `python .graph/build_graph.py --check` | nessun problema |
 | Pagine generate per entropia (passo 5) | `python .graph/sintesi.py --verifica` | exit 0 |
 | Recupero delle pagine attese (passo 5, se il vault ha la misura) | `python .graph/misura.py` | non peggiora |
+| Correzioni ricorrenti (passo 5b) | `python .graph/correzioni.py` | solo informativo: exit 0 e nessuna modifica al vault |
 | Sincronizzazione e pubblicazione (passi 0 e 7) | `python .graph/teseo_git.py pre` e `post` | exit 0; exit 2 fermarsi, exit 3 senza rete |
 
 ## Output
@@ -85,6 +92,7 @@ Livello 3 = regole stabili del vault, livello 4 = materiale di questa esecuzione
 | Correzioni meccaniche, relazioni e alias | `wiki/*.md` | frontmatter e testo coerenti con il vocabolario |
 | Pagine generate per entropia | `wiki/*.md` con tag `entropia` | avviso in testa, link a ogni pagina della risposta |
 | Punti aperti | registro dei punti aperti dello schema o dell'index | una voce per contraddizione sostanziale |
+| Proposte sulle istruzioni (solo se ce ne sono) | chat, nel riepilogo | categoria, ricorrenza e dove rivedere; nessuna modifica fatta |
 | Voce di log | `log.md` | intestazione `## [AAAA-MM-GG] lint` con l'ambito |
 | Riepilogo | chat | note, contraddizioni, orfane, esito di `--check` e di `--verifica` |
 

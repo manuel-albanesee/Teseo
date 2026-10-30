@@ -521,6 +521,7 @@ memoria e conservazione dei dati. Per esplorare il codice:
 | `python .graph/misura.py` | Misura il recupero sulle domande configurate per il vault. |
 | `python .graph/domande.py` | Elenca le domande aperte per l'autore. |
 | `python .graph/sintesi.py` | Trova risposte distribuite tra più pagine, candidate alla sintesi. |
+| `python .graph/correzioni.py` | Nei vault collaborativi, riconosce le correzioni a mano che si ripetono su pagine scritte da ingest o lint e propone di rivedere schema o skill. Solo lettura. |
 | `python .graph/piano.py PIANO` | Controlla un piano di ingest prima di scrivere le pagine: pagine da creare e da aggiornare, relazioni nel vocabolario, alias senza collisioni. |
 | `python .graph/lavorazioni.py elenco` | Elenca le lavorazioni (pipeline a fasi che leggono la wiki e producono documenti derivati; vedi [guida](doc/lavorazioni.md)); `nuova`, `valida`, `avvia`, `stato`. |
 | `python .graph/contratti.py FILE --radice .` | Controlla che un contratto (skill o fase) abbia sezioni, Input e riferimenti validi; con `--peso` mostra quanto contesto caricano gli Input. |

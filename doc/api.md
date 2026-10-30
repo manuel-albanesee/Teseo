@@ -359,6 +359,33 @@ senza impedire l'esecuzione del tool.
 | `gestisci(nome: str, evento: dict)` | — |
 | `main()` | — |
 
+## `kit/graph/correzioni.py`
+
+Correzioni manuali ricorrenti: se correggi sempre la stessa cosa, il difetto è nelle istruzioni, non nella pagina.
+
+Legge la storia Git di `wiki/` nei vault collaborativi, dove ogni commit porta i trailer `Teseo-Skill` e `Teseo-Agent`. Una
+modifica con `Teseo-Skill: manuale` a una pagina che l'ultima volta aveva scritto `ingest` o `lint` è una **correzione**;
+si classificano solo i cambiamenti del frontmatter, che è strutturato:
+
+  relazione_aggiunta / relazione_tolta   chiave = nome della relazione (usa, richiede, …)
+  alias_aggiunto / alias_tolto           chiave = tipo della pagina
+  tipo_cambiato                          chiave = «vecchio->nuovo»
+  fonti_aggiunte / fonti_tolte
+
+Dopo una correzione la pagina non è più «dell'ingest» finché una skill non la riscrive: modifiche ripetute di seguito
+sono una sola correzione. Una categoria con almeno `--min-occorrenze` correzioni (predefinito 3) su almeno `--min-pagine`
+pagine (predefinito 2) diventa una **proposta** di rivedere `Wiki reference.md` o la skill. Le correzioni isolate sono solo
+contate. Non scrive nulla e non modifica le istruzioni: la decisione è dell'utente. Senza Git, senza autosync (nessun
+trailer) o senza l'installazione `dashboard/` risponde con un messaggio ed esce con 0.
+
+Uso:
+  python .graph/correzioni.py [--json] [--min-occorrenze 3] [--min-pagine 2] [--ultimi 1000]
+
+| Funzione | Descrizione |
+| --- | --- |
+| `analizza(vault, ultimi=MAX_COMMIT, min_occorrenze=3, min_pagine=2)` | {commit_manuali, correzioni, isolate, proposte, messaggio}; ogni proposta ha categoria, chiave, occorrenze, pagine, commit, proposta. |
+| `main(argv=None)` | — |
+
 ## `kit/graph/domande.py`
 
 Domande aperte del vault: quelle a cui il vault non sa rispondere, e che vanno rivolte all'autore.
