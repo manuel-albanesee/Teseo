@@ -21,7 +21,7 @@ resto del vault e al grafo.
 
 - In Codex leggi anche `AGENTS.md`: gli hook nativi sono in `.codex/hooks.json`. Per leggere da shell e registrare la memoria usa `.graph/leggi.py` con il token fornito dall'hook. Adatta gli esempi POSIX alla shell disponibile (in PowerShell non usare `/dev/null`). I ruoli di ricerca sono Sol/Astra in Codex e Opus in Claude Code; la sessione di domande resta interattiva nel client corrente.
 
-- Leggi per primo lo schema del vault (es. `Wiki reference.md` o `CLAUDE.md`): chiave per le note dell'autore,
+- Leggi per primo lo schema del vault (es. `Wiki reference.md` o `CLAUDE.md`), per le sezioni indicate in Input: chiave per le note dell'autore,
   convenzioni di frontmatter, vocabolario delle relazioni, dove stanno i punti aperti. Le convenzioni del vault
   prevalgono su questa skill.
 - Se il vault ha `.graph/domande.py` con l'opzione `--json`, usalo come fonte delle domande (procedura sotto).
@@ -35,7 +35,8 @@ Livello 3 = regole stabili del vault, livello 4 = materiale di questa esecuzione
 
 | Livello | File | Sezione | Perché |
 | --- | --- | --- | --- |
-| 3 | `Wiki reference.md` | tutto | chiave delle note dell'autore, frontmatter, vocabolario delle relazioni, dove stanno i punti aperti (Prerequisiti) |
+| 3 | `Wiki reference.md` | «Regole non negoziabili», «Convenzioni delle pagine», «Chiavi delle fonti» | chiave delle note dell'autore, frontmatter, pagine generate per entropia da non toccare, dove stanno i punti aperti |
+| 3 | `Wiki reference.md` | «Relazioni tipizzate» | referenti e lacune di struttura: vocabolario e tipi ammessi |
 | 4 | `.graph/domande.py` | esito di `--json --strutturali` | elenco ordinato delle domande aperte (passo 1) |
 | 4 | `wiki/*.md` | le pagine indicate in `pagine` di ogni domanda | cosa dice già il vault (passo 2) |
 | 4 | `index.md` | voce del punto aperto | solo per i punti aperti (passo 2) |
@@ -151,6 +152,7 @@ Livello 3 = regole stabili del vault, livello 4 = materiale di questa esecuzione
 
 ## Note operative
 
+- Lo schema si legge per sezioni, come dice l'Input. Se ti serve una regola che non è nelle sezioni caricate, o hai un dubbio, leggi `Wiki reference.md` per intero: prevale sempre su questa skill.
 - La risposta dell'autore prevale sulle fonti quando le corregge, ma non le cancella: la pagina tiene la
   contraddizione e dice quale vale. Non inventare nomi, codici o date che l'autore non ha dato.
 - Le pagine generate per entropia non si toccano nemmeno nel passo 5, quando si cercano le altre pagine con lo stesso

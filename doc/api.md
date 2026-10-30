@@ -300,6 +300,7 @@ contratto e a --radice (di norma la radice del vault).
 Uso:
   python .graph/contratti.py kit/skills/obsidian-wiki-query/SKILL.md --radice kit/vault
   python .graph/contratti.py lavorazioni/report/fasi/*/CONTEXT.md --radice . --json
+  python .graph/contratti.py kit/skills/obsidian-wiki-query/SKILL.md --radice kit/vault --peso     quanto contesto carica
 
 | Funzione | Descrizione |
 | --- | --- |
@@ -307,6 +308,8 @@ Uso:
 | `titoli(righe)` | Titoli (numero di riga, livello, testo) fuori dai blocchi di codice. |
 | `celle(riga)` | Celle di una riga di tabella Markdown; il | dentro gli apici inversi o preceduto da \ non separa. |
 | `problema(codice, riga, messaggio)` | — |
+| `testo_sezione(testo, titolo)` | Testo di una sezione (titolo e sottosezioni incluse) fino al titolo successivo di pari o maggior livello; None se manca. |
+| `peso(percorso, radice=None)` | Contesto che il contratto fa caricare: {file, righe:[{file, livello, sezione, token}], livello3, livello4}. |
 | `valida(percorso, radice=None, max_righe=MAX_RIGHE)` | Controlla un contratto: {file, errori, avvisi}, ogni problema {codice, riga, messaggio}. |
 | `main(argv=None)` | — |
 

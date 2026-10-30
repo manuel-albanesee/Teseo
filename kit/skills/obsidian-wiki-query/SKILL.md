@@ -14,7 +14,8 @@ Livello 3 = regole stabili del vault, livello 4 = materiale di questa esecuzione
 
 | Livello | File | Sezione | Perché |
 | --- | --- | --- | --- |
-| 3 | `Wiki reference.md` | tutto | convenzioni delle pagine e vocabolario delle relazioni, se la risposta viene archiviata (passo 6) |
+| 3 | `Wiki reference.md` | «Regole non negoziabili», «Convenzioni delle pagine» | sempre: cosa non toccare e come citare le fonti |
+| 3 | `Wiki reference.md` | «Relazioni tipizzate», «Chiavi delle fonti» | solo se archivi la risposta come pagina (passo 6): frontmatter, relazioni, alias, fonti |
 | 4 | `index.md` | tutto | pagine rilevanti che il grafo non ha dato (passo 2) |
 | 4 | recall del grafo | blocco «Dal grafo della wiki…» o esito di `recall.py` | dove guardare; ogni fatto va verificato sulla pagina (passi 1 e 3) |
 | 4 | `wiki/*.md` | pagine indicate dal recall e dall'index | fonte della risposta (passo 3) |
@@ -58,6 +59,7 @@ Livello 3 = regole stabili del vault, livello 4 = materiale di questa esecuzione
 
 ## Note operative
 
+- Lo schema si legge per sezioni, come dice l'Input. Se ti serve una regola che non è nelle sezioni caricate, o hai un dubbio, leggi `Wiki reference.md` per intero: prevale sempre su questa skill.
 - Non modificare le pagine esistenti per rispondere a una query — solo eventualmente aggiungerne una nuova, su conferma dell'utente. Ricostruire `graph.sqlite` non conta come modifica: è un file derivato dalle pagine.
 - Se il grafo non trova la pagina giusta, o riporta fatti fuori tema, dillo nel riepilogo (es. «il recall non ha riconosciuto X»): sono i casi che servono a migliorare alias e `recall.py`.
 - Se l'index non copre a sufficienza il vault (vault molto grande) e nel vault esiste uno strumento di ricerca dedicato (es. `qmd` o script locale), preferiscilo a una scansione manuale di tutti i file.

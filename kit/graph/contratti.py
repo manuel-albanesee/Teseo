@@ -20,6 +20,7 @@ contratto e a --radice (di norma la radice del vault).
 Uso:
   python .graph/contratti.py kit/skills/obsidian-wiki-query/SKILL.md --radice kit/vault
   python .graph/contratti.py lavorazioni/report/fasi/*/CONTEXT.md --radice . --json
+  python .graph/contratti.py kit/skills/obsidian-wiki-query/SKILL.md --radice kit/vault --peso     quanto contesto carica
 """
 import argparse
 import json
@@ -102,15 +103,39 @@ def _tabella_input(righe, titoli_trovati):
             if fuori and n > inizio and (fine is None or n < fine) and riga.lstrip().startswith("|")]
 
 
+def _colonne(intestazione):
+    """Indici delle colonne file, sezione e livello della tabella Input (None se mancano)."""
+    celle_minuscole = [c.lower() for c in intestazione]
+    return {nome: next((i for i, c in enumerate(celle_minuscole) if chiave in c), None)
+            for nome, chiave in (("file", "file"), ("sezione", "sezion"), ("livello", "livell"))}
+
+
+def _voce(valori, colonna):
+    """(file citato, livello come cifra o None, titoli di sezione richiesti) di una riga di Input; None se non cita un file."""
+    if len(valori) <= colonna["file"]:
+        return None
+    apici = re.search(r"`([^`]+)`", valori[colonna["file"]])
+    if not apici:
+        return None
+    cita = apici[1].strip()
+    if COMANDO.match(cita) or any(c in cita for c in "\"'<>|*?"):
+        return None
+    livello = re.search(r"\d", valori[colonna["livello"]]) if colonna["livello"] is not None and colonna["livello"] < len(valori) else None
+    cella_sezione = valori[colonna["sezione"]] if colonna["sezione"] is not None and colonna["sezione"] < len(valori) else ""
+    return cita, (livello[0] if livello else None), [a or b for a, b in re.findall(r"«([^»]+)»|\"([^\"]+)\"", cella_sezione)]
+
+
+def _trova(percorso, radice, cita):
+    return next((c for c in (percorso.parent / cita, radice / cita if radice else None) if c and c.exists()), None)
+
+
 def _controlla_input(percorso, radice, righe, titoli_trovati, errori):
     tabella = _tabella_input(righe, titoli_trovati)
     if not tabella:
         if any(t.lower() == "input" and livello == 2 for _, livello, t in titoli_trovati):
             errori.append(problema("input_senza_tabella", None, "La sezione Input non contiene una tabella"))
         return
-    intestazione = [c.lower() for c in celle(tabella[0][1])]
-    colonna = {nome: next((i for i, c in enumerate(intestazione) if chiave in c), None)
-               for nome, chiave in (("file", "file"), ("sezione", "sezion"), ("livello", "livell"))}
+    colonna = _colonne(celle(tabella[0][1]))
     if colonna["file"] is None:
         errori.append(problema("input_colonne", tabella[0][0], "La tabella Input non ha la colonna «File»"))
         return
@@ -118,14 +143,12 @@ def _controlla_input(percorso, radice, righe, titoli_trovati, errori):
     cache = {}
     for n, riga in tabella[1:]:
         valori = celle(riga)
-        if re.fullmatch(r"[\s:|-]+", riga) or len(valori) <= colonna["file"]:
+        if re.fullmatch(r"[\s:|-]+", riga):
             continue
-        apici = re.search(r"`([^`]+)`", valori[colonna["file"]])
-        if not apici:
+        voce = _voce(valori, colonna)
+        if voce is None:
             continue
-        cita = apici[1].strip()
-        if COMANDO.match(cita) or any(c in cita for c in "\"'<>|*?"):
-            continue
+        cita, livello, richieste = voce
         if numero_fase:
             for parte in cita.split("/"):
                 altra = FASE.match(parte)
@@ -133,20 +156,56 @@ def _controlla_input(percorso, radice, righe, titoli_trovati, errori):
                     errori.append(problema("riferimento_in_avanti", n, f"Input cita la fase «{parte}», successiva a questa"))
         if "{" in cita:
             continue
-        livello = re.search(r"\d", valori[colonna["livello"]]) if colonna["livello"] is not None and colonna["livello"] < len(valori) else None
-        trovato = next((c for c in (percorso.parent / cita, radice / cita if radice else None) if c and c.exists()), None)
+        trovato = _trova(percorso, radice, cita)
         if trovato is None:
-            if not livello or livello[0] == "3":
+            if livello is None or livello == "3":
                 errori.append(problema("input_file_mancante", n, f"Input: «{cita}» non trovato"))
             continue
-        cella_sezione = valori[colonna["sezione"]] if colonna["sezione"] is not None and colonna["sezione"] < len(valori) else ""
-        richieste = [a or b for a, b in re.findall(r"«([^»]+)»|\"([^\"]+)\"", cella_sezione)]
         if richieste and trovato.is_file():
             presenti = _intestazioni(trovato, cache)
             for titolo in richieste:
                 t = titolo.strip().lower()
                 if not any(h == t or h.startswith(t + " (") for h in presenti):
                     errori.append(problema("input_sezione_mancante", n, f"Input: «{cita}» non ha la sezione «{titolo}»"))
+
+
+def testo_sezione(testo, titolo):
+    """Testo di una sezione (titolo e sottosezioni incluse) fino al titolo successivo di pari o maggior livello; None se manca."""
+    trovati = titoli(analizza(testo))
+    cercato = titolo.strip().lower()
+    for i, (n, livello, nome) in enumerate(trovati):
+        if nome.lower() == cercato or nome.lower().startswith(cercato + " ("):
+            fine = next((m for m, altro, _ in trovati[i + 1:] if altro <= livello), None)
+            righe = testo.splitlines()
+            return "\n".join(righe[n - 1:(fine - 1) if fine else len(righe)])
+    return None
+
+
+def peso(percorso, radice=None):
+    """Contesto che il contratto fa caricare: {file, righe:[{file, livello, sezione, token}], livello3, livello4}.
+
+    Token = caratteri/4, solo per i file che esistono; con sezioni «…» si contano solo quelle. I percorsi con {segnaposto}
+    (nati a runtime) non sono contati. Serve a tenere i riferimenti sotto il tetto di ICM (500–2.000 token per fase)."""
+    percorso, radice = Path(percorso), (Path(radice) if radice else None)
+    righe = analizza(percorso.read_text(encoding="utf-8"))
+    risultato = {"file": str(percorso), "righe": [], "livello3": 0, "livello4": 0}
+    tabella = _tabella_input(righe, titoli(righe))
+    colonna = _colonne(celle(tabella[0][1])) if tabella else None
+    if not colonna or colonna["file"] is None:
+        return risultato
+    for _, riga in tabella[1:]:
+        voce = None if re.fullmatch(r"[\s:|-]+", riga) else _voce(celle(riga), colonna)
+        if voce is None or "{" in voce[0]:
+            continue
+        cita, livello, richieste = voce
+        trovato = _trova(percorso, radice, cita)
+        token = None
+        if trovato is not None and trovato.is_file():
+            contenuto = trovato.read_text(encoding="utf-8", errors="replace")
+            token = (sum(len(testo_sezione(contenuto, s) or "") for s in richieste) if richieste else len(contenuto)) // 4
+            risultato["livello4" if livello == "4" else "livello3"] += token
+        risultato["righe"].append({"file": cita, "livello": int(livello) if livello else 3, "sezione": richieste or None, "token": token})
+    return risultato
 
 
 def valida(percorso, radice=None, max_righe=MAX_RIGHE):
@@ -189,8 +248,13 @@ def main(argv=None):
     ap.add_argument("--radice", help="radice da cui risolvere i percorsi degli Input (di norma il vault)")
     ap.add_argument("--max-righe", type=int, default=MAX_RIGHE, help=f"oltre questa lunghezza: avviso (predefinito {MAX_RIGHE})")
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--peso", action="store_true", help="mostra anche quanto contesto caricano gli Input (caratteri/4)")
     args = ap.parse_args(argv)
     esiti = [valida(f, args.radice, args.max_righe) for f in args.file]
+    if args.peso:
+        for esito, file in zip(esiti, args.file):
+            if not esito["errori"] or all(e["codice"] != "file_illeggibile" for e in esito["errori"]):
+                esito["peso"] = peso(file, args.radice)
     if args.json:
         print(json.dumps(esiti, ensure_ascii=False, indent=2))
     else:
@@ -200,6 +264,11 @@ def main(argv=None):
                     dove = f":{p['riga']}" if p["riga"] else ""
                     print(f"{esito['file']}{dove}: {genere} {p['codice']}: {p['messaggio']}")
             print(f"{esito['file']}: " + (f"{len(esito['errori'])} errori" if esito["errori"] else "ok"))
+            for voce in esito.get("peso", {}).get("righe", []):
+                dove = ", ".join(f"«{s}»" for s in voce["sezione"]) if voce["sezione"] else "tutto"
+                print(f"  livello {voce['livello']} · {voce['file']} · {dove}: " + (f"~{voce['token']} token" if voce["token"] is not None else "non trovato"))
+            if "peso" in esito:
+                print(f"  contesto caricato: livello 3 ~{esito['peso']['livello3']} token · livello 4 ~{esito['peso']['livello4']} token")
     return 1 if any(e["errori"] for e in esiti) else 0
 
 

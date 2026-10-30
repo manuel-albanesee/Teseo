@@ -1,6 +1,6 @@
 # Vault wiki a grafo — Teseo
 
-- Leggi per primo `Wiki reference.md`: convenzioni, fonti e relazioni del vault.
+- Leggi `Wiki reference.md`: convenzioni, fonti e relazioni del vault. Ingest e lint lo leggono per intero; query e lacune solo le sezioni indicate dalla skill, e per intero in caso di dubbio.
 - Non modificare mai `raw/`.
 - Le lavorazioni (`lavorazioni/`) leggono la wiki e producono documenti derivati: non scrivono mai in `wiki/`; in `raw/` solo `promuovi`, su richiesta e con un file nuovo. Non si pubblicano con l'autosync.
 - Usa le skill `obsidian-wiki-ingest`, `obsidian-wiki-query`, `obsidian-wiki-lint`, `obsidian-wiki-fill-gaps`, `obsidian-wiki-lavorazioni`.
