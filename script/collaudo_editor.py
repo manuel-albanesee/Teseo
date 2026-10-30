@@ -174,6 +174,7 @@ def main(argv=None):
     parser.add_argument('--giri', type=int, default=20)
     parser.add_argument('--cartella', help='cartella nuova per il vault (predefinito: una cartella temporanea)')
     parser.add_argument('--senza-attesa', action='store_true', help='non attendere l’apertura in Obsidian')
+    parser.add_argument('--scenari', default='RNP', help='scenari da eseguire, per esempio R per ripetere solo la raffica (predefinito RNP)')
     parser.add_argument('--rapporto', default='editor-non-cooperanti.md')
     args = parser.parse_args(argv)
     base = Path(args.cartella) if args.cartella else Path(tempfile.mkdtemp(prefix='teseo-editor-'))
@@ -182,7 +183,7 @@ def main(argv=None):
     first = None
     if not args.senza_attesa:
         # Il vault del primo giro esiste già prima dell'attesa: si può aprire in Obsidian e lasciarlo indicizzare prima del test.
-        first = create(base / 'giro-1-R', 120)
+        first = create(base / f'giro-1-{args.scenari[0]}', 120)
         (first / '.obsidian').mkdir(exist_ok=True)
         input(f'Apri in Obsidian (Apri cartella come vault) questa cartella e attendi che finisca di indicizzare:\n  {first}\nPoi premi Invio per cominciare… ')
         time.sleep(3)
@@ -190,8 +191,8 @@ def main(argv=None):
     for giro in range(1, args.giri + 1):
         row = [giro]
         problems = []
-        for scenario in SCENARIOS:
-            root = first if first and giro == 1 and scenario[0] == 'R' else create(base / f'giro-{giro}-{scenario[0]}', 120)
+        for scenario in [item for item in SCENARIOS if item[0] in args.scenari]:
+            root = first if first and giro == 1 and scenario[0] == args.scenari[0] else create(base / f'giro-{giro}-{scenario[0]}', 120)
             (root / '.obsidian').mkdir(exist_ok=True)
             server = DashboardServer()
             vault_id = server.registry.attach(str(root))['vault_id']
@@ -212,7 +213,7 @@ def main(argv=None):
                 problems.append(f'{scenario[0]}: esito inatteso {outcome}')
             row.append(outcome)
         rows.append((giro, *row[1:], 'OK' if not problems else '; '.join(problems)))
-        print(f'giro {giro:>2}: ' + '  '.join(f'{s[0]}={o[0]}{"/" + str(o[1]) if o[1] else ""}' for s, o in zip(SCENARIOS, row[1:])) + f'  {"OK" if not problems else "FALLITO: " + "; ".join(problems)}')
+        print(f'giro {giro:>2}: ' + '  '.join(f'{s[0]}={o[0]}{"/" + str(o[1]) if o[1] else ""}' for s, o in zip([item for item in SCENARIOS if item[0] in args.scenari], row[1:])) + f'  {"OK" if not problems else "FALLITO: " + "; ".join(problems)}')
         failures += problems
     counts = {}
     for row in rows:
@@ -224,7 +225,7 @@ def main(argv=None):
              f'- Giri eseguiti: {len(rows)} di {args.giri} · salvataggi dello scrittore: {saves}',
              f'- Obsidian aperto sul vault: {"non dichiarato (--senza-attesa)" if args.senza_attesa else "sì, solo sul vault giro-1-R, aperto prima dell’avvio (confermato dall’utente)"}',
              f'- Esito: **{verdict}** (nessun byte dello scrittore perso né sovrascritto; ' + ', '.join(f'{k}: {v}' for k, v in sorted(counts.items())) + ')',
-             '- `recovery_required` è l\'esito previsto quando un salvataggio arriva durante la scrittura: i dati sono salvi ma il vault resta fermo in `recovery_required` finché una persona non risolve.', '', '| Giro | ' + ' | '.join(f'{c} ({d})' for c, d in SCENARIOS) + ' | Controllo |', '| --- | --- | --- | --- | --- |']
+             '- `recovery_required` è l\'esito previsto quando un salvataggio arriva durante la scrittura: i dati sono salvi ma il vault resta fermo in `recovery_required` finché una persona non risolve.', '', '| Giro | ' + ' | '.join(f'{c} ({d})' for c, d in SCENARIOS if c in args.scenari) + ' | Controllo |', '| --- ' * (len(args.scenari) + 2) + '|']
     lines += ['| ' + ' | '.join([str(row[0]), *(f'{o[0]} {o[1] or ""}' for o in row[1:-1]), row[-1]]) + ' |' for row in rows]
     Path(args.rapporto).write_text('\n'.join(lines) + '\n', encoding='utf-8')
     print(f'\n{verdict}: {len(rows)} giri, {saves} salvataggi simulati. Rapporto: {Path(args.rapporto).resolve()}')
