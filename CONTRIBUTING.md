@@ -56,7 +56,7 @@ Git reali in cartelle temporanee; su Windows usano percorsi brevi (`tests/_short
 | Architettura del motore (grafo, recall, memoria, hook) | `doc/architettura-motore.md` |
 | Piano dashboard/collaborazione | il documento del passo in `doc/` e il registro `doc/08-analisi-avanzamento.md` |
 | Funzionalità consegnata | voce in `CHANGELOG.md` sotto «Non rilasciato» |
-| Skill del vault | `kit/skills/<nome>/SKILL.md` e le istruzioni client in `kit/vault/` |
+| Skill del vault | `kit/skills/<nome>/SKILL.md` e le istruzioni client in `kit/vault/`; la regola «Vault collaborativo», il passo «Sincronizza» e l'elenco delle skill sono copie volute: `tests/test_istruzioni_coerenti.py` fallisce se se ne cambia una sola |
 
 ## Cosa aspettarsi dalla revisione
 
