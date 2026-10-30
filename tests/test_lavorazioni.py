@@ -3,6 +3,8 @@ import _shortpath  # noqa: F401
 import hashlib
 import io
 import json
+import re
+import subprocess
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 import shutil
@@ -13,7 +15,9 @@ import unittest
 KIT = Path(__file__).resolve().parents[1] / 'kit'
 sys.path.insert(0, str(KIT / 'graph'))
 import build_graph
+import installa
 import lavorazioni
+import contratti
 
 CONTRATTO = """\
 ## Input
@@ -354,6 +358,37 @@ class Raccolta(Base):
             return testo.replace(esecuzione['id'], 'ID')
         self.assertEqual(leggi(a), leggi(b))
 
+    def test_override_con_doppie_parentesi_quadre_resta_un_testo(self):
+        # YAML leggerebbe [[Pagina]] come una lista annidata: gli override non usano YAML.
+        self.crea()
+        e = lavorazioni.avvia(self.vault, 'prova', override=['selezione.collegate_a=[[Console di rilascio]]',
+                                                              'selezione.profondita=0'], oggi='2026-10-30')
+        self.assertEqual(self.pagine(e), ['Console di rilascio'])
+
+    def test_override_di_elenchi_separati_da_virgola(self):
+        self.crea()
+        e = lavorazioni.avvia(self.vault, 'prova', override=['selezione.profondita=3', 'selezione.tipi=processo, persona'],
+                              oggi='2026-10-30')
+        self.assertEqual(self.pagine(e), ['Anna Rossi', 'Incident settimanale', 'Rilascio in produzione'])
+
+    def test_un_parametro_numerico_resta_numerico(self):
+        cfg = '---\nselezione:\n  massimo: "{quanti}"\nparametri:\n  quanti: 2\n---\n'
+        self.crea(config=cfg)
+        e = lavorazioni.avvia(self.vault, 'prova', override=['quanti=3'], oggi='2026-10-30')
+        self.assertEqual(len(self.pagine(e)), 3)
+        with self.assertRaises(lavorazioni.LavorazioneError):
+            lavorazioni.avvia(self.vault, 'prova', override=['quanti=tre'], oggi='2026-10-30')
+
+    def test_collegate_a_vuoto_chiede_la_pagina(self):
+        cfg = '---\nselezione:\n  collegate_a: "{argomento}"\nparametri:\n  argomento: ""\n---\n'
+        self.crea(config=cfg)
+        with self.assertRaises(lavorazioni.LavorazioneError) as errore:
+            lavorazioni.avvia(self.vault, 'prova', oggi='2026-10-30')
+        self.assertEqual(errore.exception.codice, 'pagina_inesistente')
+        self.assertIn('argomento', str(errore.exception))
+        e = lavorazioni.avvia(self.vault, 'prova', override=['argomento=Anna Rossi'], oggi='2026-10-30')
+        self.assertIn('Anna Rossi', self.pagine(e))
+
     def test_scrive_solo_dentro_l_esecuzione(self):
         self.crea()
         prima = hash_albero(self.vault)
@@ -384,6 +419,99 @@ class Raccolta(Base):
         self.crea()
         with self.assertRaises(lavorazioni.LavorazioneError):
             lavorazioni.avvia(self.vault, 'prova', oggi='ieri')
+
+
+MODELLI = KIT / 'lavorazioni'
+NOMI_MODELLI = ['report-periodico', 'scheda-argomento']
+
+
+class Modelli(Base):
+    """I modelli inclusi nel kit: validi, brevi, configurabili e utilizzabili da riga di comando dopo l'installazione."""
+
+    def da_modello(self, modello, nome=None):
+        return lavorazioni.nuova(self.vault, nome or modello, modello, modelli=MODELLI)
+
+    def test_ci_sono_i_due_modelli(self):
+        self.assertEqual(sorted(p.name for p in MODELLI.iterdir() if p.is_dir()), NOMI_MODELLI)
+
+    def test_ogni_modello_e_valido_appena_creato(self):
+        for modello in NOMI_MODELLI:
+            with self.subTest(modello=modello):
+                self.da_modello(modello)
+                self.assertEqual(lavorazioni.valida(self.vault, modello), [])
+
+    def test_contratti_brevi_e_riferimenti_sotto_il_limite(self):
+        for modello in NOMI_MODELLI:
+            base = self.da_modello(modello)
+            self.assertLessEqual(len((base / 'CONTEXT.md').read_text(encoding='utf-8').splitlines()), 80)
+            for contratto in sorted((base / 'fasi').glob('*/CONTEXT.md')):
+                with self.subTest(modello=modello, fase=contratto.parent.name):
+                    esito = contratti.valida(contratto, radice=self.vault)
+                    self.assertEqual((esito['errori'], esito['avvisi']), ([], []))
+            for riferimento in sorted((base / 'riferimenti').glob('*.md')):
+                self.assertLessEqual(len(riferimento.read_text(encoding='utf-8').splitlines()), 200, riferimento.name)
+
+    def test_la_prima_fase_e_la_raccolta_e_le_creative_hanno_un_checkpoint(self):
+        attese = {'report-periodico': ['02-sintesi'], 'scheda-argomento': ['02-scaletta', '03-stesura']}
+        for modello in NOMI_MODELLI:
+            base = self.da_modello(modello)
+            fasi = sorted(p.name for p in (base / 'fasi').iterdir())
+            self.assertEqual(fasi[0], '01-raccolta')
+            for fase in attese[modello]:
+                with self.subTest(modello=modello, fase=fase):
+                    self.assertIn('\n## Checkpoint\n', (base / 'fasi' / fase / 'CONTEXT.md').read_text(encoding='utf-8'))
+
+    def test_questionario_piatto_numerato_e_con_predefiniti(self):
+        for modello in NOMI_MODELLI:
+            with self.subTest(modello=modello):
+                testo = (MODELLI / modello / 'setup/questionario.md').read_text(encoding='utf-8')
+                domande = [r for r in testo.splitlines() if re.match(r'^\d+\. ', r)]
+                self.assertGreaterEqual(len(domande), 3)
+                self.assertTrue(all('predefinito' in r for r in domande), domande)
+
+    def test_la_scheda_confronta_la_stesura_con_scaletta_e_raccolta(self):
+        base = self.da_modello('scheda-argomento')
+        verifica = (base / 'fasi/04-verifica/CONTEXT.md').read_text(encoding='utf-8')
+        for fase in ('01-raccolta', '02-scaletta', '03-stesura'):
+            self.assertIn(fase, verifica)
+
+    def test_report_periodico_sull_esempio(self):
+        self.da_modello('report-periodico')
+        self.assertEqual(self.pagine(lavorazioni.avvia(self.vault, 'report-periodico', oggi='2026-10-23')),
+                         ['Incident settimanale', 'ServiceDesk'])
+        self.assertEqual(len(self.pagine(lavorazioni.avvia(self.vault, 'report-periodico', override=['periodo=30g'],
+                                                          oggi='2026-10-23'))), 8)
+
+    def test_scheda_argomento_chiede_la_pagina_e_poi_segue_le_relazioni(self):
+        self.da_modello('scheda-argomento')
+        with self.assertRaises(lavorazioni.LavorazioneError) as errore:
+            lavorazioni.avvia(self.vault, 'scheda-argomento', oggi='2026-10-23')
+        self.assertEqual(errore.exception.codice, 'pagina_inesistente')
+        trovate = self.pagine(lavorazioni.avvia(self.vault, 'scheda-argomento', override=['argomento=Rilascio in produzione'],
+                                                oggi='2026-10-23'))
+        self.assertIn('Rilascio in produzione', trovate)
+        self.assertIn('Console di rilascio', trovate)
+
+    def test_installazione_distribuisce_i_modelli_e_funziona_da_riga_di_comando(self):
+        # Scenario completo senza modello AI: installa, crea da modello, valida, avvia, stato.
+        destinazione = Path(tempfile.mkdtemp(prefix='teseo-lav-', dir=self.vault.parent))
+        self.addCleanup(shutil.rmtree, destinazione, True)
+        with redirect_stdout(io.StringIO()):
+            installa.installa(destinazione, skill='no', client='claude', esempio=True)
+        for modello in NOMI_MODELLI:
+            self.assertTrue((destinazione / '.graph/modelli' / modello / 'config.md').is_file())
+
+        def esegui(*argomenti):
+            fatto = subprocess.run([sys.executable, *argomenti], cwd=destinazione, capture_output=True, timeout=120)
+            return fatto.returncode, (fatto.stdout + fatto.stderr).decode('utf-8', 'replace')
+        self.assertEqual(esegui('.graph/build_graph.py', '--check')[0], 0)
+        self.assertIn('creata', esegui('.graph/lavorazioni.py', 'nuova', 'mio', '--da', 'report-periodico')[1])
+        self.assertEqual(esegui('.graph/lavorazioni.py', 'valida', 'mio'), (0, 'mio: ok\n'))
+        codice, uscita = esegui('.graph/lavorazioni.py', 'avvia', 'mio', '--oggi', '2026-10-23')
+        self.assertEqual(codice, 0, uscita)
+        self.assertIn('2 pagine', uscita)
+        self.assertIn('COMPLETA', esegui('.graph/lavorazioni.py', 'stato', 'mio')[1])
+        self.assertEqual(esegui('.graph/lavorazioni.py', 'avvia', 'mio', '--param', 'periodo=ieri')[0], 1)
 
 
 class Stato(Base):
