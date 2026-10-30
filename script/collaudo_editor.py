@@ -2,14 +2,16 @@
 
 Uso: python script/collaudo_editor.py [--giri 20] [--cartella DIR] [--senza-attesa] [--rapporto FILE]
 
-Crea un vault sintetico (con `.obsidian/`, così Obsidian lo apre come vault), avvia il servizio della dashboard in questo
-processo e ripete `--giri` volte due scenari mentre uno scrittore salva di continuo, nei tre modi in cui gli editor scrivono
+Per ogni giro crea tre vault sintetici (con `.obsidian/`, così Obsidian li apre come vault), avvia il servizio della dashboard
+in questo processo ed esegue la creazione di una pagina mentre un «editor» salva, nei tre modi in cui gli editor scrivono
 (sovrascrittura sul posto, file temporaneo + rename, accodamento):
 
-  A. note estranee: lo scrittore salva note che l'apply non tocca. Verifica: dopo l'apply ogni nota contiene esattamente
-     l'ultimo salvataggio completato (nessun byte perso, nessun ritorno a una versione vecchia).
-  B. stesso file: lo scrittore crea proprio la pagina che l'apply sta per creare. Verifica: il contenuto dello scrittore
-     non viene mai sovrascritto; l'apply non può dichiarare successo sopra di esso.
+  R. raffica: note estranee salvate di continuo durante preview e apply (di norma l'apply viene rifiutato prima di scrivere).
+  N. una nota estranea viene salvata proprio mentre l'apply scrive.
+  P. la pagina che l'apply sta per creare viene creata dall'editor mentre l'apply scrive.
+
+Verifica in ogni scenario che l'ultimo salvataggio dell'editor sia il contenuto finale del file (nessun byte perso né
+sovrascritto) e che un successo dichiarato corrisponda a una pagina davvero creata.
 
 Con Obsidian aperto sulla cartella stampata il test misura anche l'effetto dell'indicizzazione e dei suoi file di lavoro.
 Non tocca altro che la cartella di prova: non puntarlo mai a un vault reale. Esce con 0 solo se tutti i giri passano.
@@ -134,16 +136,6 @@ def run_scenario(server, vault_id, root, code, name):
     finally:
         ontology_apply._move_new = real
     return (ledger, range(len(ledger))), outcome
-
-
-def check_unchanged(writer, root):
-    """Elenco dei file dello scrittore il cui contenuto finale non è l'ultimo salvataggio completato."""
-    bad = []
-    for relative, expected in writer.ledger.items():
-        actual = (root / relative).read_bytes().decode('utf-8', 'replace') if (root / relative).exists() else None
-        if actual != expected:
-            bad.append(relative)
-    return bad
 
 
 def main(argv=None):
