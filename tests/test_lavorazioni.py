@@ -954,6 +954,89 @@ class Promozione(Base):
         self.assertIn('teseo_git.py post --skill manuale --agente umano', uscita.getvalue())
 
 
+class Esporta(Base):
+    """Condividere una lavorazione senza toccare il contratto dati: si esporta la definizione in una cartella e si importa altrove."""
+
+    def setUp(self):
+        super().setUp()
+        self.crea()
+        base = self.vault / 'lavorazioni/prova'
+        (base / 'setup').mkdir()
+        (base / 'setup/questionario.md').write_text('1. Domanda? (predefinito: x)\n', encoding='utf-8')
+        (base / 'riferimenti').mkdir()
+        (base / 'riferimenti/stile.md').write_text('# Stile\n', encoding='utf-8')
+        lavorazioni.avvia(self.vault, 'prova', oggi='2026-10-30')
+        self.fuori = Path(tempfile.mkdtemp(prefix='teseo-esporta-', dir=self.vault.parent))
+        self.addCleanup(shutil.rmtree, self.fuori, True)
+
+    def elenco(self, cartella):
+        return sorted(p.relative_to(cartella).as_posix() for p in Path(cartella).rglob('*') if p.is_file())
+
+    def test_esporta_la_definizione_senza_le_esecuzioni(self):
+        destinazione = lavorazioni.esporta(self.vault, 'prova', self.fuori)
+        self.assertEqual(destinazione, self.fuori / 'prova')
+        file = self.elenco(destinazione)
+        self.assertIn('config.md', file)
+        self.assertIn('fasi/02-sintesi/CONTEXT.md', file)
+        self.assertIn('setup/questionario.md', file)
+        self.assertIn('riferimenti/stile.md', file)
+        self.assertFalse([f for f in file if f.startswith('esecuzioni')])
+
+    def test_non_sovrascrive_e_non_scrive_dove_non_deve(self):
+        lavorazioni.esporta(self.vault, 'prova', self.fuori)
+        with self.assertRaises(lavorazioni.LavorazioneError) as errore:
+            lavorazioni.esporta(self.vault, 'prova', self.fuori)
+        self.assertEqual(errore.exception.codice, 'destinazione_esistente')
+        for proibita in ('wiki', 'raw', '.graph', 'lavorazioni', 'lavorazioni/prova'):
+            with self.subTest(destinazione=proibita), self.assertRaises(lavorazioni.LavorazioneError) as errore:
+                lavorazioni.esporta(self.vault, 'prova', self.vault / proibita)
+            self.assertEqual(errore.exception.codice, 'destinazione_non_valida')
+
+    def test_non_copia_collegamenti_simbolici(self):
+        segreto = self.vault / 'segreto.txt'
+        segreto.write_text('riservato', encoding='utf-8')
+        try:
+            (self.vault / 'lavorazioni/prova/riferimenti/leak.md').symlink_to(segreto)
+        except OSError:
+            self.skipTest('collegamenti simbolici non disponibili')
+        self.assertNotIn('riferimenti/leak.md', self.elenco(lavorazioni.esporta(self.vault, 'prova', self.fuori)))
+
+    def test_lavorazione_inesistente(self):
+        with self.assertRaises(lavorazioni.LavorazioneError):
+            lavorazioni.esporta(self.vault, 'non-c-e', self.fuori)
+
+    def test_andata_e_ritorno_dalla_cartella_esportata(self):
+        lavorazioni.esporta(self.vault, 'prova', self.fuori)
+        copia = lavorazioni.nuova(self.vault, 'copia', 'prova', modelli=self.fuori)
+        self.assertEqual(self.elenco(copia), self.elenco(self.fuori / 'prova'))
+        self.assertEqual(lavorazioni.valida(self.vault, 'copia'), [])
+
+    def riga(self, *argomenti):
+        uscita, errori = io.StringIO(), io.StringIO()
+        with redirect_stdout(uscita), redirect_stderr(errori):
+            codice = lavorazioni.main(['--vault', str(self.vault), *map(str, argomenti)])
+        return codice, uscita.getvalue(), errori.getvalue()
+
+    def test_riga_di_comando_esporta(self):
+        codice, uscita, _ = self.riga('esporta', 'prova', self.fuori)
+        self.assertEqual(codice, 0)
+        self.assertIn(str(self.fuori / 'prova'), uscita)
+        self.assertIn('--modelli', uscita)
+
+    def test_importare_da_una_cartella_esterna_avverte_che_sono_istruzioni(self):
+        lavorazioni.esporta(self.vault, 'prova', self.fuori)
+        codice, uscita, _ = self.riga('nuova', 'importata', '--da', 'prova', '--modelli', self.fuori)
+        self.assertEqual(codice, 0)
+        self.assertIn('istruzioni', uscita)
+        self.assertIn('fasi/02-sintesi/CONTEXT.md', uscita)
+        self.assertIn('config.md', uscita)
+
+    def test_da_una_lavorazione_del_vault_non_avverte(self):
+        codice, uscita, _ = self.riga('nuova', 'locale', '--da', 'prova')
+        self.assertEqual(codice, 0)
+        self.assertNotIn('istruzioni', uscita)
+
+
 class Riga(Base):
     def esegui(self, *argomenti):
         uscita, errori = io.StringIO(), io.StringIO()
