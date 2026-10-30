@@ -97,7 +97,7 @@ Per cambiare il piano: aggiornare prima il contratto interessato, elencare motiv
 - [Analisi ECC del retrieval](analisi-retrieval-ecc.md): varianti del recall misurate
   sul banco con gate e holdout; raccomanda il ripiego a cascata.
 - [Analisi ECC dell'Interpretable Context Methodology](analisi-icm-ecc.md): integrabilità
-  di ICM nelle istruzioni del vault; adottare le convenzioni, non le cartelle di fase.
+  di ICM nelle istruzioni del vault; adottare convenzioni e ciclo «correggere la fonte», non le cartelle di fase.
 - [Riferimento API](api.md): moduli, classi e funzioni pubbliche, generato dai
   docstring con `script/genera_api_doc.py` (verificato da `tests/test_api_doc.py`).
 
