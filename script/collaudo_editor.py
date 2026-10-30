@@ -105,6 +105,16 @@ def diagnose(root):
         return 'journal non leggibile: ' + type(error).__name__
 
 
+def dump_stacks(root):
+    """Scrive lo stack di ogni thread vivo accanto al vault (dove si ferma l'apply appeso) e ne restituisce il percorso."""
+    import traceback
+    names = {thread.ident: thread.name for thread in threading.enumerate()}
+    text = '\n'.join(f'--- {names.get(ident, ident)}\n' + ''.join(traceback.format_stack(frame)) for ident, frame in sys._current_frames().items())
+    path = root.parent / f'bloccato-{root.name}.txt'
+    path.write_text(text, encoding='utf-8')
+    return str(path)
+
+
 def run_apply(server, vault_id, root, name, after_preview=None):
     """(esito, dettaglio): preview + apply della creazione di `name`; l'esito è lo stato del journal o l'errore del servizio."""
     from kit.dashboard.contracts import ContractError
@@ -122,7 +132,7 @@ def run_apply(server, vault_id, root, name, after_preview=None):
     except ContractError as error:
         return 'rifiutato', error.code
     if not wait_idle(server, vault_id):
-        return 'bloccato', 'apply non terminato in 60 s · ' + diagnose(root)
+        return 'bloccato', 'apply non terminato in 60 s · ' + diagnose(root) + ' · stack: ' + dump_stacks(root)
     record = server.operations.get(vault_id, job['operation_id'])
     return record['state'], (record.get('error') or {}).get('code')
 

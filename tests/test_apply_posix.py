@@ -23,8 +23,9 @@ class Posix(unittest.TestCase):
         staged, target = self.root / 'staged', self.root / 'target'
         staged.write_bytes(b'nuovo')
         target.write_bytes(b'esterno')
-        with self.assertRaises(FileExistsError):
+        with self.assertRaises(ontology_apply.ContractError) as caught:
             ontology_apply._move_new(staged, target)
+        self.assertEqual(caught.exception.code, 'recovery_conflict')
         self.assertEqual(target.read_bytes(), b'esterno')
         self.assertEqual(staged.read_bytes(), b'nuovo')
 

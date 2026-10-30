@@ -98,6 +98,14 @@ def _local_volume(root):
 
 
 def _move_new(staged, target):
+    """Come `_link_new`, ma un target creato da uno scrittore esterno diventa un conflitto di recovery con codice proprio."""
+    try:
+        _link_new(staged, target)
+    except FileExistsError:
+        raise ContractError('recovery_conflict', 'Il file da creare esiste già (creato da un editor esterno durante l’apply): conservato, nessuna sovrascrittura') from None
+
+
+def _link_new(staged, target):
     """Sposta staged su un target che non deve esistere. Windows: rename fallisce se esiste; POSIX lo sovrascriverebbe,
     quindi link esclusivo (FileExistsError se uno scrittore esterno ha ricreato il target) e poi unlink di staged."""
     if os.name == 'nt':
