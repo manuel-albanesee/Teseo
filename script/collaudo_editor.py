@@ -194,7 +194,7 @@ def main(argv=None):
     lines = [f'# Collaudo con editor non cooperante ({date.today().isoformat()})', '',
              f'- Sistema: {platform.platform()} · Python {platform.python_version()} · Teseo {KIT_VERSION}',
              f'- Giri eseguiti: {len(rows)} di {args.giri} · salvataggi dello scrittore: {saves}',
-             f'- Obsidian aperto sul vault: {"non dichiarato (--senza-attesa)" if args.senza_attesa else "sì (confermato dall’utente)"}',
+             f'- Obsidian aperto sul vault: {"non dichiarato (--senza-attesa)" if args.senza_attesa else "sì, solo sul vault del primo giro (confermato dall’utente)"}',
              f'- Esito: **{verdict}** (nessun byte dello scrittore perso né sovrascritto; ' + ', '.join(f'{k}: {v}' for k, v in sorted(counts.items())) + ')',
              '- `recovery_required` è l\'esito previsto quando un salvataggio arriva durante la scrittura: i dati sono salvi ma il vault resta fermo in `recovery_required` finché una persona non risolve.', '', '| Giro | ' + ' | '.join(f'{c} ({d})' for c, d in SCENARIOS) + ' | Controllo |', '| --- | --- | --- | --- | --- |']
     lines += ['| ' + ' | '.join([str(row[0]), *(f'{o[0]} {o[1] or ""}' for o in row[1:-1]), row[-1]]) + ' |' for row in rows]
