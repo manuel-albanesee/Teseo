@@ -1,10 +1,32 @@
 # 14 — Piano: convenzioni ICM nelle istruzioni e pipeline di lavorazione della wiki
 
-Stato: **proposta del 30 ottobre 2026, nulla implementato.** Sviluppo sul branch `ICM_Integration`, creato da `codex/dashboard-foundations` (0e8e440); nessun merge nel branch di partenza, una consegna verificata per commit. Parte dall'[analisi ECC dell'ICM](analisi-icm-ecc.md).
+Stato: **implementato il 30 ottobre 2026 sul branch `ICM_Integration`, tranne B5, deciso diversamente (vedi «Esiti»).** Proposta del 30 ottobre 2026. Sviluppo sul branch `ICM_Integration`, creato da `codex/dashboard-foundations` (0e8e440); nessun merge nel branch di partenza, una consegna verificata per commit. Parte dall'[analisi ECC dell'ICM](analisi-icm-ecc.md).
 Due linee di lavoro: **A**, le istruzioni del vault (skill, file di livello 0, schema) riscritte con le convenzioni ICM;
 **B**, un motore di *lavorazioni*: pipeline ICM configurabili che leggono la wiki e producono documenti derivati
 (report, schede, slide), senza toccare `wiki/`. Ogni voce è consegnabile da sola su un branch `codex/<scopo>`, senza
 nuove dipendenze (PyYAML c'è già), con stile compatto e commenti in italiano.
+
+## Esiti
+
+| Voce | Esito | Commit | Prove automatiche | Non provato |
+| --- | --- | --- | --- | --- |
+| A0 | fatta: `contratti.py`, validatore dei contratti | `485e986` | 45 test, copertura 97% | – |
+| A1 | fatta: guardia contro la deriva delle istruzioni duplicate | `92dae40` | 10 test, provata guastando una copia reale | blocco «Client:» e passo «Pubblica», fuori perimetro |
+| A2 | fatta: le quattro skill sono contratti | `518125d` | validate da `contratti.py`; nessuna riga persa, solo i 4 titoli rinominati | comportamento del modello con le skill riscritte (prova end-to-end, `skill-comply`) |
+| A3 | fatta: piano di ingest e `piano.py` | `dad4777` | 31 test, formato della skill legato al controllo | comportamento del modello con il piano |
+| A4 | fatta: schema letto per sezioni in query e lacune | `bb9689f` | `contratti.py --peso`: ~3.089 token invece di ~4.410 (−30%), ~839 per una query che non archivia | **gate del piano non eseguito** (10 domande con un client AI): resta il rischio di una regola saltata |
+| A5 | fatta: `correzioni.py` | `2485bf7` | 28 test su repository Git veri, mutazione intercettata | uso su un vault collaborativo reale |
+| B1 | fatta: motore, quinta skill, installatore | `34c282a` | 53 test + esclusione Git provata con e senza | – |
+| B2 | fatta: modelli `report-periodico`, `scheda-argomento` | `6cdabb6` | scenario completo da riga di comando dopo l'installazione | qualità del testo prodotto dal modello nelle fasi di scrittura |
+| B3 | fatta: obsolescenza e `verifica` | `8f6d8b0` | motivi di ogni fase da rifare, controlli su link e fonti | coerenza di significato (resta al modello) |
+| B4 | fatta: `promuovi` | `7e9429c` | percorsi sicuri, nessuna sovrascrittura, grafo valido dopo | ingest del file promosso con un client |
+| B5 | **non fatta come descritta**: il contratto dati non cambia; fatti `esporta` e `nuova --modelli` | `71d3b4a` | 8 test | condivisione nel repository dati: [decisione](15-condivisione-lavorazioni.md) |
+| B6 | fatta: pannello e rotta di sola lettura | `a89c19d` | 11 test HTTP e UI; browser a 1440×900 e 390×844 (28 controlli, screenshot in `evidence/icm-integration/`) | lettori di schermo reali, altri browser |
+
+Difetti trovati e corretti durante la realizzazione (dettagli nei commit): grafo non aperto nei vault gestiti dalla dashboard
+(`14fa53d`, visto da `installa.py --prova --dashboard`); espressioni regolari quadratiche in `verifica` e `piano.py` e collegamento
+simbolico su `esecuzioni/` (`829e417`); `elenco` che seguiva collegamenti simbolici e `stato` che leggeva fuori da `wiki/` con
+identificatori ostili (`a89c19d`). Verifiche complessive in [evidence/icm-integration](evidence/icm-integration/verification.md).
 
 ## Riepilogo
 

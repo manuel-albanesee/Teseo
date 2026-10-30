@@ -98,7 +98,7 @@ gli argomenti di interazione (osservabilità, modificabilità, punti di revision
 
 ## Proposte (una PR ciascuna, in ordine)
 
-Piano di implementazione: [14](14-piano-icm.md).
+Piano di implementazione: [14](14-piano-icm.md), poi realizzato: gli esiti e i limiti di ogni voce sono nella sezione «Esiti» del piano.
 
 | # | Proposta | Rischio | Verifica |
 |---|----------|---------|----------|
