@@ -792,6 +792,147 @@ class Verifica(Base):
         self.assertIn('fase_inesistente', errori.getvalue())
 
 
+class Promozione(Base):
+    """promuovi: l'output finale entra nella wiki solo come nuova fonte in raw/, con la provenienza, dopo ingest."""
+
+    CONFIG_FINALE = CONFIG.replace('parametri:', 'finale: 03-revisione/report.md\nparametri:')
+
+    def setUp(self):
+        super().setUp()
+        self.crea(config=self.CONFIG_FINALE)
+        self.e = lavorazioni.avvia(self.vault, 'prova', oggi='2026-10-30')
+        scrivi_output(self.e, '02-sintesi', 'sintesi.md', 'bozza [[Console di rilascio]]\n', 1_800_000_010)
+        scrivi_output(self.e, '03-revisione', 'report.md', '# Report\n\nLa [[Console di rilascio]] [call-2026-09-10] regge il rilascio.\n',
+                      1_800_000_020)
+        os.utime(Path(self.e['percorso']) / '01-raccolta/raccolta.md', (1_800_000_000, 1_800_000_000))
+
+    def promuovi(self, **opzioni):
+        opzioni.setdefault('oggi', '2026-10-31')
+        return lavorazioni.promuovi(self.vault, 'prova', **opzioni)
+
+    def test_promuove_con_provenienza_e_senza_toccare_altro(self):
+        prima = hash_albero(self.vault)
+        esito = self.promuovi()
+        destinazione = self.vault / 'raw/lavorazione-prova-2026-10-30-1.md'
+        self.assertEqual(esito['percorso'], 'raw/lavorazione-prova-2026-10-30-1.md')
+        self.assertEqual(esito['chiave'], 'lavorazione-prova-2026-10-30-1')
+        self.assertEqual(sorted(set(hash_albero(self.vault)) - set(prima)), ['raw/lavorazione-prova-2026-10-30-1.md'])
+        self.assertEqual({k: v for k, v in hash_albero(self.vault).items() if k in prima}, prima)
+        testo = destinazione.read_text(encoding='utf-8')
+        cornice, corpo = build_graph.leggi_testo(testo, destinazione.name)
+        self.assertEqual((cornice['origine'], cornice['lavorazione'], cornice['esecuzione'], cornice['file']),
+                         ('lavorazione', 'prova', '2026-10-30-1', '03-revisione/report.md'))
+        self.assertEqual(cornice['generato_il'], '2026-10-31')
+        registro = json.loads((Path(self.e['percorso']) / 'esecuzione.json').read_text(encoding='utf-8'))
+        self.assertEqual(cornice['pagine'], registro['pagine'])
+        self.assertIn('La [[Console di rilascio]] [call-2026-09-10] regge il rilascio.', corpo)
+        self.assertIn('documento derivato', corpo.lower())
+
+    def test_non_sovrascrive_mai_un_file_di_raw(self):
+        self.promuovi()
+        destinazione = self.vault / 'raw/lavorazione-prova-2026-10-30-1.md'
+        prima = destinazione.read_bytes()
+        with self.assertRaises(lavorazioni.LavorazioneError) as errore:
+            self.promuovi(oggi='2026-11-02')
+        self.assertEqual(errore.exception.codice, 'raw_esistente')
+        self.assertEqual(destinazione.read_bytes(), prima)
+
+    def test_due_esecuzioni_dello_stesso_giorno_hanno_file_diversi(self):
+        self.promuovi()
+        seconda = lavorazioni.avvia(self.vault, 'prova', oggi='2026-10-30')
+        scrivi_output(seconda, '03-revisione', 'report.md', 'secondo [[Console di rilascio]]\n', 1_800_000_020)
+        os.utime(Path(seconda['percorso']) / '01-raccolta/raccolta.md', (1_800_000_000, 1_800_000_000))
+        self.assertEqual(self.promuovi(esecuzione=seconda['id'])['percorso'], 'raw/lavorazione-prova-2026-10-30-2.md')
+
+    def test_senza_output_finale_in_config_serve_il_file(self):
+        self.crea('altra')
+        lavorazioni.avvia(self.vault, 'altra', oggi='2026-10-30')
+        with self.assertRaises(lavorazioni.LavorazioneError) as errore:
+            lavorazioni.promuovi(self.vault, 'altra', oggi='2026-10-31')
+        self.assertEqual(errore.exception.codice, 'file_da_indicare')
+
+    def test_file_indicato_a_mano_prevale_su_config(self):
+        esito = self.promuovi(file='02-sintesi/sintesi.md')
+        self.assertIn('bozza', (self.vault / esito['percorso']).read_text(encoding='utf-8'))
+
+    def test_file_non_valido(self):
+        for file in ('../../../wiki/Anna Rossi.md', '/etc/passwd', '03-revisione/non-c-e.md', '03-revisione/report.txt',
+                     '03-revisione', 'esecuzione.json', 'report.md'):
+            with self.subTest(file=file), self.assertRaises(lavorazioni.LavorazioneError) as errore:
+                self.promuovi(file=file)
+            self.assertEqual(errore.exception.codice, 'file_non_valido')
+        self.assertEqual(list((self.vault / 'raw').glob('lavorazione-*')), [])
+
+    def test_non_segue_collegamenti_simbolici_fuori_dall_esecuzione(self):
+        fuori = self.vault / 'wiki/Anna Rossi.md'
+        collegamento = Path(self.e['percorso']) / '03-revisione/furbo.md'
+        try:
+            collegamento.symlink_to(fuori)
+        except OSError:
+            self.skipTest('collegamenti simbolici non disponibili')
+        with self.assertRaises(lavorazioni.LavorazioneError) as errore:
+            self.promuovi(file='03-revisione/furbo.md')
+        self.assertEqual(errore.exception.codice, 'file_non_valido')
+
+    def test_rifiuta_un_output_che_non_supera_la_verifica(self):
+        scrivi_output(self.e, '03-revisione', 'report.md', 'Vedi [[Pagina inventata]].\n', 1_800_000_020)
+        with self.assertRaises(lavorazioni.LavorazioneError) as errore:
+            self.promuovi()
+        self.assertEqual(errore.exception.codice, 'verifica_fallita')
+        self.assertIn('link_inesistente', str(errore.exception))
+        self.assertEqual(list((self.vault / 'raw').glob('lavorazione-*')), [])
+
+    def test_rifiuta_una_fase_da_rifare(self):
+        pagina = self.vault / 'wiki/Console di rilascio.md'
+        pagina.write_text(pagina.read_text(encoding='utf-8') + '\nCambiata.\n', encoding='utf-8')
+        with self.assertRaises(lavorazioni.LavorazioneError) as errore:
+            self.promuovi()
+        self.assertEqual(errore.exception.codice, 'fase_da_rifare')
+        self.assertIn('Console di rilascio', str(errore.exception))
+        self.assertEqual(list((self.vault / 'raw').glob('lavorazione-*')), [])
+
+    def test_senza_cartella_raw(self):
+        shutil.rmtree(self.vault / 'raw')
+        with self.assertRaises(lavorazioni.LavorazioneError) as errore:
+            self.promuovi()
+        self.assertEqual(errore.exception.codice, 'raw_assente')
+
+    def test_il_grafo_resta_valido_dopo_la_promozione(self):
+        self.promuovi()
+        with redirect_stdout(io.StringIO()):
+            problemi = build_graph.costruisci(self.vault, self.vault / '.graph/graph.sqlite')
+        self.assertEqual(problemi, [])
+
+    def test_finale_in_config_deve_essere_un_percorso_markdown_relativo(self):
+        for valore in ('../x.md', '/x.md', 'x.txt', '', '03-revisione/../../x.md'):
+            with self.subTest(valore=valore):
+                self.crea('cfg', config=CONFIG.replace('parametri:', f'finale: "{valore}"\nparametri:'))
+                self.assertIn('config_tipo', self.codici('cfg'))
+                shutil.rmtree(self.vault / 'lavorazioni/cfg')
+
+    def test_riga_di_comando_e_suggerimenti(self):
+        def esegui(*argomenti):
+            uscita, errori = io.StringIO(), io.StringIO()
+            with redirect_stdout(uscita), redirect_stderr(errori):
+                codice = lavorazioni.main(['--vault', str(self.vault), 'promuovi', 'prova', '--oggi', '2026-10-31', *argomenti])
+            return codice, uscita.getvalue(), errori.getvalue()
+        codice, uscita, _ = esegui()
+        self.assertEqual(codice, 0)
+        self.assertIn('raw/lavorazione-prova-2026-10-30-1.md', uscita)
+        self.assertIn('| `lavorazione-prova-2026-10-30-1` | `raw/lavorazione-prova-2026-10-30-1.md` |', uscita)
+        self.assertNotIn('teseo_git', uscita)
+        codice, uscita, errori = esegui()
+        self.assertEqual((codice, uscita), (1, ''))
+        self.assertIn('raw_esistente', errori)
+
+    def test_nei_vault_collaborativi_ricorda_di_pubblicare_prima_dell_ingest(self):
+        (self.vault / '.graph/teseo_git.py').write_text('', encoding='utf-8')
+        uscita = io.StringIO()
+        with redirect_stdout(uscita):
+            lavorazioni.main(['--vault', str(self.vault), 'promuovi', 'prova', '--oggi', '2026-10-31'])
+        self.assertIn('teseo_git.py post --skill manuale --agente umano', uscita.getvalue())
+
+
 class Riga(Base):
     def esegui(self, *argomenti):
         uscita, errori = io.StringIO(), io.StringIO()
