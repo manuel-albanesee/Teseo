@@ -98,12 +98,14 @@ gli argomenti di interazione (osservabilità, modificabilità, punti di revision
 
 ## Proposte (una PR ciascuna, in ordine)
 
+Piano di implementazione: [14](14-piano-icm.md).
+
 | # | Proposta | Rischio | Verifica |
 |---|----------|---------|----------|
-| 1 | **Contratti nelle skill**: sezioni `Input` (con le sezioni di `Wiki reference.md` da leggere), `Processo`, `Checkpoint`, `Verifica`, `Output`, mantenendo frontmatter e passi | basso, solo testo | suite; banco con `misura.py --banco-confronta`; `skill-comply` ECC sulle skill riviste (richiede client autenticato) |
+| 1 | **Contratti nelle skill**: sezioni `Input` (con le sezioni di `Wiki reference.md` da leggere), `Processo`, `Checkpoint`, `Verifica`, `Output`, mantenendo frontmatter e passi | basso, solo testo | suite; validatore dei contratti; prova end-to-end sul vault d'esempio; `skill-comply` ECC sulle skill riviste (richiede client autenticato). Il banco di `misura.py` misura il recall, che le skill non cambiano |
 | 2 | **Guardia contro la deriva**: test che verifica identiche le copie volute (regola collaborativa, passo «Sincronizza» a meno del nome della skill) | basso | nuovo test nella suite |
 | 3 | **Piano di ingest come superficie modificabile** (il «piano strutturale» del caso slide, §4.3): dopo la lettura della fonte la skill scrive `.teseo/local/ingest/<fonte>-piano.md` (pagine da creare/aggiornare, relazioni, alias, contraddizioni), chiede conferma, poi scrive la wiki | medio: cambia il flusso dell'ingest | prova sul vault d'esempio: errori di `build_graph.py --check` al primo giro e correzioni chieste dall'utente, con e senza piano |
-| 4 | **Lettura selettiva dello schema** per query e lacune, solo se la proposta 1 non peggiora il banco | medio: rischio di regole saltate | gate di [analisi-retrieval-ecc](analisi-retrieval-ecc.md): 0 domande peggiorate, nessun errore sui casi `TESTO` |
+| 4 | **Lettura selettiva dello schema** per query e lacune, solo se la proposta 1 non peggiora il banco | medio: rischio di regole saltate | insieme fisso di domande sul vault d'esempio: stesse pagine citate e nessuna regola violata rispetto alla lettura completa |
 | 5 | **Correzioni manuali come segnale**: script in sola lettura che, nei vault collaborativi, raccoglie i commit `Teseo-Skill: manuale` su pagine scritte prima da una skill e i fatti `[nota-utente]` che correggono una fonte, li raggruppa per tipo (relazione, alias, frontmatter, testo) e propone al lint modifiche a `Wiki reference.md` o alle skill quando lo stesso tipo ricorre | medio: euristica di classificazione; la modifica resta una proposta da confermare | fixture Git con correzioni ripetute e isolate: segnala le prime, ignora le seconde; nessuna scrittura senza conferma |
 
 Non proposti: cartelle di fase nel vault, rinomina delle pagine, sostituzione del recall con tabelle statiche,

@@ -28,6 +28,7 @@ Il kit software resta distinto dal repository dati. Markdown è l'autorità dell
 | 13 | [Decisione sull'apply automatico](13-decisione-apply-automatico.md) | 3, 10 | Decisione proposta: l'apply automatico non è previsto; criteri per riaprirla |
 | 12 | [Autenticazione reale e collaudo avanzato](12-piano-autenticazione-e-collaudo-avanzato.md) | 9, 11 | Piano: configurazione reale dei credential helper, SSH, repository privato, branch protetto, due account, igiene dei segreti |
 | 11 | [Piano per chiudere i punti aperti](11-piano-completamento.md) | 10 | CI su tre sistemi, collaudo reale, client AI, PR, adozione legacy, pagine create/rinominate, scala |
+| 14 | [Convenzioni ICM e lavorazioni della wiki](14-piano-icm.md) | 4, 9 | Piano: contratti nelle skill, guardia contro la deriva, correzioni come segnale; pipeline ICM configurabili che leggono la wiki e producono documenti derivati |
 
 ```mermaid
 flowchart LR
