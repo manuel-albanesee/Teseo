@@ -438,7 +438,7 @@ frontmatter YAML con `selezione` e `parametri`, più le regole in prosa), `fasi/
 vedi contratti.py) ed `esecuzioni/AAAA-MM-GG-N/` (materiale di ogni esecuzione). La prima fase è la raccolta ed è
 eseguita da questo script, non dal modello: sceglie le pagine dal grafo e le scrive in `raccolta.md` con l'impronta SHA-256
 di ciascuna. Le fasi successive leggono solo la raccolta, così la memoria di Teseo non registra letture di `wiki/` che
-l'utente non ha chiesto. Le lavorazioni non scrivono mai in `wiki/` né in `raw/`.
+l'utente non ha chiesto. Le lavorazioni non scrivono mai in `wiki/`; in `raw/` scrive solo `promuovi`, su richiesta, con un file nuovo.
 
 Selezione (`selezione` in config.md; tutte le chiavi sono facoltative):
   collegate_a    pagina di partenza («[[Pagina]]» o «Pagina»)
@@ -457,6 +457,7 @@ Uso:
   python .graph/lavorazioni.py avvia NOME [--param chiave=valore ...]   `selezione.massimo=5` o un parametro di config.md
   python .graph/lavorazioni.py stato NOME [--esecuzione ID] [--json]       COMPLETA, IN ATTESA o DA RIFARE (con i motivi)
   python .graph/lavorazioni.py verifica NOME --fase 02 [--citazioni]       link, fonti e segnaposto dell'output di una fase
+  python .graph/lavorazioni.py promuovi NOME [--file 03-x/out.md]          output finale → nuova fonte in raw/, poi ingest
 
 | Classe | Descrizione |
 | --- | --- |
@@ -470,6 +471,7 @@ Uso:
 | `avvia(vault, nome, override=(), oggi=None)` | Crea una nuova esecuzione e svolge la raccolta; restituisce {id, percorso, pagine, troncata}. |
 | `stato(vault, nome, esecuzione=None)` | Avanzamento di un'esecuzione (l'ultima se non indicata): {lavorazione, esecuzione, fasi:[{nome, stato, file, motivi}]}. |
 | `verifica(vault, nome, fase, esecuzione=None, citazioni=False)` | Controlli deterministici sull'output di una fase: [{codice, file, riga, messaggio}], vuoto se è tutto a posto. |
+| `promuovi(vault, nome, esecuzione=None, file=None, oggi=None)` | Copia l'output finale in raw/lavorazione-<nome>-<esecuzione>.md con la provenienza; mai sovrascrive. |
 | `disegna(situazione)` | La pipeline in ASCII: una casella per fase e, sotto, il suo stato. |
 | `main(argv=None)` | — |
 

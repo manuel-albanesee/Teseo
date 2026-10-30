@@ -5,8 +5,8 @@ scaletta). Applica al vault il metodo ICM (Interpretable Context Methodology): c
 fase, file di testo che l'utente può leggere e correggere tra una fase e l'altra. La wiki resta la conoscenza; la lavorazione è il
 lavoro che se ne ricava. Piano e motivazioni: [14](14-piano-icm.md), [analisi](analisi-icm-ecc.md).
 
-**Non scrive mai** in `wiki/`, `raw/`, `index.md` o `log.md`. Un risultato entra nella wiki solo come nuova fonte in `raw/`,
-seguita da un ingest.
+**Non scrive mai** in `wiki/`, `index.md` o `log.md`. Un risultato entra nella wiki solo come nuova fonte in `raw/` (comando
+`promuovi`, su richiesta, solo file nuovi), seguita da un ingest.
 
 ## Struttura
 
@@ -37,6 +37,7 @@ letture di `wiki/` che l'utente non ha chiesto, e ogni output è riconducibile a
 | `python .graph/lavorazioni.py avvia NOME [--param chiave=valore]` | nuova esecuzione e raccolta |
 | `python .graph/lavorazioni.py stato NOME` | pipeline in ASCII (o `--json`): COMPLETA, IN ATTESA o DA RIFARE con i motivi |
 | `python .graph/lavorazioni.py verifica NOME --fase 02 [--citazioni]` | controlli deterministici sull'output di una fase |
+| `python .graph/lavorazioni.py promuovi NOME [--file 03-x/out.md]` | output finale → nuova fonte in `raw/`, poi ingest |
 
 Le fasi dopo la raccolta le esegue il client AI con la skill `obsidian-wiki-lavorazioni` («esegui la lavorazione X»): legge il
 contratto della fase, carica solo gli Input, scrive l'output, esegue la Verifica e si ferma ai Checkpoint.
@@ -59,9 +60,25 @@ alias) **e** presente nella raccolta, le chiavi di fonte come `[call-2026-08-28 
 non devono restare segnaposto `{{...}}`; con `--citazioni` ogni paragrafo di almeno 40 caratteri deve avere un link. Non giudica se
 un'affermazione è vera: quello resta alla Verifica del contratto, svolta dal modello.
 
+## Dal risultato alla wiki
+
+`promuovi` copia l'output finale (la chiave `finale` di `config.md`, ad esempio `finale: 03-revisione/report.md`, oppure `--file`) in
+`raw/lavorazione-<nome>-<esecuzione>.md`. Il file ha un frontmatter con la provenienza (lavorazione, esecuzione, file, data e le
+impronte delle pagine usate) e un avviso che si tratta di un documento derivato. Prima di scrivere il comando controlla che:
+
+- l'output esista, sia un `.md` dentro l'esecuzione (niente `..`, percorsi assoluti o collegamenti simbolici verso l'esterno);
+- la sua fase non sia DA RIFARE (il messaggio nomina la causa, ad esempio la pagina cambiata);
+- `verifica` non trovi problemi;
+- il file di destinazione non esista: `raw/` non si sovrascrive mai. Il nome contiene l'id completo dell'esecuzione, così due
+  esecuzioni dello stesso giorno non si scontrano.
+
+Poi serve l'ingest (skill `obsidian-wiki-ingest`) sul nuovo file. **Nei vault collaborativi** pubblica prima il file con
+`python .graph/teseo_git.py post --skill manuale --agente umano`: un file nuovo non pubblicato fermerebbe il `pre` dell'ingest.
+
 ## Configurazione
 
-`config.md` ha un frontmatter con `selezione` e `parametri`; il resto è prosa con le regole di stile che le fasi caricano per sezione.
+`config.md` ha un frontmatter con `selezione`, `parametri` e, facoltativa, `finale` (l'output da promuovere); il resto è prosa con le regole
+di stile che le fasi caricano per sezione.
 
 | Chiave di `selezione` | Significato |
 | --- | --- |

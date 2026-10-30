@@ -2,6 +2,7 @@
 selezione:
   modificate_da: "{periodo}"
   massimo: 40
+finale: 03-revisione/report.md
 parametri:
   periodo: 7g
   destinatari: team operativo

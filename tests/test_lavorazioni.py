@@ -494,6 +494,15 @@ class Modelli(Base):
         self.assertIn('Rilascio in produzione', trovate)
         self.assertIn('Console di rilascio', trovate)
 
+    def test_i_modelli_indicano_l_output_finale_e_il_contratto_lo_produce(self):
+        for modello, fase in (('report-periodico', '03-revisione'), ('scheda-argomento', '03-stesura')):
+            with self.subTest(modello=modello):
+                base = self.da_modello(modello)
+                cornice, _ = build_graph.leggi_testo((base / 'config.md').read_text(encoding='utf-8'), 'config.md')
+                self.assertTrue(cornice['finale'].startswith(fase + '/'), cornice['finale'])
+                contratto = (base / 'fasi' / fase / 'CONTEXT.md').read_text(encoding='utf-8')
+                self.assertIn('{esecuzione}/' + cornice['finale'], contratto)
+
     def test_le_fasi_di_scrittura_indicano_il_comando_di_verifica(self):
         for modello, fasi in (('report-periodico', ('02-sintesi', '03-revisione')),
                               ('scheda-argomento', ('02-scaletta', '03-stesura', '04-verifica'))):
@@ -523,6 +532,18 @@ class Modelli(Base):
         self.assertIn('2 pagine', uscita)
         self.assertIn('COMPLETA', esegui('.graph/lavorazioni.py', 'stato', 'mio')[1])
         self.assertEqual(esegui('.graph/lavorazioni.py', 'avvia', 'mio', '--param', 'periodo=ieri')[0], 1)
+        # Dal risultato alla wiki: verifica, promozione una sola volta, grafo ancora valido con il nuovo file in raw/.
+        esecuzione = destinazione / 'lavorazioni/mio/esecuzioni/2026-10-23-1'
+        (esecuzione / '02-sintesi').mkdir()
+        (esecuzione / '02-sintesi/sintesi.md').write_text('Bozza su [[Incident settimanale]].\n', encoding='utf-8')
+        (esecuzione / '03-revisione').mkdir()
+        (esecuzione / '03-revisione/report.md').write_text('Il report cita l\'[[Incident settimanale]] [call-2026-09-10].\n', encoding='utf-8')
+        self.assertEqual(esegui('.graph/lavorazioni.py', 'verifica', 'mio', '--fase', '03', '--citazioni')[0], 0)
+        codice, uscita = esegui('.graph/lavorazioni.py', 'promuovi', 'mio')
+        self.assertEqual(codice, 0, uscita)
+        self.assertTrue((destinazione / 'raw/lavorazione-mio-2026-10-23-1.md').is_file())
+        self.assertEqual(esegui('.graph/lavorazioni.py', 'promuovi', 'mio')[0], 1)
+        self.assertEqual(esegui('.graph/build_graph.py', '--check')[0], 0)
 
 
 class Stato(Base):

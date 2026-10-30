@@ -5,7 +5,7 @@ frontmatter YAML con `selezione` e `parametri`, più le regole in prosa), `fasi/
 vedi contratti.py) ed `esecuzioni/AAAA-MM-GG-N/` (materiale di ogni esecuzione). La prima fase è la raccolta ed è
 eseguita da questo script, non dal modello: sceglie le pagine dal grafo e le scrive in `raccolta.md` con l'impronta SHA-256
 di ciascuna. Le fasi successive leggono solo la raccolta, così la memoria di Teseo non registra letture di `wiki/` che
-l'utente non ha chiesto. Le lavorazioni non scrivono mai in `wiki/` né in `raw/`.
+l'utente non ha chiesto. Le lavorazioni non scrivono mai in `wiki/`; in `raw/` scrive solo `promuovi`, su richiesta, con un file nuovo.
 
 Selezione (`selezione` in config.md; tutte le chiavi sono facoltative):
   collegate_a    pagina di partenza («[[Pagina]]» o «Pagina»)
@@ -24,6 +24,7 @@ Uso:
   python .graph/lavorazioni.py avvia NOME [--param chiave=valore ...]   `selezione.massimo=5` o un parametro di config.md
   python .graph/lavorazioni.py stato NOME [--esecuzione ID] [--json]       COMPLETA, IN ATTESA o DA RIFARE (con i motivi)
   python .graph/lavorazioni.py verifica NOME --fase 02 [--citazioni]       link, fonti e segnaposto dell'output di una fase
+  python .graph/lavorazioni.py promuovi NOME [--file 03-x/out.md]          output finale → nuova fonte in raw/, poi ingest
 """
 import argparse
 import hashlib
@@ -83,23 +84,31 @@ def _esecuzioni(base):
     return [nome for _, _, nome in sorted(trovate)]
 
 
+def _parti_sicure(valore):
+    """Parti di un percorso relativo a un file .md, oppure None: niente assoluti, «..», «.», vuoti, unità o barre inverse."""
+    if not isinstance(valore, str) or not valore.endswith(".md") or "\\" in valore or ":" in valore:
+        return None
+    parti = valore.split("/")
+    return None if any(p in ("", ".", "..") for p in parti) else parti
+
+
 def _sha(percorso):
     return hashlib.sha256(Path(percorso).read_bytes()).hexdigest()
 
 
 def _config(base):
-    """(selezione, parametri) dal frontmatter di config.md; ValueError se non valida."""
+    """(selezione, parametri, finale) dal frontmatter di config.md; ValueError se non valida."""
     testo = (base / "config.md").read_text(encoding="utf-8")
     if not testo.lstrip("﻿").startswith("---"):
         raise ValueError("config.md deve iniziare con un frontmatter YAML («---»)")
     cornice, _ = leggi_testo(testo, "config.md")
-    extra = set(cornice) - {"selezione", "parametri"}
+    extra = set(cornice) - {"selezione", "parametri", "finale"}
     if extra:
         raise KeyError(f"chiavi non ammesse in config.md: {', '.join(sorted(map(str, extra)))}")
     selezione, parametri = cornice.get("selezione") or {}, cornice.get("parametri") or {}
     if not isinstance(selezione, dict) or not isinstance(parametri, dict) or not all(isinstance(k, str) for k in parametri):
         raise ValueError("selezione e parametri devono essere mappe")
-    return selezione, parametri
+    return selezione, parametri, cornice.get("finale")
 
 
 def _controlla_selezione(selezione):
@@ -141,7 +150,7 @@ def valida(vault, nome):
         if contratti.SEGNAPOSTO.search(contratti.CODICE_IN_RIGA.sub("", testo)):  # anche nel frontmatter, dove stanno i valori
             aggiungi("config_segnaposto", "config.md ha segnaposto {{...}} non compilati")
         try:
-            selezione, _ = _config(base)
+            selezione, _, finale = _config(base)
         except KeyError as errore:
             aggiungi("config_chiave", str(errore.args[0]))
         except ValueError as errore:
@@ -149,6 +158,8 @@ def valida(vault, nome):
         else:
             if (errore := _controlla_selezione(selezione)):
                 aggiungi(*errore)
+            if finale is not None and _parti_sicure(finale) is None:
+                aggiungi("config_tipo", "finale: serve un percorso relativo a un file .md dell'esecuzione, es. 03-revisione/report.md")
     fasi = _fasi(base)
     if not fasi:
         aggiungi("fasi_assenti", "nessuna fase in fasi/")
@@ -224,7 +235,7 @@ def _risolvi(base, override):
     """(selezione, parametri, origine): valori effettivi dopo override e sostituzione dei riferimenti «{nome}»;
     origine dice da quale parametro viene ogni chiave di selezione che ne cita uno."""
     try:
-        selezione, parametri = _config(base)
+        selezione, parametri, _ = _config(base)
     except (ValueError, KeyError) as errore:
         raise LavorazioneError("config_non_valida", str(errore.args[0])) from errore
     selezione, parametri = dict(selezione), dict(parametri)
@@ -464,6 +475,15 @@ def stato(vault, nome, esecuzione=None):
     return {"lavorazione": nome, "esecuzione": esecuzione, "fasi": fasi}
 
 
+def _esecuzione_scelta(base, nome, esecuzione):
+    if esecuzione is not None and (not ESECUZIONE.match(esecuzione) or not (base / "esecuzioni" / esecuzione).is_dir()):
+        raise LavorazioneError("esecuzione_inesistente", f"nessuna esecuzione «{esecuzione}» per {nome}")
+    esecuzione = esecuzione or next(iter(reversed(_esecuzioni(base))), None)
+    if esecuzione is None:
+        raise LavorazioneError("esecuzione_inesistente", f"{nome} non ha esecuzioni: eseguire «avvia»")
+    return esecuzione
+
+
 def _fase(base, fase):
     fasi = [f for f in _fasi(base) if FASE.match(f)]
     scelta = next((f for f in fasi if isinstance(fase, str) and (f == fase or f.startswith(f"{fase}-"))), None)
@@ -493,11 +513,7 @@ def verifica(vault, nome, fase, esecuzione=None, citazioni=False):
     anche almeno un link per paragrafo. Solo lettura. La coerenza di significato resta alla Verifica del contratto."""
     base = _base(vault, nome)
     fase, fasi = _fase(base, fase)
-    if esecuzione is not None and (not ESECUZIONE.match(esecuzione) or not (base / "esecuzioni" / esecuzione).is_dir()):
-        raise LavorazioneError("esecuzione_inesistente", f"nessuna esecuzione «{esecuzione}» per {nome}")
-    esecuzione = esecuzione or next(iter(reversed(_esecuzioni(base))), None)
-    if esecuzione is None:
-        raise LavorazioneError("esecuzione_inesistente", f"{nome} non ha esecuzioni: eseguire «avvia»")
+    esecuzione = _esecuzione_scelta(base, nome, esecuzione)
     registro = _registro(base, esecuzione)
     if registro is None:
         raise LavorazioneError("registro_mancante", f"esecuzione.json di {esecuzione} assente o illeggibile")
@@ -555,6 +571,58 @@ def verifica(vault, nome, fase, esecuzione=None, citazioni=False):
     return sorted(problemi, key=lambda q: (q["file"] or "", q["riga"] or 0))
 
 
+def promuovi(vault, nome, esecuzione=None, file=None, oggi=None):
+    """Copia l'output finale in raw/lavorazione-<nome>-<esecuzione>.md con la provenienza; mai sovrascrive.
+
+    L'output (`file`, relativo all'esecuzione, o `finale` di config.md) deve esistere, stare in una fase non DA RIFARE e
+    superare `verifica`. Restituisce {percorso, chiave, esecuzione, file, riga_fonti}."""
+    base = _base(vault, nome)
+    esecuzione = _esecuzione_scelta(base, nome, esecuzione)
+    if file is None:
+        try:
+            file = _config(base)[2]
+        except (ValueError, KeyError) as errore:
+            raise LavorazioneError("config_non_valida", str(errore.args[0])) from errore
+    if not file:
+        raise LavorazioneError("file_da_indicare", "né --file né «finale» in config.md indicano quale output promuovere")
+    parti = _parti_sicure(file)
+    cartella = base / "esecuzioni" / esecuzione
+    origine = cartella.joinpath(*parti) if parti else None
+    if (not parti or len(parti) < 2 or not FASE.match(parti[0]) or origine.is_symlink() or not origine.is_file()
+            or not origine.resolve().is_relative_to(cartella.resolve())):
+        raise LavorazioneError("file_non_valido", f"«{file}»: serve un file .md di una fase dell'esecuzione, es. 03-revisione/report.md")
+    fasi = stato(vault, nome, esecuzione)["fasi"]
+    fase = next(f for f in fasi if f["nome"] == parti[0])
+    if fase["stato"] == "DA RIFARE":
+        causa = next(f for f in fasi if f["stato"] == "DA RIFARE")  # la prima: le altre ne discendono
+        raise LavorazioneError("fase_da_rifare", f"{fase['nome']} è da rifare ({causa['nome']}: {causa['motivi'][0]}): "
+                                                 "rifarla prima di promuovere")
+    problemi = verifica(vault, nome, parti[0], esecuzione)
+    if problemi:
+        raise LavorazioneError("verifica_fallita", f"{len(problemi)} problemi in {parti[0]}: " + "; ".join(
+            f"{q['codice']} {q['messaggio']}" for q in problemi[:3]))
+    raw = Path(vault) / "raw"
+    if not raw.is_dir():
+        raise LavorazioneError("raw_assente", "cartella raw/ non trovata nel vault")
+    oggi = oggi or date.today().isoformat()
+    registro = _registro(base, esecuzione) or {}
+    chiave = f"lavorazione-{nome}-{esecuzione}"
+    cornice = ["---", "origine: lavorazione", f"lavorazione: {json.dumps(nome)}", f"esecuzione: {json.dumps(esecuzione)}",
+               f"file: {json.dumps(file)}", f"generato_il: {json.dumps(oggi)}"]
+    cornice += ["pagine:"] + [f"  {json.dumps(k, ensure_ascii=False)}: {json.dumps(v)}" for k, v in sorted((registro.get("pagine") or {}).items())] \
+        if registro.get("pagine") else ["pagine: {}"]
+    contenuto = "\n".join([*cornice, "---", "", "> Documento derivato da una lavorazione sulla wiki: i fatti vengono dalle pagine elencate "
+                           "sopra. Verificarli sulle pagine prima di usarlo come fonte.", "", origine.read_text(encoding="utf-8")])
+    try:
+        with open(raw / f"{chiave}.md", "x", encoding="utf-8", newline="\n") as destinazione:
+            destinazione.write(contenuto)
+    except FileExistsError as errore:
+        raise LavorazioneError("raw_esistente", f"raw/{chiave}.md esiste già e raw/ non si sovrascrive") from errore
+    percorso = f"raw/{chiave}.md"
+    return {"percorso": percorso, "chiave": chiave, "esecuzione": esecuzione, "file": file,
+            "riga_fonti": f"| `{chiave}` | `{percorso}` | {oggi} · documento derivato dalla lavorazione {nome} (esecuzione {esecuzione}) |"}
+
+
 def disegna(situazione):
     """La pipeline in ASCII: una casella per fase e, sotto, il suo stato."""
     caselle = [f"[{f['nome']}]" for f in situazione["fasi"]]
@@ -588,6 +656,11 @@ def main(argv=None):
     p.add_argument("--esecuzione")
     p.add_argument("--citazioni", action="store_true", help="richiede almeno un [[link]] per paragrafo")
     p.add_argument("--json", action="store_true")
+    p = sub.add_parser("promuovi", help="copia l'output finale in raw/ come nuova fonte")
+    p.add_argument("nome")
+    p.add_argument("--esecuzione")
+    p.add_argument("--file", help="output da promuovere, relativo all'esecuzione (predefinito: «finale» di config.md)")
+    p.add_argument("--oggi", help=argparse.SUPPRESS)
     p = sub.add_parser("stato", help="avanzamento della pipeline")
     p.add_argument("nome")
     p.add_argument("--esecuzione")
@@ -626,6 +699,15 @@ def main(argv=None):
                     print(f"{dove}{q['codice']}: {q['messaggio']}")
                 print(f"{args.nome} {args.fase}: " + (f"{len(problemi)} problemi" if problemi else "ok"))
             return 1 if problemi else 0
+        elif args.comando == "promuovi":
+            e = promuovi(args.vault, args.nome, args.esecuzione, args.file, args.oggi)
+            print(f"promossa in {e['percorso']} (chiave di fonte: {e['chiave']})")
+            print("Se l'ingest non la censisce, aggiungi a «Chiavi delle fonti» di Wiki reference.md:")
+            print(e["riga_fonti"])
+            if (Path(args.vault) / ".graph/teseo_git.py").is_file():
+                print("Vault collaborativo: pubblica prima il nuovo file con "
+                      "python .graph/teseo_git.py post --skill manuale --agente umano, altrimenti l'ingest si ferma.")
+            print("Poi esegui l'ingest (skill obsidian-wiki-ingest) su quel file.")
         elif args.comando == "stato":
             situazione = stato(args.vault, args.nome, args.esecuzione)
             print(json.dumps(situazione, ensure_ascii=False, indent=2) if args.json else disegna(situazione))

@@ -3,6 +3,7 @@ selezione:
   collegate_a: "{argomento}"
   profondita: 2
   massimo: 25
+finale: 03-stesura/scheda.md
 parametri:
   argomento: ""
   destinatari: chi inizia a lavorarci

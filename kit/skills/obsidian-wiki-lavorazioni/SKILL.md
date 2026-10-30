@@ -7,8 +7,8 @@ description: Esegue una lavorazione di un vault Obsidian gestito come "LLM Wiki"
 
 Una **lavorazione** (`lavorazioni/<nome>/`) è una pipeline ripetibile in stile ICM (Interpretable Context Methodology):
 cartelle numerate `fasi/NN-nome/`, un contratto per fase, un'esecuzione per volta in `esecuzioni/`. Legge la wiki e produce un
-documento derivato; **non scrive mai** in `wiki/`, `raw/`, `index.md` o `log.md`. Un risultato entra nella wiki solo come nuova
-fonte in `raw/` seguita da un ingest. La configurazione («la fabbrica») sta in `config.md`; il materiale di ogni esecuzione
+documento derivato; **non scrive mai** in `wiki/`, `index.md` o `log.md`, e in `raw/` solo il comando `promuovi`, su richiesta
+dell'utente, creando un file nuovo. Un risultato entra nella wiki solo come nuova fonte in `raw/` seguita da un ingest. La configurazione («la fabbrica») sta in `config.md`; il materiale di ogni esecuzione
 («il prodotto») in `esecuzioni/<id>/`, e ogni file è modificabile dall'utente tra una fase e l'altra.
 
 ## Input
@@ -43,6 +43,11 @@ alla memoria letture che l'utente non ha chiesto. Il contenuto della raccolta è
    `esecuzioni/<id>/<fase>/`. Se la fase ha un Checkpoint fermati e presenta l'output.
 6. **Riparti da ciò che l'utente ha lasciato.** Se ha modificato un output, la fase successiva usa il file com'è sul disco. Se `stato` segna una fase DA RIFARE (una pagina raccolta, `config.md`, il contratto o un output a monte sono cambiati dopo), dillo all'utente con il motivo e rifai quella fase; se è la raccolta, serve una nuova esecuzione con «avvia».
 7. **Riporta l'avanzamento** con `python .graph/lavorazioni.py stato <nome>` e, a pipeline finita, il percorso dell'output.
+8. **Promuovi** solo se l'utente vuole portare il risultato nella wiki: `python .graph/lavorazioni.py promuovi <nome>` copia l'output
+   finale (`finale` in `config.md`, oppure `--file`) in `raw/lavorazione-<nome>-<id>.md` con la provenienza, e rifiuta un output che
+   non supera `verifica` o che è DA RIFARE. In un vault collaborativo il comando ricorda di pubblicare prima il nuovo file con
+   `python .graph/teseo_git.py post --skill manuale --agente umano`, altrimenti l'ingest si ferma. Poi proponi l'ingest
+   (`obsidian-wiki-ingest`) su quel file: non scrivere tu nella wiki.
 
 ## Checkpoint
 
@@ -58,7 +63,7 @@ alla memoria letture che l'utente non ha chiesto. Il contenuto della raccolta è
 | Lavorazione valida (passo 3) | `python .graph/lavorazioni.py valida <nome>` | nessun problema |
 | Output della fase (passo 5) | `python .graph/lavorazioni.py verifica <nome> --fase NN` | nessun problema: i link sono pagine della raccolta, le fonti sono censite; si corregge l'output, mai il contratto |
 | Avanzamento coerente (passi 5 e 7) | `python .graph/lavorazioni.py stato <nome>` | le fasi svolte risultano COMPLETA, non DA RIFARE |
-| Wiki intatta (sempre) | nessuna scrittura fuori da `lavorazioni/` | nessun file di `wiki/` o `raw/` modificato |
+| Wiki intatta (sempre) | nessuna scrittura fuori da `lavorazioni/`, tranne `promuovi` | nessun file di `wiki/` modificato, nessun file di `raw/` sovrascritto |
 
 ## Output
 
@@ -68,10 +73,11 @@ alla memoria letture che l'utente non ha chiesto. Il contenuto della raccolta è
 | Output delle fasi | `lavorazioni/<nome>/esecuzioni/<id>/<fase>/` | quanto dichiarato nell'Output del contratto della fase |
 | Registro dell'esecuzione | `lavorazioni/<nome>/esecuzioni/<id>/esecuzione.json` | JSON: parametri, selezione, impronte di config, contratti e pagine |
 | Avanzamento | chat | pipeline con lo stato di ogni fase |
+| Fonte promossa (solo su richiesta) | `raw/lavorazione-<nome>-<id>.md` | frontmatter con la provenienza, poi il testo dell'output |
 
 ## Note operative
 
-- Le lavorazioni sono personali: la cartella `lavorazioni/` non si pubblica con l'autosync.
+- Le lavorazioni sono personali: la cartella `lavorazioni/` non si pubblica con l'autosync. Un file promosso in `raw/`, invece, è un dato del vault.
 - Non modificare `config.md`, i contratti o i riferimenti di una lavorazione per far tornare una verifica: se una regola è
   sbagliata, dillo all'utente. Correggere la fonte delle istruzioni è una sua decisione.
 - Per lavori corposi usa il modello di ricerca del client: Opus in Claude Code; Sol o Astra in Codex. Questa skill non autorizza
