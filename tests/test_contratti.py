@@ -254,6 +254,120 @@ class SkillDelKit(unittest.TestCase):
                 self.assertIn('\n## Checkpoint\n', percorso.read_text(encoding='utf-8'))
 
 
+SCHEMA_PESO = ('# Wiki reference\n\nintroduzione\n\n## Convenzioni delle pagine (formato)\n\n' + 'c' * 400 + '\n\n### Frontmatter\n\n' + 'f' * 200 +
+               '\n\n## Relazioni tipizzate\n\n' + 'r' * 800 + '\n\n```\n## Titolo nel codice\n```\n\n## Workflow\n\n' + 'w' * 400 + '\n')
+
+
+class Peso(Base):
+    """Quanto contesto carica un contratto: caratteri/4, per livello, con le sezioni degli Input."""
+
+    def setUp(self):
+        super().setUp()
+        (self.radice / 'Wiki reference.md').write_text(SCHEMA_PESO, encoding='utf-8')
+        (self.radice / 'altro.md').write_text('a' * 400, encoding='utf-8')
+
+    def contratto(self, righe):
+        return VALIDO.split('| 3 |')[0] + '\n'.join(righe) + '\n' + '\n## Processo' + VALIDO.split('## Processo')[1]
+
+    def peso(self, righe):
+        return contratti.peso(self.scrivi(self.contratto(righe)), radice=self.radice)
+
+    def test_sezione_include_le_sottosezioni_e_si_ferma_al_titolo_di_pari_livello(self):
+        testo = contratti.testo_sezione(SCHEMA_PESO, 'Convenzioni delle pagine')
+        self.assertTrue(testo.startswith('## Convenzioni delle pagine (formato)'))
+        self.assertIn('### Frontmatter', testo)
+        self.assertNotIn('Relazioni tipizzate', testo)
+        self.assertIsNone(contratti.testo_sezione(SCHEMA_PESO, 'Titolo nel codice'))
+        self.assertIsNone(contratti.testo_sezione(SCHEMA_PESO, 'Convenzioni'))
+        self.assertTrue(contratti.testo_sezione(SCHEMA_PESO, 'Frontmatter').startswith('### Frontmatter'))
+
+    def test_file_intero_o_solo_le_sezioni_citate(self):
+        intero = self.peso(['| 3 | `Wiki reference.md` | tutto | x |'])
+        self.assertEqual(intero['livello3'], len(SCHEMA_PESO) // 4)
+        scelte = self.peso(['| 3 | `Wiki reference.md` | «Relazioni tipizzate» | x |'])
+        self.assertEqual(scelte['livello3'], len(contratti.testo_sezione(SCHEMA_PESO, 'Relazioni tipizzate')) // 4)
+        self.assertLess(scelte['livello3'], intero['livello3'])
+
+    def test_piu_sezioni_nella_stessa_riga_si_sommano(self):
+        due = self.peso(['| 3 | `Wiki reference.md` | «Convenzioni delle pagine», «Workflow» | x |'])
+        attesi = sum(len(contratti.testo_sezione(SCHEMA_PESO, s)) for s in ('Convenzioni delle pagine', 'Workflow')) // 4
+        self.assertEqual(due['livello3'], attesi)
+
+    def test_livelli_separati_e_file_inesistenti_non_contano(self):
+        peso = self.peso(['| 3 | `Wiki reference.md` | «Workflow» | x |', '| 4 | `altro.md` | tutto | x |',
+                          '| 4 | `non-c-e.md` | tutto | x |', '| 4 | `{esecuzione}/raccolta.md` | tutto | x |'])
+        self.assertEqual(peso['livello4'], 100)
+        self.assertGreater(peso['livello3'], 0)
+        voci = {r['file']: r['token'] for r in peso['righe']}
+        self.assertIsNone(voci['non-c-e.md'])
+        self.assertNotIn('{esecuzione}/raccolta.md', voci)
+
+    def test_senza_input_peso_zero(self):
+        senza = contratti.peso(self.scrivi('## Processo\n1. x\n'), radice=self.radice)
+        self.assertEqual((senza['livello3'], senza['livello4'], senza['righe']), (0, 0, []))
+
+    def test_riga_di_comando(self):
+        percorso = self.scrivi(self.contratto(['| 3 | `Wiki reference.md` | «Workflow» | x |']))
+        uscita = io.StringIO()
+        with redirect_stdout(uscita):
+            codice = contratti.main([str(percorso), '--radice', str(self.radice), '--peso'])
+        self.assertEqual(codice, 0)
+        self.assertIn('Wiki reference.md', uscita.getvalue())
+        self.assertIn('livello 3', uscita.getvalue())
+        uscita = io.StringIO()
+        with redirect_stdout(uscita):
+            contratti.main([str(percorso), '--radice', str(self.radice), '--peso', '--json'])
+        self.assertEqual(json.loads(uscita.getvalue())[0]['peso']['livello3'], contratti.peso(percorso, self.radice)['livello3'])
+
+
+class SchemaSelettivo(unittest.TestCase):
+    """Query e lacune leggono solo le sezioni di Wiki reference.md che usano; ingest e lint tutto il file."""
+    KIT = Path(__file__).resolve().parents[1] / 'kit'
+
+    def peso_schema(self, nome):
+        esito = contratti.peso(self.KIT / 'skills' / f'obsidian-wiki-{nome}' / 'SKILL.md', radice=self.KIT / 'vault')
+        return sum(r['token'] for r in esito['righe'] if r['file'] == 'Wiki reference.md' and r['token'])
+
+    def test_query_e_lacune_caricano_meno_di_tre_quarti_dello_schema(self):
+        completo = len((self.KIT / 'vault/Wiki reference.md').read_text(encoding='utf-8')) // 4
+        for nome in ('query', 'fill-gaps'):
+            with self.subTest(skill=nome):
+                self.assertLessEqual(self.peso_schema(nome), completo * 0.75)
+
+    def test_ingest_e_lint_leggono_tutto_lo_schema(self):
+        completo = len((self.KIT / 'vault/Wiki reference.md').read_text(encoding='utf-8')) // 4
+        for nome in ('ingest', 'lint'):
+            with self.subTest(skill=nome):
+                self.assertEqual(self.peso_schema(nome), completo)
+
+    def test_le_regole_non_negoziabili_sono_sempre_caricate(self):
+        for nome in ('query', 'fill-gaps'):
+            with self.subTest(skill=nome):
+                testo = (self.KIT / 'skills' / f'obsidian-wiki-{nome}' / 'SKILL.md').read_text(encoding='utf-8')
+                self.assertIn('«Regole non negoziabili»', testo)
+
+    def test_le_sezioni_tolte_non_servono_alle_due_skill(self):
+        # Workflow, Manutenzione del vault e il modello a tre livelli descrivono ingest e lint, non query né lacune.
+        for nome in ('query', 'fill-gaps'):
+            testo = (self.KIT / 'skills' / f'obsidian-wiki-{nome}' / 'SKILL.md').read_text(encoding='utf-8')
+            righe_schema = [r for r in testo.splitlines() if r.startswith('| 3 | `Wiki reference.md`')]
+            self.assertTrue(righe_schema)
+            for riga in righe_schema:
+                for sezione in ('«Workflow»', '«Manutenzione del vault»', '«Modello a tre livelli'):
+                    self.assertNotIn(sezione, riga)
+
+    def test_le_skill_indicano_come_ripiegare_se_serve_altro(self):
+        for nome in ('query', 'fill-gaps'):
+            testo = (self.KIT / 'skills' / f'obsidian-wiki-{nome}' / 'SKILL.md').read_text(encoding='utf-8')
+            self.assertIn('leggi `Wiki reference.md` per intero', testo)
+
+    def test_i_file_di_livello_0_non_chiedono_piu_di_leggere_tutto_lo_schema_a_ogni_operazione(self):
+        for nome in ('CLAUDE.md', 'AGENTS.md', 'copilot-instructions.md'):
+            with self.subTest(file=nome):
+                testo = (self.KIT / 'vault' / nome).read_text(encoding='utf-8')
+                self.assertIn('le sezioni indicate dalla skill', testo)
+
+
 def contratti_stderr():
     from contextlib import redirect_stderr
     return redirect_stderr(io.StringIO())
