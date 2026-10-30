@@ -227,6 +227,33 @@ class Riga(Base):
         self.assertEqual(uscita.exception.code, 2)
 
 
+class SkillDelKit(unittest.TestCase):
+    """Le skill distribuite ai vault sono contratti: stessa forma delle fasi delle lavorazioni."""
+    KIT = Path(__file__).resolve().parents[1] / 'kit'
+
+    def skill(self):
+        elenco = sorted(self.KIT.glob('skills/*/SKILL.md'))
+        self.assertGreaterEqual(len(elenco), 4, 'il test non deve passare a vuoto')
+        return elenco
+
+    def test_ogni_skill_ha_la_forma_canonica(self):
+        for percorso in self.skill():
+            with self.subTest(skill=percorso.parent.name):
+                esito = contratti.valida(percorso, radice=self.KIT / 'vault')
+                self.assertEqual([(p['codice'], p['messaggio']) for p in esito['errori']], [])
+
+    def test_ogni_skill_dichiara_input_sul_file_di_schema(self):
+        for percorso in self.skill():
+            with self.subTest(skill=percorso.parent.name):
+                self.assertIn('| `Wiki reference.md` |', percorso.read_text(encoding='utf-8'))
+
+    def test_checkpoint_presente_dove_la_skill_chiede_all_utente(self):
+        # Le quattro skill prevedono una scelta o una conferma dell'utente: il checkpoint è obbligatorio.
+        for percorso in self.skill():
+            with self.subTest(skill=percorso.parent.name):
+                self.assertIn('\n## Checkpoint\n', percorso.read_text(encoding='utf-8'))
+
+
 def contratti_stderr():
     from contextlib import redirect_stderr
     return redirect_stderr(io.StringIO())
