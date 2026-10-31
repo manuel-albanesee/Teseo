@@ -1,6 +1,6 @@
 # 16 — Tassonomia e ontologia dentro il grafo
 
-Stato: **proposta del 31 ottobre 2026; fase A in corso sul branch `ICM_Integration`, fasi B–E proposte.** Riferimento:
+Stato: **fase A implementata il 31 ottobre 2026 sul branch `ICM_Integration`; fasi B–E proposte.** Riferimento:
 [«Taxonomy vs. ontology vs. knowledge graph»](https://neo4j.com/blog/knowledge-graph/taxonomy-vs-ontology-vs-knowledge-graph/)
 (J. Stegeman, Neo4j, 16 giugno 2026). Il riferimento usa Neo4j; qui il grafo resta **SQLite** e Neo4j non è
 in programma. Dipendenze: [contratto 1](01-contratto-dati-operazioni.md), [editor dell'ontologia 3](03-editor-ontologia.md).
@@ -39,7 +39,7 @@ riscritta a ogni build. Nessuna tabella `onto_*` si modifica direttamente; si ca
 con l'editor del passo 3) e si ricostruisce. Il manifest non acquisisce un vocabolario parallelo. Ogni fase cambia
 prima questo documento, poi i test, poi il codice.
 
-## Fase A — l'ontologia nel grafo
+## Fase A — l'ontologia nel grafo (implementata)
 
 `build_graph.build_candidate` scrive quattro tabelle in ogni grafo, legacy e a generazioni:
 
@@ -48,14 +48,15 @@ prima questo documento, poi i test, poi il codice.
 | `onto_tipi` | `nome` PK, `descrizione`, `dichiarato` (0/1), `posizione` | con catalogo «Tipi ammessi»: i tipi dichiarati, nell'ordine del documento, `dichiarato = 1`; senza: i tipi osservati nelle pagine e nelle fonti più quelli citati nei vincoli, jolly esclusi, in ordine alfabetico, `dichiarato = 0`, descrizione vuota |
 | `onto_relazioni` | `nome` PK, `significato`, `esempio`, `verso`, `posizione` | le relazioni della tabella «Relazioni tipizzate», nell'ordine del documento; nessuna se la tabella manca |
 | `onto_vincoli` | `relazione`, `lato` (`da`/`a`), `tipo`, `posizione`; PK sulle prime tre | i tipi delle colonne `Da` e `A`, jolly `qualsiasi` e `stesso tipo` compresi come valori letterali |
-| `onto_metadata` | `chiave` PK, `valore` | `formato` = `1`; `schema_digest` = SHA-256 dei byte di `Wiki reference.md` (vuoto se manca); `tipi` = `dichiarati` o `osservati`; `vocabolario` = `presente` o `assente` |
+| `onto_metadata` | `chiave` PK, `valore` | `formato` = `1`; `schema_digest` = SHA-256 dei byte di `Wiki reference.md` (vuoto se il file manca o è vuoto); `tipi` = `dichiarati` o `osservati`; `vocabolario` = `presente` o `assente` |
 
 Le righe sono quelle che il builder ha usato per validare la stessa generazione: un grafo invalido non viene
 pubblicato, quindi nomi duplicati o vincoli ripetuti non arrivano alle tabelle. Gli archi derivati `menziona` e
 `documentato_in` non sono relazioni dell'ontologia e non compaiono in `onto_relazioni`.
 
 `BUILDER_VERSION` passa a 5: la stessa revisione dei contenuti produce una nuova generazione al primo rebuild
-esplicito. Le generazioni 4 e precedenti restano consultabili senza le tabelle; nessuna GET le ricostruisce.
+esplicito. Le generazioni 4 e precedenti restano consultabili senza le tabelle; nessuna GET le ricostruisce. Il
+lettore delle API accetta ora anche le generazioni 5.
 
 `GET /ontology` prende `types`, `types_source` e `relations` dalle tabelle quando ci sono e, nelle generazioni
 precedenti, dal Markdown memorizzato come prima: la risposta è identica nei due casi. Span, sezioni opache, problemi

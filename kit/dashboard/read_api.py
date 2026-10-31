@@ -86,7 +86,7 @@ class ReadAPI:
                 raise ContractError("graph_corrupt", "Hash del grafo non valido")
             db = connect_graph(reference.path, reference=reference)
             metadata = dict(db.execute("SELECT key, value FROM graph_metadata"))
-            if metadata.get("builder_version") not in {"2", "3", "4"}:
+            if metadata.get("builder_version") not in {"2", "3", "4", "5"}:
                 raise ContractError("graph_upgrade_required", "Ricostruire esplicitamente il grafo con il kit aggiornato")
             deadline = time.monotonic() + 5
             db.set_progress_handler(lambda: time.monotonic() > deadline, 10000)
@@ -367,19 +367,31 @@ class ReadAPI:
     def _ontology(db, reference):
         source = ReadAPI._document(db, "Wiki reference.md")
         document = _parser().parse_ontology(source)
-        relations = [{"name": item.name, "from_types": list(item.from_types), "to_types": list(item.to_types),
-                      "direction": item.direction, "meaning": item.meaning, "example": item.example}
-                     for item in sorted(document.relations, key=lambda item: item.name)]
-        if document.types is not None:
-            types = [item.name for item in document.types]
-        else:
-            types = {row[0] for row in db.execute("SELECT DISTINCT tipo FROM entities WHERE tipo IS NOT NULL")}
-            for item in relations:
-                types.update(item["from_types"] + item["to_types"])
-            types = sorted(types - {"qualsiasi", "stesso tipo"})
+        if _has_table(db, "onto_tipi"):  # builder 5 (doc/16): l'ontologia che il builder ha usato, già nel grafo
+            constraints = {}
+            for relation, side, kind in db.execute("SELECT relazione, lato, tipo FROM onto_vincoli ORDER BY posizione"):
+                constraints.setdefault((relation, side), []).append(kind)
+            relations = [{"name": name, "from_types": constraints.get((name, "da"), []),
+                          "to_types": constraints.get((name, "a"), []), "direction": direction,
+                          "meaning": meaning, "example": example} for name, meaning, example, direction in db.execute(
+                "SELECT nome, significato, esempio, verso FROM onto_relazioni ORDER BY nome")]
+            types = [name for (name,) in db.execute("SELECT nome FROM onto_tipi ORDER BY posizione")]
+            declared = dict(db.execute("SELECT chiave, valore FROM onto_metadata"))["tipi"] == "dichiarati"
+        else:  # generazioni precedenti: stessa risposta ricavata dal Markdown memorizzato
+            relations = [{"name": item.name, "from_types": list(item.from_types), "to_types": list(item.to_types),
+                          "direction": item.direction, "meaning": item.meaning, "example": item.example}
+                         for item in sorted(document.relations, key=lambda item: item.name)]
+            declared = document.types is not None
+            if declared:
+                types = [item.name for item in document.types]
+            else:
+                types = {row[0] for row in db.execute("SELECT DISTINCT tipo FROM entities WHERE tipo IS NOT NULL")}
+                for item in relations:
+                    types.update(item["from_types"] + item["to_types"])
+                types = sorted(types - {"qualsiasi", "stesso tipo"})
         opaque = [html.escape(document.source[span.start:span.end].decode('utf-8'), quote=False)
                   for span in document.opaque_sections]
-        return {**_revision(reference), "types": types, "types_source": "declared" if document.types is not None else "observed_and_constraints",
+        return {**_revision(reference), "types": types, "types_source": "declared" if declared else "observed_and_constraints",
                 "relations": relations, "opaque_sections": opaque,
                 "schema_digest": document.digest,
                 "source_spans": {key: {"start": span.start, "end": span.end} for key, span in document.source_spans.items()},

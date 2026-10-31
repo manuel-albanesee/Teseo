@@ -27,6 +27,9 @@ di un'altra pagina si scarta (varianti_nomi).
 Autori (tabella `autori`): non li legge il builder, che lavora su copie senza .git; li inserisce chi lo chiama con
 snapshot["autori"] (dashboard/graph_service.rebuild, da dashboard/authors.collect). Vuota se non c'è storia Git.
 Vocabolario delle relazioni: tabella "## Relazioni tipizzate" in Wiki reference.md (se presente).
+Ontologia nel grafo (doc/16, fase A): tabelle `onto_tipi`, `onto_relazioni`, `onto_vincoli`, `onto_metadata`, copia in
+sola lettura di Wiki reference (righe_ontologia), così una query interroga lo schema insieme ai dati. L'autorità resta
+il Markdown: le tabelle si riscrivono a ogni build.
 
 Uso:
   python .graph/build_graph.py            ricostruisce graph.sqlite
@@ -49,10 +52,10 @@ import yaml
 
 try:
     from .stemmer import stem
-    from .ontology import parse as parse_ontology
+    from .ontology import WILDCARDS, parse as parse_ontology
 except ImportError:
     from stemmer import stem
-    from ontology import parse as parse_ontology
+    from ontology import WILDCARDS, parse as parse_ontology
 
 # Nomi che sono anche parole comuni: valgono solo scritti con la maiuscola (stessa lista di recall.PAROLE_COMUNI,
 # che non si può importare da qui: recall importa build_graph)
@@ -314,6 +317,30 @@ def parse_documents(documents):
             "problem_details": tuple(problem_details)}
 
 
+def righe_ontologia(snapshot):
+    """Righe delle tabelle onto_* di uno snapshot letto: l'ontologia di Wiki reference come il builder l'ha usata.
+
+    Tipi: con il catalogo «Tipi ammessi» quelli dichiarati, nell'ordine del documento (dichiarato = 1); senza, quelli
+    delle pagine e delle fonti più quelli citati nei vincoli, jolly esclusi, in ordine alfabetico (dichiarato = 0).
+    Relazioni e vincoli nell'ordine della tabella; i jolly `qualsiasi` e `stesso tipo` restano valori dei vincoli.
+    {"tipi": [(nome, descrizione, dichiarato, posizione)], "relazioni": [(nome, significato, esempio, verso, posizione)],
+    "vincoli": [(relazione, lato, tipo, posizione)], "metadati": [(chiave, valore)]}"""
+    ontology = snapshot["ontology"]
+    if ontology.types is not None:
+        tipi = [(t.name, t.description, 1, i) for i, t in enumerate(ontology.types)]
+    else:
+        osservati = {e[1] for e in snapshot["entita"] if isinstance(e[1], str)}
+        osservati |= {n for r in ontology.relations for n in r.from_types + r.to_types}
+        tipi = [(n, "", 0, i) for i, n in enumerate(sorted(osservati - WILDCARDS))]
+    return {"tipi": tipi,
+            "relazioni": [(r.name, r.meaning, r.example, r.direction, i) for i, r in enumerate(ontology.relations)],
+            "vincoli": [(r.name, lato, tipo, i) for r in ontology.relations
+                        for lato, ammessi in (("da", r.from_types), ("a", r.to_types)) for i, tipo in enumerate(ammessi)],
+            "metadati": [("formato", "1"), ("schema_digest", ontology.digest if ontology.source else ""),
+                         ("tipi", "dichiarati" if ontology.types is not None else "osservati"),
+                         ("vocabolario", "presente" if snapshot["vocabolario"] is not None else "assente")]}
+
+
 class GraphValidationError(ValueError):
     def __init__(self, problemi):
         self.problemi = tuple(problemi)
@@ -348,6 +375,13 @@ def build_candidate(snapshot, out):
                                           PRIMARY KEY (source_id, target_id, type));
         CREATE TABLE autori (entity_id TEXT PRIMARY KEY, creato_da TEXT, creato_il TEXT, modificato_da TEXT,
                              modificato_il TEXT, agente TEXT, modifiche INTEGER);
+        CREATE TABLE onto_tipi (nome TEXT PRIMARY KEY, descrizione TEXT NOT NULL, dichiarato INTEGER NOT NULL,
+                                posizione INTEGER NOT NULL);
+        CREATE TABLE onto_relazioni (nome TEXT PRIMARY KEY, significato TEXT NOT NULL, esempio TEXT NOT NULL,
+                                     verso TEXT NOT NULL, posizione INTEGER NOT NULL);
+        CREATE TABLE onto_vincoli (relazione TEXT NOT NULL, lato TEXT NOT NULL CHECK (lato IN ('da', 'a')),
+                                   tipo TEXT NOT NULL, posizione INTEGER NOT NULL, PRIMARY KEY (relazione, lato, tipo));
+        CREATE TABLE onto_metadata (chiave TEXT PRIMARY KEY, valore TEXT NOT NULL);
         CREATE VIRTUAL TABLE testo USING fts5(id UNINDEXED, titolo, corpo, radici_titolo, radici_corpo,
                                               tokenize = 'unicode61 remove_diacritics 2');
         """)
@@ -359,6 +393,11 @@ def build_candidate(snapshot, out):
         db.executemany("INSERT INTO autori VALUES (?,?,?,?,?,?,?)", snapshot.get("autori", ()))  # dalla storia Git, vuota senza .git
         db.executemany("INSERT INTO varianti VALUES (?,?)",
                        varianti_nomi([(nome, nome) for nome in pagine] + alias))
+        onto = righe_ontologia(snapshot)
+        db.executemany("INSERT INTO onto_tipi VALUES (?,?,?,?)", onto["tipi"])
+        db.executemany("INSERT INTO onto_relazioni VALUES (?,?,?,?,?)", onto["relazioni"])
+        db.executemany("INSERT INTO onto_vincoli VALUES (?,?,?,?)", onto["vincoli"])
+        db.executemany("INSERT INTO onto_metadata VALUES (?,?)", onto["metadati"])
         db.executemany("INSERT INTO testo VALUES (?,?,?,?,?)",
                        [(nome, nome, corpo, ridotto(nome), ridotto(corpo)) for nome, (_, corpo) in pagine.items()])
         db.commit()

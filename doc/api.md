@@ -148,6 +148,9 @@ di un'altra pagina si scarta (varianti_nomi).
 Autori (tabella `autori`): non li legge il builder, che lavora su copie senza .git; li inserisce chi lo chiama con
 snapshot["autori"] (dashboard/graph_service.rebuild, da dashboard/authors.collect). Vuota se non c'è storia Git.
 Vocabolario delle relazioni: tabella "## Relazioni tipizzate" in Wiki reference.md (se presente).
+Ontologia nel grafo (doc/16, fase A): tabelle `onto_tipi`, `onto_relazioni`, `onto_vincoli`, `onto_metadata`, copia in
+sola lettura di Wiki reference (righe_ontologia), così una query interroga lo schema insieme ai dati. L'autorità resta
+il Markdown: le tabelle si riscrivono a ogni build.
 
 Uso:
   python .graph/build_graph.py            ricostruisce graph.sqlite
@@ -173,6 +176,7 @@ Una pagina con frontmatter YAML non valido non si salta: il build si ferma con u
 | `tipo_ammesso(ammessi, tipo, tipo_altro)` | — |
 | `parse_snapshot(vault)` | Legge i sorgenti in memoria senza scrivere il DB. |
 | `parse_documents(documents)` | Stessi controlli del builder su documenti già acquisiti, senza filesystem. |
+| `righe_ontologia(snapshot)` | Righe delle tabelle onto_* di uno snapshot letto: l'ontologia di Wiki reference come il builder l'ha usata. |
 | `validate_snapshot(snapshot)` | Diagnostica deterministica dei dati già letti, senza pubblicazione. |
 | `build_candidate(snapshot, out)` | Candidato unico nello stesso filesystem, connessione chiusa prima del return. |
 | `publish_generation(candidate, out)` | Compatibilità graph.sqlite: valida SQLite e sostituisce solo a DB chiuso. |

@@ -73,6 +73,7 @@ Autorità e derivazioni:
 | `aliases` | `entity_id`, `alias` |
 | `varianti` | forme grafiche generate (es. «Service Desk» ↔ «ServiceDesk») |
 | `testo` | FTS5 (`unicode61`, diacritici rimossi): `id`, `titolo`, `corpo`, `radici_titolo`, `radici_corpo` (testo già ridotto a radici: FTS5 non può usare uno stemmer Python) |
+| `onto_tipi`, `onto_relazioni`, `onto_vincoli`, `onto_metadata` | copia in sola lettura dell'ontologia di `Wiki reference.md` (tipi dichiarati o osservati, relazioni con significato ed esempio, vincoli `Da`/`A`, digest dello schema), riscritta a ogni build ([doc/16](16-tassonomia-ontologia-nel-grafo.md)) |
 | `graph_metadata` | `content_revision` e `generation` (modalità a generazioni) |
 
 ### `memoria.sqlite` (apprendimento, personale)
