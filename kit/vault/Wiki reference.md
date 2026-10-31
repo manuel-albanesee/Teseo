@@ -39,6 +39,8 @@ usa: ["[[Pagina A]]", "[[Pagina B]]"]
 
 `tipo`, `tags`, `fonti`, `aggiornato` e `aliases` hanno un ruolo fisso. **Ogni altra proprietà è una relazione tipizzata** e deve stare nella tabella qui sotto. Nel frontmatter i wikilink vanno tra virgolette.
 
+Tassonomia facoltativa: se questo file ha la sezione «Categorie» (tabella `Categoria | Più ampia | Descrizione`), i `tags` di una pagina sono solo categorie di quella tabella, più i marcatori `entropia` e `sintesi`; si sceglie la categoria più specifica, la più ampia si deduce. Se la tabella «Tipi ammessi» ha la colonna «Sottotipo di», un sottotipo vale ovunque la tabella delle relazioni ammette il suo tipo padre.
+
 ### Pagine generate per entropia
 
 Raccolgono in un punto una risposta che il vault ha già, ma sparsa su più pagine. Le scrive il modello durante il lint, **tutte e senza conferma**, una per ogni domanda di `.graph/sintesi.py` a cui le pagine sanno rispondere:

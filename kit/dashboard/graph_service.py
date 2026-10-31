@@ -18,7 +18,7 @@ except ImportError:
     import build_graph
     from graph_db import graph_reference
 
-BUILDER_VERSION = 5  # 4: tabella `autori` e HEAD nell'identità della generazione; 5: tabelle onto_* (doc/16)
+BUILDER_VERSION = 6  # 4: `autori` e HEAD nell'identità; 5: tabelle onto_* (doc/16); 6: `categorie`, `entity_tags`, `onto_tipi.padre`
 
 
 def _atomic_marker(path, record):

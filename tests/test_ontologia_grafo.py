@@ -61,7 +61,7 @@ class Tabelle(unittest.TestCase):
                                     "ORDER BY lato DESC").fetchall(), [('da', 'qualsiasi'), ('a', 'stesso tipo')])
         self.assertEqual(dict(db.execute('SELECT chiave, valore FROM onto_metadata')),
                          {'formato': '1', 'schema_digest': parse(schema).digest, 'tipi': 'dichiarati',
-                          'vocabolario': 'presente'})
+                          'vocabolario': 'presente', 'categorie': 'assenti'})
 
     def test_senza_catalogo_i_tipi_sono_osservati_e_quelli_dei_vincoli(self):
         db = self.grafo(pagine(RELAZIONI + FONTI))
@@ -80,7 +80,8 @@ class Tabelle(unittest.TestCase):
         self.assertEqual([n for (n,) in db.execute('SELECT nome FROM onto_tipi ORDER BY posizione')],
                          ['persona', 'processo', 'sistema'])
         self.assertEqual(dict(db.execute('SELECT chiave, valore FROM onto_metadata')),
-                         {'formato': '1', 'schema_digest': '', 'tipi': 'osservati', 'vocabolario': 'assente'})
+                         {'formato': '1', 'schema_digest': '', 'tipi': 'osservati', 'vocabolario': 'assente',
+                          'categorie': 'assenti'})
 
     def test_archi_derivati_non_sono_relazioni_dell_ontologia(self):
         db = self.grafo(pagine(TIPI + RELAZIONI + FONTI))
@@ -113,23 +114,23 @@ class Generazioni(unittest.TestCase):
     setUp = fixture.Queries.setUp
 
     def test_la_generazione_ha_le_tabelle_e_la_nuova_versione(self):
-        self.assertEqual(BUILDER_VERSION, 5)
+        self.assertEqual(BUILDER_VERSION, 6)
         db = sqlite3.connect(self.reference.path)
         try:
-            self.assertEqual(dict(db.execute('SELECT key, value FROM graph_metadata'))['builder_version'], '5')
+            self.assertEqual(dict(db.execute('SELECT key, value FROM graph_metadata'))['builder_version'], '6')
             self.assertEqual([n for (n,) in db.execute('SELECT nome FROM onto_relazioni')], ['usa'])
         finally:
             db.close()
 
     def generazione_v4_senza_tabelle(self):
-        """Copia della generazione corrente come se l'avesse scritta il builder 4, senza le tabelle onto_*."""
+        """Copia della generazione corrente come se l'avesse scritta il builder 4, senza le tabelle di doc/16."""
         digest = self.reference.content_revision
         generation = content_hash({'content_revision': digest, 'builder_version': 4, 'copia': 'senza onto_*'})
         old = self.reference.path.with_name(generation + '.sqlite')
         shutil.copyfile(self.reference.path, old)
         db = sqlite3.connect(old)
         try:
-            for tabella in ('onto_tipi', 'onto_relazioni', 'onto_vincoli', 'onto_metadata'):
+            for tabella in ('onto_tipi', 'onto_relazioni', 'onto_vincoli', 'onto_metadata', 'categorie', 'entity_tags'):
                 db.execute('DROP TABLE ' + tabella)
             db.executemany('UPDATE graph_metadata SET value=? WHERE key=?',
                            [('4', 'builder_version'), (generation, 'generation')])
@@ -152,7 +153,7 @@ class Generazioni(unittest.TestCase):
                 self.manifest_su(generation, old)
                 status, _, vecchia = self.get('ontology', {'generation': generation})
                 self.assertEqual(status, 200, vecchia)
-                for campo in ('types', 'types_source', 'relations', 'schema_digest', 'editable'):
+                for campo in ('types', 'types_source', 'relations', 'type_parents', 'categories', 'schema_digest', 'editable'):
                     self.assertEqual(nuova[campo], vecchia[campo], campo)
 
     def manifest_su(self, generation, path):

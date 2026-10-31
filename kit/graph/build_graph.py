@@ -30,6 +30,9 @@ Vocabolario delle relazioni: tabella "## Relazioni tipizzate" in Wiki reference.
 Ontologia nel grafo (doc/16, fase A): tabelle `onto_tipi`, `onto_relazioni`, `onto_vincoli`, `onto_metadata`, copia in
 sola lettura di Wiki reference (righe_ontologia), così una query interroga lo schema insieme ai dati. L'autorità resta
 il Markdown: le tabelle si riscrivono a ogni build.
+Tassonomia (doc/16, B1): «Sottotipo di» nei «Tipi ammessi» (un sottotipo soddisfa i vincoli dei suoi antenati,
+tipo_ammesso) e sezione «## Categorie» (gerarchia `categorie`); con la sezione ogni tag deve essere una categoria o un
+marcatore di sistema (MARCATORI_TAG). I tag delle pagine stanno anche, uno per riga, in `entity_tags`.
 
 Uso:
   python .graph/build_graph.py            ricostruisce graph.sqlite
@@ -64,6 +67,9 @@ NON_RELAZIONI = {"tipo", "tags", "fonti", "aggiornato", "aliases", "relazioni_de
 CONFIDENZE = ("alta", "media", "bassa")
 MAX_EVIDENZA = 500
 PAGINE_SCHEMA = {"index", "log", "wiki reference"}  # link ammessi, ma non sono nodi del grafo
+# Tag di sistema, ammessi anche con il vocabolario delle categorie: domande.TAG_ENTROPIA e modello_hook.TAG_SINTESI
+# (non importabili da qui: quei moduli importano build_graph)
+MARCATORI_TAG = {"entropia", "sintesi"}
 
 LINK = re.compile(r"!?\[\[([^\]]+?)\]\]")
 CODICE = re.compile(r"^(```|~~~).*?^\1|`[^`\n]*`", re.M | re.S)
@@ -168,8 +174,15 @@ def leggi_vocabolario(ref):
     return document.vocabulary
 
 
-def tipo_ammesso(ammessi, tipo, tipo_altro):
-    return isinstance(tipo, str) and ("qualsiasi" in ammessi or tipo in ammessi or ("stesso tipo" in ammessi and tipo == tipo_altro))
+def tipo_ammesso(ammessi, tipo, tipo_altro, antenati=None):
+    """True se `tipo` soddisfa i tipi `ammessi` di un vincolo: è fra gli ammessi, o lo è un suo antenato in `antenati`
+    ({tipo: (padre, nonno, …)}, Ontology.ancestors), o il vincolo è `qualsiasi`, o `stesso tipo` e coincide con
+    `tipo_altro` (uguaglianza esatta: un sottotipo non è lo stesso tipo del padre)."""
+    if not isinstance(tipo, str):
+        return False
+    if "qualsiasi" in ammessi or tipo in ammessi or ("stesso tipo" in ammessi and tipo == tipo_altro):
+        return True
+    return any(antenato in ammessi for antenato in (antenati or {}).get(tipo, ()))
 
 
 def parse_snapshot(vault):
@@ -196,6 +209,8 @@ def parse_documents(documents):
     declared_types = {item.name for item in ontology.types} if ontology.types is not None else None
     fonti_censite = {k: f.strip().strip("`").strip() for k, f in RIGA_FONTE.findall(ontology.opaque_bytes().decode('utf-8'))}
     vocabolario = ontology.vocabulary
+    antenati = ontology.ancestors
+    categorie = {item.name for item in ontology.categories} if ontology.categories is not None else None
 
     files = sorted(Path(path) for path in documents if path.startswith("wiki/") and path.count("/") == 1 and path.endswith(".md"))
     if len({p.stem.casefold() for p in files}) != len(files):
@@ -213,7 +228,7 @@ def parse_documents(documents):
         problem_details.append({'code': code, 'page': page, 'property': prop,
                                 'reason': message, 'target': target})
 
-    entita, relazioni, alias, attributi = [], set(), [], []
+    entita, relazioni, alias, attributi, etichette = [], set(), [], [], set()
 
     def risolvi(pagina, raw, dove):
         t = bersaglio(raw)
@@ -234,6 +249,11 @@ def parse_documents(documents):
                     f'wiki/{nome}.md', 'tipo', 'unknown_page_type')
         entita.append((nome, fm.get("tipo"), descrizioni.get(nome), f"wiki/{nome}.md",
                        ", ".join(valori(fm.get("tags"))), str(fm.get("aggiornato") or "")))
+        for tag in valori(fm.get("tags")):
+            etichette.add((nome, tag))
+            if categorie is not None and tag not in categorie and tag not in MARCATORI_TAG:
+                problem(f"{nome}: tag '{tag}' non è una categoria di Wiki reference", f'wiki/{nome}.md', 'tags',
+                        'unknown_tag', tag)
         for a in valori(fm.get("aliases")):
             alias.append((nome, a))
         for chiave in valori(fm.get("fonti")):
@@ -302,7 +322,7 @@ def parse_documents(documents):
             problem(f"{s}: relazione '{rel}' fuori vocabolario", f'wiki/{s}.md', rel, 'unknown_relation', t)
             continue
         da, a = vocabolario[rel]
-        if not tipo_ammesso(da, tipi[s], tipi[t]) or not tipo_ammesso(a, tipi[t], tipi[s]):
+        if not tipo_ammesso(da, tipi[s], tipi[t], antenati) or not tipo_ammesso(a, tipi[t], tipi[s], antenati):
             problem(f"{s} ({tipi[s]}) —{rel}→ {t} ({tipi[t]}): tipi non ammessi dal vocabolario",
                     f'wiki/{s}.md', rel, 'relation_types', t)
     visti = {norm(p): p for p in pagine}
@@ -313,32 +333,37 @@ def parse_documents(documents):
 
     return {"pagine": pagine, "entita": entita, "relazioni": relazioni,
             "alias": alias, "attributi": attributi, "problemi": tuple(problemi), "fonti_usate": fonti_usate,
-            "tipizzate": tipizzate, "vocabolario": vocabolario, "ontology": ontology,
+            "tipizzate": tipizzate, "vocabolario": vocabolario, "ontology": ontology, "antenati": antenati,
+            "etichette": sorted(etichette),
             "problem_details": tuple(problem_details)}
 
 
 def righe_ontologia(snapshot):
     """Righe delle tabelle onto_* di uno snapshot letto: l'ontologia di Wiki reference come il builder l'ha usata.
 
-    Tipi: con il catalogo «Tipi ammessi» quelli dichiarati, nell'ordine del documento (dichiarato = 1); senza, quelli
-    delle pagine e delle fonti più quelli citati nei vincoli, jolly esclusi, in ordine alfabetico (dichiarato = 0).
-    Relazioni e vincoli nell'ordine della tabella; i jolly `qualsiasi` e `stesso tipo` restano valori dei vincoli.
-    {"tipi": [(nome, descrizione, dichiarato, posizione)], "relazioni": [(nome, significato, esempio, verso, posizione)],
-    "vincoli": [(relazione, lato, tipo, posizione)], "metadati": [(chiave, valore)]}"""
+    Tipi: con il catalogo «Tipi ammessi» quelli dichiarati, nell'ordine del documento (dichiarato = 1, padre o None);
+    senza, quelli delle pagine e delle fonti più quelli citati nei vincoli, jolly esclusi, in ordine alfabetico
+    (dichiarato = 0). Relazioni e vincoli nell'ordine della tabella; i jolly `qualsiasi` e `stesso tipo` restano valori
+    dei vincoli. Categorie nell'ordine della sezione «Categorie», più ampia o None.
+    {"tipi": [(nome, descrizione, dichiarato, posizione, padre)], "relazioni": [(nome, significato, esempio, verso,
+    posizione)], "vincoli": [(relazione, lato, tipo, posizione)], "categorie": [(nome, padre, descrizione, posizione)],
+    "metadati": [(chiave, valore)]}"""
     ontology = snapshot["ontology"]
     if ontology.types is not None:
-        tipi = [(t.name, t.description, 1, i) for i, t in enumerate(ontology.types)]
+        tipi = [(t.name, t.description, 1, i, t.parent or None) for i, t in enumerate(ontology.types)]
     else:
         osservati = {e[1] for e in snapshot["entita"] if isinstance(e[1], str)}
         osservati |= {n for r in ontology.relations for n in r.from_types + r.to_types}
-        tipi = [(n, "", 0, i) for i, n in enumerate(sorted(osservati - WILDCARDS))]
+        tipi = [(n, "", 0, i, None) for i, n in enumerate(sorted(osservati - WILDCARDS))]
     return {"tipi": tipi,
+            "categorie": [(c.name, c.broader or None, c.description, i) for i, c in enumerate(ontology.categories or ())],
             "relazioni": [(r.name, r.meaning, r.example, r.direction, i) for i, r in enumerate(ontology.relations)],
             "vincoli": [(r.name, lato, tipo, i) for r in ontology.relations
                         for lato, ammessi in (("da", r.from_types), ("a", r.to_types)) for i, tipo in enumerate(ammessi)],
             "metadati": [("formato", "1"), ("schema_digest", ontology.digest if ontology.source else ""),
                          ("tipi", "dichiarati" if ontology.types is not None else "osservati"),
-                         ("vocabolario", "presente" if snapshot["vocabolario"] is not None else "assente")]}
+                         ("vocabolario", "presente" if snapshot["vocabolario"] is not None else "assente"),
+                         ("categorie", "presenti" if ontology.categories is not None else "assenti")]}
 
 
 class GraphValidationError(ValueError):
@@ -376,12 +401,15 @@ def build_candidate(snapshot, out):
         CREATE TABLE autori (entity_id TEXT PRIMARY KEY, creato_da TEXT, creato_il TEXT, modificato_da TEXT,
                              modificato_il TEXT, agente TEXT, modifiche INTEGER);
         CREATE TABLE onto_tipi (nome TEXT PRIMARY KEY, descrizione TEXT NOT NULL, dichiarato INTEGER NOT NULL,
-                                posizione INTEGER NOT NULL);
+                                posizione INTEGER NOT NULL, padre TEXT);
         CREATE TABLE onto_relazioni (nome TEXT PRIMARY KEY, significato TEXT NOT NULL, esempio TEXT NOT NULL,
                                      verso TEXT NOT NULL, posizione INTEGER NOT NULL);
         CREATE TABLE onto_vincoli (relazione TEXT NOT NULL, lato TEXT NOT NULL CHECK (lato IN ('da', 'a')),
                                    tipo TEXT NOT NULL, posizione INTEGER NOT NULL, PRIMARY KEY (relazione, lato, tipo));
         CREATE TABLE onto_metadata (chiave TEXT PRIMARY KEY, valore TEXT NOT NULL);
+        CREATE TABLE categorie (nome TEXT PRIMARY KEY, padre TEXT, descrizione TEXT NOT NULL, posizione INTEGER NOT NULL);
+        CREATE TABLE entity_tags (entity_id TEXT NOT NULL, tag TEXT NOT NULL, PRIMARY KEY (entity_id, tag));
+        CREATE INDEX entity_tags_tag ON entity_tags (tag);
         CREATE VIRTUAL TABLE testo USING fts5(id UNINDEXED, titolo, corpo, radici_titolo, radici_corpo,
                                               tokenize = 'unicode61 remove_diacritics 2');
         """)
@@ -394,7 +422,9 @@ def build_candidate(snapshot, out):
         db.executemany("INSERT INTO varianti VALUES (?,?)",
                        varianti_nomi([(nome, nome) for nome in pagine] + alias))
         onto = righe_ontologia(snapshot)
-        db.executemany("INSERT INTO onto_tipi VALUES (?,?,?,?)", onto["tipi"])
+        db.executemany("INSERT INTO onto_tipi VALUES (?,?,?,?,?)", onto["tipi"])
+        db.executemany("INSERT INTO categorie VALUES (?,?,?,?)", onto["categorie"])
+        db.executemany("INSERT INTO entity_tags VALUES (?,?)", snapshot.get("etichette", ()))
         db.executemany("INSERT INTO onto_relazioni VALUES (?,?,?,?,?)", onto["relazioni"])
         db.executemany("INSERT INTO onto_vincoli VALUES (?,?,?,?)", onto["vincoli"])
         db.executemany("INSERT INTO onto_metadata VALUES (?,?)", onto["metadati"])

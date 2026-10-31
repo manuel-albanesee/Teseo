@@ -2,7 +2,7 @@
 EDITOR_SCRIPT = r"""
  function createOntologyEditor({api, plain, element, getEpoch, stopped, onOperation}) {
    const drafts=new Map();let context=0,timer;
-   const initial={category:'relation',action:'add',name:'',to:'',description:'',from_types:'',to_types:'',meaning:'',example:''};
+   const initial={category:'relation',action:'add',name:'',to:'',description:'',parent:'',from_types:'',to_types:'',meaning:'',example:''};
    function reset(){++context;clearTimeout(timer);document.getElementById('ontology-editor').replaceChildren();}
    function mount(status) {
      reset();const container=document.getElementById('ontology-editor');
@@ -28,12 +28,12 @@ EDITOR_SCRIPT = r"""
        const input=element(options?'select':['description','meaning','example'].includes(key)?'textarea':'input',undefined,wrapper);
        input.id=id;input.name=key;input.setAttribute('aria-describedby','ontology-form-help ontology-editor-message');
        if(options)for(const [value,text]of options)input.append(new Option(text,value));
-       else{input.maxLength=['name','to'].includes(key)?64:4096;input.spellcheck=false;}
+       else{input.maxLength=['name','to','parent'].includes(key)?64:4096;input.spellcheck=false;}
        input.value=draft.fields[key];controls[key]=input;return input;
      }
      field('category','Elemento',[['relation','Relazione'],['type','Tipo']]);
      field('action','Modifica',[['add','Aggiungi'],['update','Modifica definizione'],['rename','Rinomina'],['remove','Rimuovi']]);
-     field('name','Nome');field('to','Nuovo nome');field('description','Descrizione del tipo');
+     field('name','Nome');field('to','Nuovo nome');field('description','Descrizione del tipo');field('parent','Sottotipo di (vuoto per un tipo radice)');
      field('from_types','Tipi sorgente · Da');field('to_types','Tipi destinazione · A');
      field('meaning','Significato · X → Y');field('example','Esempio · sorgente → destinazione');
      const direction=element('p','Verso salvato: sorgente → relazione → destinazione. Nessuna inversione automatica.',form);direction.className='ontology-direction';
@@ -52,13 +52,13 @@ EDITOR_SCRIPT = r"""
      }
      function fields() {
        const relation=controls.category.value==='relation',definition=['add','update'].includes(controls.action.value),rename=controls.action.value==='rename';
-       for(const key of ['to','description','from_types','to_types','meaning','example']){
-         const visible=key==='to'?rename:key==='description'?definition&&!relation:definition&&relation;
+       for(const key of ['to','description','parent','from_types','to_types','meaning','example']){
+         const visible=key==='to'?rename:['description','parent'].includes(key)?definition&&!relation:definition&&relation;
          controls[key].parentElement.hidden=!visible;controls[key].disabled=!visible;
          controls[key].required=visible&&['to','from_types','to_types'].includes(key);
        }
        controls.name.required=true;direction.hidden=!relation;
-       help.textContent=definition?(relation?'Definizione completa. Tipi separati da virgole; ammessi anche «qualsiasi» e «stesso tipo». Significato ed esempio omessi saranno vuoti.':'Definizione completa: la descrizione sostituisce quella precedente.'):'La modifica riguarda lo schema candidato. Le eventuali modifiche alle note verranno soltanto suggerite.';
+       help.textContent=definition?(relation?'Definizione completa. Tipi separati da virgole; ammessi anche «qualsiasi» e «stesso tipo». Significato ed esempio omessi saranno vuoti.':'Definizione completa: descrizione e sottotipo sostituiscono quelli precedenti; un sottotipo omesso rende il tipo radice.'):'La modifica riguarda lo schema candidato. Le eventuali modifiche alle note verranno soltanto suggerite.';
      }
      function drawQueue(){
        queue.replaceChildren();
@@ -66,7 +66,7 @@ EDITOR_SCRIPT = r"""
        const labels={add_relation:'Aggiungi relazione',update_relation:'Modifica relazione',remove_relation:'Rimuovi relazione',rename_relation:'Rinomina relazione',add_type:'Aggiungi tipo',update_type:'Modifica tipo',remove_type:'Rimuovi tipo',rename_type:'Rinomina tipo'};
        draft.patch.forEach((item,index)=>{const li=element('li',undefined,queue);element('span',labels[item.op]+' · '+item.name+(item.to?' → '+item.to:''),li);
          if(item.value){const info=element('details',undefined,li);element('summary','Definizione proposta',info);
-           element('p',item.value.from_types?item.value.from_types.join(', ')+' → '+item.name+' → '+item.value.to_types.join(', '):item.value.description||'Descrizione vuota',info);
+           element('p',item.value.from_types?item.value.from_types.join(', ')+' → '+item.name+' → '+item.value.to_types.join(', '):(item.value.description||'Descrizione vuota')+(item.value.parent?' · sottotipo di '+item.value.parent:''),info);
            if(item.value.meaning)element('p',item.value.meaning,info);if(item.value.example)element('p','Esempio: '+item.value.example,info);}
          const remove=element('button','Rimuovi modifica '+(index+1),li);remove.type='button';remove.addEventListener('click',()=>{draft.patch.splice(index,1);invalidated();drawQueue();preview.focus();});});
        preview.disabled=busy||(!draft.adopt&&!draft.patch.length);
@@ -135,7 +135,7 @@ EDITOR_SCRIPT = r"""
        if(draft.patch.length+(draft.adopt?1:0)>=64){message.textContent='Limite di 64 modifiche. Rimuovi una modifica prima di aggiungerne altre.';return;}
        const f=draft.fields,item={op:f.action+'_'+f.category,name:f.name.trim()};
        if(f.action==='rename')item.to=f.to.trim();
-       if(['add','update'].includes(f.action))item.value=f.category==='type'?{description:f.description}:{from_types:f.from_types.split(',').map(x=>x.trim()),to_types:f.to_types.split(',').map(x=>x.trim()),meaning:f.meaning,example:f.example,direction:'source_to_target'};
+       if(['add','update'].includes(f.action))item.value=f.category==='type'?{description:f.description,...(f.parent.trim()?{parent:f.parent.trim()}:{})}:{from_types:f.from_types.split(',').map(x=>x.trim()),to_types:f.to_types.split(',').map(x=>x.trim()),meaning:f.meaning,example:f.example,direction:'source_to_target'};
        draft.patch.push(item);invalidated('Modifica aggiunta. Genera la preview per verificarla.');drawQueue();preview.focus();
      });
      clear.addEventListener('click',()=>{if(draft.applyPending){message.textContent='Recupera prima l’esito dell’applicazione incerta.';return;}draft.patch=[];draft.adopt=false;adopt.checked=false;draft.result=null;invalidated('Proposta svuotata. Nessun file modificato.');result.replaceChildren();drawQueue();controls.name.focus();});

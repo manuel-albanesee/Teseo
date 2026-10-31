@@ -32,6 +32,7 @@ PAGE = """<!doctype html>
 <form id="filters" class="toolbar"><div><label for="type">Tipo</label><select id="type" disabled><option value="">Tutti i tipi</option></select></div>
 <div><label for="relation">Relazione</label><select id="relation" disabled><option value="">Tutte le relazioni</option></select></div>
 <div><label for="author">Autore</label><select id="author" disabled><option value="">Tutti gli autori</option></select></div>
+<div><label for="category">Categoria</label><select id="category" disabled><option value="">Tutte le categorie</option></select></div>
 <div><label for="search">Cerca nei nodi caricati</label><input id="search" type="search" disabled></div>
 <div><label for="map-limit">Nodi nel disegno (12–2000)</label><input id="map-limit" type="number" min="12" max="2000" value="200" disabled></div><button id="apply" disabled>Applica filtri</button></form>
 <p id="counts" class="hint">Nessun dato caricato.</p><div id="map"></div>

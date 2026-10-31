@@ -71,8 +71,8 @@ def _patch(document, operations, observed):
             if action in ('add', 'update'):
                 value = operation.get('value')
                 if category == 'type':
-                    _fields(value, (), ('description',))
-                    item = ontology.TypeDef(name, value.get('description', ''))
+                    _fields(value, (), ('description', 'parent'))
+                    item = ontology.TypeDef(name, value.get('description', ''), value.get('parent', ''))
                 else:
                     _fields(value, ('from_types', 'to_types'), ('meaning', 'example', 'direction'))
                     if any(not isinstance(value[key], list) or len(value[key]) > 128 for key in ('from_types', 'to_types')):
@@ -94,6 +94,7 @@ def _patch(document, operations, observed):
                 values[found] = replace(values[found], name=target)
                 renames.append({'kind': category, 'from': name, 'to': target})
                 if category == 'type':
+                    values = [replace(item, parent=target) if item.parent == name else item for item in values]
                     relations = tuple(replace(item,
                         from_types=tuple(target if part == name else part for part in item.from_types),
                         to_types=tuple(target if part == name else part for part in item.to_types)) for item in relations)
@@ -216,8 +217,8 @@ def analyze(snapshot, patch):
                 for target_id in typed_links.get((name, old), ()):
                     target_type = base['pagine'][target_id][0].get('tipo')
                     compatible = (compatible and rule is not None
-                        and parser.tipo_ammesso(set(rule.from_types), fm.get('tipo'), target_type)
-                        and parser.tipo_ammesso(set(rule.to_types), target_type, fm.get('tipo')))
+                        and parser.tipo_ammesso(set(rule.from_types), fm.get('tipo'), target_type, after.ancestors)
+                        and parser.tipo_ammesso(set(rule.to_types), target_type, fm.get('tipo'), after.ancestors))
                 compatible = compatible and (path, old) not in bad_properties
             migrations.append({'page': path, 'property': prop, 'kind': 'rename_' + rename['kind'],
                 'from': old, 'to': new, 'deterministic': simple and not collision and compatible,

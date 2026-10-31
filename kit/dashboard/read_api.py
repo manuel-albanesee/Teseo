@@ -86,7 +86,7 @@ class ReadAPI:
                 raise ContractError("graph_corrupt", "Hash del grafo non valido")
             db = connect_graph(reference.path, reference=reference)
             metadata = dict(db.execute("SELECT key, value FROM graph_metadata"))
-            if metadata.get("builder_version") not in {"2", "3", "4", "5"}:
+            if metadata.get("builder_version") not in {"2", "3", "4", "5", "6"}:
                 raise ContractError("graph_upgrade_required", "Ricostruire esplicitamente il grafo con il kit aggiornato")
             deadline = time.monotonic() + 5
             db.set_progress_handler(lambda: time.monotonic() > deadline, 10000)
@@ -164,12 +164,12 @@ class ReadAPI:
             raise ContractError("invalid_cursor", "Cursore non valido per questa sessione") from None
 
     def graph(self, vault_id, parameters):
-        self._parameters(parameters, {"generation", "limit", "type", "relation", "author", "cursor"})
+        self._parameters(parameters, {"generation", "limit", "type", "relation", "author", "category", "cursor"})
         limit = parameters.get("limit", "100")
         if not limit.isascii() or not limit.isdecimal() or len(limit) > 3 or not 1 <= int(limit) <= 200:
             raise ContractError("invalid_query", "limit atteso fra 1 e 200")
         limit = int(limit)
-        filters = {key: parameters.get(key) for key in ("type", "relation", "author")}
+        filters = {key: parameters.get(key) for key in ("type", "relation", "author", "category")}
         if any(value is not None and (not value or len(value) > 128) for value in filters.values()):
             raise ContractError("invalid_query", "Filtro vuoto o oltre 128 caratteri")
         cursor = self._decode_cursor(parameters["cursor"]) if "cursor" in parameters else None
@@ -187,6 +187,14 @@ class ReadAPI:
                     raise ContractError("graph_upgrade_required", "Autori non disponibili: ricostruire il grafo con il kit aggiornato")
                 node_where.append("id IN " + by_author)
                 node_args.extend([filters["author"]] * 2)
+            # Faccetta (doc/16, B1): i nodi con il tag della categoria o di una sua sottocategoria
+            by_category = ("(SELECT entity_id FROM entity_tags WHERE tag IN (WITH RECURSIVE sotto(nome) AS (SELECT ? "
+                           "UNION SELECT c.nome FROM categorie c JOIN sotto s ON c.padre = s.nome) SELECT nome FROM sotto))")
+            if filters["category"]:
+                if not _has_table(db, "categorie"):
+                    raise ContractError("graph_upgrade_required", "Categorie non disponibili: ricostruire il grafo con il kit aggiornato")
+                node_where.append("id IN " + by_category)
+                node_args.append(filters["category"])
             if filters["type"]:
                 node_where.append("tipo = ?")
                 node_args.append(filters["type"])
@@ -209,6 +217,9 @@ class ReadAPI:
             if filters["author"]:
                 edge_where.append("source_id IN " + by_author + " AND target_id IN " + by_author)
                 edge_args.extend([filters["author"]] * 4)
+            if filters["category"]:
+                edge_where.append("source_id IN " + by_category + " AND target_id IN " + by_category)
+                edge_args.extend([filters["category"]] * 2)
             if cursor and cursor["edges_after"] is not None:
                 edge_where.append("(source_id,target_id,type) > (?,?,?)")
                 edge_args.extend(cursor["edges_after"])
@@ -367,7 +378,7 @@ class ReadAPI:
     def _ontology(db, reference):
         source = ReadAPI._document(db, "Wiki reference.md")
         document = _parser().parse_ontology(source)
-        if _has_table(db, "onto_tipi"):  # builder 5 (doc/16): l'ontologia che il builder ha usato, già nel grafo
+        if _has_table(db, "categorie"):  # builder 6 (doc/16): l'ontologia che il builder ha usato, già nel grafo
             constraints = {}
             for relation, side, kind in db.execute("SELECT relazione, lato, tipo FROM onto_vincoli ORDER BY posizione"):
                 constraints.setdefault((relation, side), []).append(kind)
@@ -375,9 +386,15 @@ class ReadAPI:
                           "to_types": constraints.get((name, "a"), []), "direction": direction,
                           "meaning": meaning, "example": example} for name, meaning, example, direction in db.execute(
                 "SELECT nome, significato, esempio, verso FROM onto_relazioni ORDER BY nome")]
-            types = [name for (name,) in db.execute("SELECT nome FROM onto_tipi ORDER BY posizione")]
+            rows = db.execute("SELECT nome, padre FROM onto_tipi ORDER BY posizione").fetchall()
+            types, parents = [name for name, _ in rows], {name: parent for name, parent in rows if parent}
             declared = dict(db.execute("SELECT chiave, valore FROM onto_metadata"))["tipi"] == "dichiarati"
+            categories = [{"name": name, "broader": broader or "", "description": description} for name, broader, description
+                          in db.execute("SELECT nome, padre, descrizione FROM categorie ORDER BY posizione")]
         else:  # generazioni precedenti: stessa risposta ricavata dal Markdown memorizzato
+            parents = {item.name: item.parent for item in document.types or () if item.parent}
+            categories = [{"name": item.name, "broader": item.broader, "description": item.description}
+                          for item in document.categories or ()]
             relations = [{"name": item.name, "from_types": list(item.from_types), "to_types": list(item.to_types),
                           "direction": item.direction, "meaning": item.meaning, "example": item.example}
                          for item in sorted(document.relations, key=lambda item: item.name)]
@@ -392,7 +409,7 @@ class ReadAPI:
         opaque = [html.escape(document.source[span.start:span.end].decode('utf-8'), quote=False)
                   for span in document.opaque_sections]
         return {**_revision(reference), "types": types, "types_source": "declared" if declared else "observed_and_constraints",
-                "relations": relations, "opaque_sections": opaque,
+                "relations": relations, "type_parents": parents, "categories": categories, "opaque_sections": opaque,
                 "schema_digest": document.digest,
                 "source_spans": {key: {"start": span.start, "end": span.end} for key, span in document.source_spans.items()},
                 "editable": document.editable, "catalog_adoption_required": not document.catalog_present,

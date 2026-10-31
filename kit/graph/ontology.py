@@ -1,8 +1,9 @@
 """Ontologia Markdown lossless: parser e proposte pure, nessun accesso al filesystem.
 
 Grammatica volutamente limitata: sezioni ATX h2, una tabella contigua per sezione,
-2 colonne per i tipi e 3/5 per le relazioni. Contenuto ambiguo resta manuale.
-Gli offset sono byte UTF-8; il serializer sostituisce solo tabelle riconosciute.
+2/3 colonne per i tipi (la terza è «Sottotipo di»), 3/5 per le relazioni, 3 per le categorie
+(«Categoria | Più ampia | Descrizione», doc/16). Contenuto ambiguo resta manuale.
+Gli offset sono byte UTF-8; il serializer sostituisce solo tabelle riconosciute: le categorie si conservano byte per byte.
 """
 from dataclasses import dataclass
 import hashlib
@@ -13,7 +14,7 @@ MAX_BYTES = 2 * 1024 * 1024
 MAX_ROWS = 2048
 SPECIAL = frozenset({'tipo', 'tags', 'fonti', 'aggiornato', 'aliases', 'relazioni_dettaglio', 'menziona', 'documentato_in'})
 WILDCARDS = frozenset({'qualsiasi', 'stesso tipo'})
-HEADINGS = {'Tipi ammessi': 'types', 'Relazioni tipizzate': 'relations'}
+HEADINGS = {'Tipi ammessi': 'types', 'Relazioni tipizzate': 'relations', 'Categorie': 'categories'}
 
 
 class OntologyError(ValueError):
@@ -40,6 +41,14 @@ class Issue:
 class TypeDef:
     name: str
     description: str = ''
+    parent: str = ''  # «Sottotipo di»: vuoto per un tipo radice
+
+
+@dataclass(frozen=True)
+class Category:
+    name: str
+    broader: str = ''  # «Più ampia» (skos:broader): vuota per una categoria radice
+    description: str = ''
 
 
 @dataclass(frozen=True)
@@ -64,6 +73,8 @@ class Ontology:
     catalog_present: bool
     convention_types: tuple[str, ...]
     adoption_offset: int | None
+    categories: tuple[Category, ...] | None = None
+    categories_span: Span | None = None
 
     @property
     def digest(self):
@@ -71,7 +82,8 @@ class Ontology:
 
     @property
     def source_spans(self):
-        return {key: span for key, span in (('types', self.types_span), ('relations', self.relations_span)) if span}
+        return {key: span for key, span in (('types', self.types_span), ('relations', self.relations_span),
+                                            ('categories', self.categories_span)) if span}
 
     @property
     def structurally_editable(self):
@@ -80,6 +92,19 @@ class Ontology:
     @property
     def editable(self):
         return self.types is not None and self.structurally_editable
+
+    @property
+    def ancestors(self):
+        """{tipo: (padre, nonno, …)} dei tipi dichiarati; vuoto senza catalogo. Un ciclo (errore dello schema) si ferma."""
+        parents = {item.name: item.parent for item in self.types or () if item.parent}
+        result = {}
+        for item in self.types or ():
+            chain, current = [], parents.get(item.name)
+            while current and current not in chain and current != item.name:
+                chain.append(current)
+                current = parents.get(current)
+            result[item.name] = tuple(chain)
+        return result
 
     @property
     def vocabulary(self):
@@ -110,19 +135,39 @@ def _text(value):
             and not any(ord(char) < 32 or 0xD800 <= ord(char) <= 0xDFFF for char in value))
 
 
-def validate(types, relations):
+def _cycles(parents):
+    """I nomi che stanno in un ciclo di `parents` ({figlio: padre})."""
+    found = set()
+    for start in parents:
+        seen, current = [], start
+        while current in parents and current not in seen:
+            seen.append(current)
+            current = parents[current]
+        if current in seen:
+            found.update(seen[seen.index(current):])
+    return found
+
+
+def validate(types, relations, categories=None):
     """Validazione del modello; impatto sulle pagine demandato al builder/preview."""
     if (types is not None and not types) or len(types or ()) > MAX_ROWS or len(relations) > MAX_ROWS:
         return (Issue('catalog_limit', 'Catalogo vuoto o oltre 2048 righe'),)
     issues, seen = [], set()
     for item in types or ():
-        if not isinstance(item, TypeDef) or not _name(item.name) or item.name in WILDCARDS or not _text(item.description):
+        if (not isinstance(item, TypeDef) or not _name(item.name) or item.name in WILDCARDS or not _text(item.description)
+                or not isinstance(item.parent, str) or (item.parent and not _name(item.parent))):
             issues.append(Issue('invalid_type', 'Nome o descrizione tipo non rappresentabile nella tabella v1'))
             continue
         if item.name.casefold() in seen:
             issues.append(Issue('duplicate_type', 'Tipo duplicato: ' + item.name))
         seen.add(item.name.casefold())
     known = {item.name for item in types or () if isinstance(item, TypeDef) and isinstance(item.name, str)}
+    parents = {item.name: item.parent for item in types or () if isinstance(item, TypeDef) and item.parent}
+    for name, parent in parents.items():
+        if parent not in known or parent == name:
+            issues.append(Issue('unknown_parent', name + ': sottotipo di un tipo non dichiarato: ' + str(parent)))
+    for name in sorted(_cycles(parents)):
+        issues.append(Issue('type_cycle', 'Gerarchia dei tipi circolare: ' + name))
     seen = set()
     for item in relations:
         if (not isinstance(item, Relation) or not _name(item.name) or not _text(item.meaning)
@@ -147,6 +192,25 @@ def validate(types, relations):
                 for name in allowed:
                     if name not in WILDCARDS and name not in known:
                         issues.append(Issue('unknown_type', item.name + ': tipo non dichiarato: ' + name))
+    if categories is not None:
+        if not categories or len(categories) > MAX_ROWS:
+            issues.append(Issue('catalog_limit', 'Categorie vuote o oltre 2048 righe'))
+        names, seen = set(), set()
+        for item in categories:
+            if (not isinstance(item, Category) or not _name(item.name) or not _text(item.description)
+                    or not isinstance(item.broader, str) or (item.broader and not _name(item.broader))):
+                issues.append(Issue('invalid_category', 'Nome o descrizione categoria non rappresentabile nella tabella'))
+                continue
+            if item.name.casefold() in seen:
+                issues.append(Issue('duplicate_category', 'Categoria duplicata: ' + item.name))
+            seen.add(item.name.casefold())
+            names.add(item.name)
+        broader = {item.name: item.broader for item in categories if isinstance(item, Category) and item.broader}
+        for name, parent in broader.items():
+            if parent not in names or parent == name:
+                issues.append(Issue('unknown_broader', name + ': categoria più ampia non dichiarata: ' + str(parent)))
+        for name in sorted(_cycles(broader)):
+            issues.append(Issue('category_cycle', 'Gerarchia delle categorie circolare: ' + name))
     return tuple(issues)
 
 
@@ -294,7 +358,9 @@ def parse(source):
             table = [_cells(lines[index][2]) for index in rows]
             header = [cell.casefold().replace(' (tipo)', '') for cell in table[0]]
             expected = len(header)
-            if (key == 'types' and header not in (['tipo', 'descrizione'], ['nome', 'descrizione'])) or (key == 'relations' and (expected not in (3, 5) or header[0] not in ('nome', 'relazione') or header[1:3] != ['da', 'a'] or (expected == 5 and header[3:] != ['significato', 'esempio']))):
+            if (key == 'types' and header not in (['tipo', 'descrizione'], ['nome', 'descrizione'],
+                                                  ['tipo', 'descrizione', 'sottotipo di'], ['nome', 'descrizione', 'sottotipo di'])) or (
+                    key == 'categories' and header != ['categoria', 'più ampia', 'descrizione']) or (key == 'relations' and (expected not in (3, 5) or header[0] not in ('nome', 'relazione') or header[1:3] != ['da', 'a'] or (expected == 5 and header[3:] != ['significato', 'esempio']))):
                 raise ValueError('Intestazione tabella non riconosciuta')
             if len(table) < 2 or len(table[1]) != expected or not all(re.fullmatch(r':?-{3,}:?', cell) for cell in table[1]):
                 raise ValueError('Separatore tabella non valido')
@@ -303,15 +369,18 @@ def parse(source):
             if any('<!--' in lines[index][3] or '-->' in lines[index][3] for index in rows):
                 raise ValueError('Commento nella tabella: usare editing manuale')
             if key == 'types':
-                parsed[key] = tuple(TypeDef(_identifier(row[0]), row[1]) for row in table[2:])
+                parsed[key] = tuple(TypeDef(_identifier(row[0]), row[1], _identifier(row[2]) if expected == 3 else '')
+                                    for row in table[2:])
+            elif key == 'categories':
+                parsed[key] = tuple(Category(_identifier(row[0]), _identifier(row[1]), row[2]) for row in table[2:])
             else:
                 parsed[key] = tuple(Relation(_identifier(row[0]), tuple(item.strip() for item in row[1].split(',')),
                     tuple(item.strip() for item in row[2].split(',')), row[3] if expected == 5 else '', row[4] if expected == 5 else '') for row in table[2:])
             spans[key] = Span(lines[rows[0]][0], lines[rows[-1]][1])
         except ValueError as error:
             issues.append(Issue('unrecognized_table', str(error), rows[0] + 1))
-    types, relations = parsed.get('types'), parsed.get('relations', ())
-    issues.extend(validate(types, relations))
+    types, relations, categories = parsed.get('types'), parsed.get('relations', ()), parsed.get('categories')
+    issues.extend(validate(types, relations, categories))
     if len(conventions) > 1:
         issues.append(Issue('ambiguous_conventions', 'Più elenchi tipo diversi negli esempi YAML', severity='warning'))
     opaque, offset = [], 0
@@ -323,12 +392,16 @@ def parse(source):
         opaque.append(Span(offset, len(source)))
     return Ontology(source, types, relations, spans.get('types'), spans.get('relations'), tuple(opaque),
                     tuple(issues), catalog_present, next(iter(conventions)) if len(conventions) == 1 else (),
-                    (lines[sections['relations'][0]][0] + (3 if sections['relations'][0] == 0 and source.startswith(b'\xef\xbb\xbf') else 0)) if 'relations' in sections else None)
+                    (lines[sections['relations'][0]][0] + (3 if sections['relations'][0] == 0 and source.startswith(b'\xef\xbb\xbf') else 0)) if 'relations' in sections else None,
+                    categories, spans.get('categories'))
 
 
 def _table(types=None, relations=None, newline=b'\n', trailing=True):
     escape = lambda value: value.replace('\\', '\\\\').replace('|', '\\|')
-    if types is not None:
+    if types is not None and any(item.parent for item in types):
+        rows = [['Tipo', 'Descrizione', 'Sottotipo di'], ['---'] * 3] + [
+            ['`' + item.name + '`', item.description, item.parent] for item in types]
+    elif types is not None:
         rows = [['Tipo', 'Descrizione'], ['---', '---']] + [['`' + item.name + '`', item.description] for item in types]
     else:
         rows = [['Relazione', 'Da (tipo)', 'A (tipo)', 'Significato', 'Esempio'], ['---'] * 5] + [

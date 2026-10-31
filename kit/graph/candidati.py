@@ -30,7 +30,7 @@ from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 
-from build_graph import CODICE, LINK, SPEZZA, bersaglio, leggi, leggi_vocabolario, norm, tipo_ammesso
+from build_graph import CODICE, LINK, SPEZZA, bersaglio, leggi, leggi_vocabolario, norm, parse_ontology, tipo_ammesso
 from domande import TAG_ENTROPIA
 from recall import GENERICHE, PAROLE_COMUNI, radice
 
@@ -240,6 +240,7 @@ def carica(qui):
     d.grafo_data = datetime.fromtimestamp(grafo.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
     rif = vault / "Wiki reference.md"
     d.vocabolario = leggi_vocabolario(rif.read_text(encoding="utf-8")) if rif.exists() else None
+    d.antenati = parse_ontology(rif.read_text(encoding="utf-8")).ancestors if rif.exists() else {}  # sottotipi (doc/16)
     # banco: le domande da cercare sono quelle con attese non vuote e pagine mancanti o senza semi dal grafo
     banco = leggi_json(qui / "banco.json", avvisi) or []
     base = {v["domanda"]: v for v in (leggi_json(qui / "banco_base.json", avvisi) or [])}
@@ -417,7 +418,7 @@ def sezione_relazioni(d):
             continue
         ta, tb = d.pagine[a]["tipo"], d.pagine[b]["tipo"]
         ammesse = sorted(rel for rel, (da, a_) in d.vocabolario.items()
-                         if tipo_ammesso(da, ta, tb) and tipo_ammesso(a_, tb, ta))
+                         if tipo_ammesso(da, ta, tb, d.antenati) and tipo_ammesso(a_, tb, ta, d.antenati))
         fr = frase_link(d, a, b)
         if not ammesse or fr is None:
             continue

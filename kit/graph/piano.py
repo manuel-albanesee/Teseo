@@ -162,7 +162,8 @@ def controlla(vault, percorso):
             continue
         ammessi_da, ammessi_a = vocabolario[relazione]
         t_da, t_a = tipo_di(da), tipo_di(a)
-        if not tipo_ammesso(ammessi_da, t_da, t_a) or not tipo_ammesso(ammessi_a, t_a, t_da):
+        antenati = ontologia.ancestors if ontologia else {}
+        if not tipo_ammesso(ammessi_da, t_da, t_a, antenati) or not tipo_ammesso(ammessi_a, t_a, t_da, antenati):
             segnala("tipi_non_ammessi", n, f"[[{bersaglio(da)}]] ({t_da}) —{relazione}→ [[{bersaglio(a)}]] ({t_a}): tipi non ammessi")
     visti = {}
     for n, riga in sezioni.get("alias", []):

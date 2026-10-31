@@ -151,6 +151,9 @@ Vocabolario delle relazioni: tabella "## Relazioni tipizzate" in Wiki reference.
 Ontologia nel grafo (doc/16, fase A): tabelle `onto_tipi`, `onto_relazioni`, `onto_vincoli`, `onto_metadata`, copia in
 sola lettura di Wiki reference (righe_ontologia), così una query interroga lo schema insieme ai dati. L'autorità resta
 il Markdown: le tabelle si riscrivono a ogni build.
+Tassonomia (doc/16, B1): «Sottotipo di» nei «Tipi ammessi» (un sottotipo soddisfa i vincoli dei suoi antenati,
+tipo_ammesso) e sezione «## Categorie» (gerarchia `categorie`); con la sezione ogni tag deve essere una categoria o un
+marcatore di sistema (MARCATORI_TAG). I tag delle pagine stanno anche, uno per riga, in `entity_tags`.
 
 Uso:
   python .graph/build_graph.py            ricostruisce graph.sqlite
@@ -173,7 +176,7 @@ Una pagina con frontmatter YAML non valido non si salta: il build si ferma con u
 | `leggi(path)` | — |
 | `leggi_testo(testo, nome)` | Parser condiviso per file e documenti di una generazione readonly. |
 | `leggi_vocabolario(ref)` | — |
-| `tipo_ammesso(ammessi, tipo, tipo_altro)` | — |
+| `tipo_ammesso(ammessi, tipo, tipo_altro, antenati=None)` | True se `tipo` soddisfa i tipi `ammessi` di un vincolo: è fra gli ammessi, o lo è un suo antenato in `antenati` |
 | `parse_snapshot(vault)` | Legge i sorgenti in memoria senza scrivere il DB. |
 | `parse_documents(documents)` | Stessi controlli del builder su documenti già acquisiti, senza filesystem. |
 | `righe_ontologia(snapshot)` | Righe delle tabelle onto_* di uno snapshot letto: l'ontologia di Wiki reference come il builder l'ha usata. |
@@ -734,8 +737,9 @@ Registrato in .claude/settings.json; si prova a mano con:
 Ontologia Markdown lossless: parser e proposte pure, nessun accesso al filesystem.
 
 Grammatica volutamente limitata: sezioni ATX h2, una tabella contigua per sezione,
-2 colonne per i tipi e 3/5 per le relazioni. Contenuto ambiguo resta manuale.
-Gli offset sono byte UTF-8; il serializer sostituisce solo tabelle riconosciute.
+2/3 colonne per i tipi (la terza è «Sottotipo di»), 3/5 per le relazioni, 3 per le categorie
+(«Categoria | Più ampia | Descrizione», doc/16). Contenuto ambiguo resta manuale.
+Gli offset sono byte UTF-8; il serializer sostituisce solo tabelle riconosciute: le categorie si conservano byte per byte.
 
 | Classe | Descrizione |
 | --- | --- |
@@ -743,13 +747,14 @@ Gli offset sono byte UTF-8; il serializer sostituisce solo tabelle riconosciute.
 | `Span` | — |
 | `Issue` | — |
 | `TypeDef` | — |
+| `Category` | — |
 | `Relation` | — |
 | `Ontology` | — |
 | `CatalogProposal` | — |
 
 | Funzione | Descrizione |
 | --- | --- |
-| `validate(types, relations)` | Validazione del modello; impatto sulle pagine demandato al builder/preview. |
+| `validate(types, relations, categories=None)` | Validazione del modello; impatto sulle pagine demandato al builder/preview. |
 | `parse(source)` | — |
 | `serialize(document, *, types=None, relations=None)` | — |
 | `propose_type_catalog(document, observed_types=())` | — |

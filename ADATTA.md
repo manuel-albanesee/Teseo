@@ -36,6 +36,10 @@ Gli script leggono tre tabelle:
   aggiungi una riga per ogni relazione che il vault usa davvero (vedi passo 4).
 - **`## Chiavi delle fonti`** in `Wiki reference.md`: una riga per fonte, con la chiave tra backtick nella prima
   colonna (`` | `call-2026-09-10` | raw/call-2026-09-10.md | … | ``). Le pagine citano le fonti con quella chiave.
+- Facoltative, in `Wiki reference.md`: **`## Tipi ammessi`** (`| Tipo | Descrizione |`, con una terza colonna
+  `Sottotipo di` per una gerarchia di tipi) e **`## Categorie`** (`| Categoria | Più ampia | Descrizione |`): con le
+  categorie i `tags` delle pagine diventano un vocabolario controllato e la dashboard filtra il grafo per categoria
+  ([doc/16](doc/16-tassonomia-ontologia-nel-grafo.md)). Senza queste sezioni tipi e tag restano liberi.
 - **`## Pagine`** in `index.md`: righe `| [[Pagina]] | descrizione |`. La descrizione finisce nel contesto che Claude
   riceve. Facoltativa, ma utile. Nello stesso file, `## Punti aperti nel vault` raccoglie le questioni aperte.
 
@@ -50,6 +54,7 @@ trattata come una relazione** e deve contenere link tra virgolette (`usa: "[[Con
 | `relazione 'related' fuori vocabolario` | Una proprietà con link che non è nel vocabolario. Se dice davvero *come* due pagine sono legate, rinominala con una relazione del vocabolario (`usa`, `parte_di`, `riguarda`…) o aggiungi la sua riga alla tabella del passo 3. Se dice solo «collegato», toglila: il link nel testo basta. |
 | `tipi non ammessi dal vocabolario` | Il `tipo` di una delle due pagine non è tra quelli ammessi da quella relazione: correggi il tipo o la relazione. |
 | `fonte '…' usata ma non censita` | Aggiungi la chiave alla tabella delle fonti. |
+| `tag '…' non è una categoria di Wiki reference` | Solo con la sezione `## Categorie`: usa una categoria della tabella o aggiungila (con la sua categoria più ampia). |
 
 Ogni pagina dovrebbe avere un `tipo` (`sistema`, `processo`, `progetto`, `persona`, `concetto`, `episodio`…):
 `sistema`, `processo` e `progetto` senza `referente` diventano domande aperte, le catene partono da processi e sistemi.

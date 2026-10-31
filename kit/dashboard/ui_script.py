@@ -169,7 +169,9 @@ SCRIPT = r"""
  }
  function renderOntology(body) {
    const container=$('ontology-published');container.replaceChildren();element('h3','Vocabolario pubblicato · sorgente → destinazione',container);
-   element('p','Tipi '+(body.types_source==='declared'?'dichiarati':'osservati e ricavati dai vincoli')+': '+(body.types.join(', ')||'nessuno'),container);
+   const parents=body.type_parents||{};
+   element('p','Tipi '+(body.types_source==='declared'?'dichiarati':'osservati e ricavati dai vincoli')+': '+(body.types.map(type=>parents[type]?type+' (sottotipo di '+parents[type]+')':type).join(', ')||'nessuno'),container);
+   if((body.categories||[]).length)element('p','Categorie: '+body.categories.map(item=>item.broader?item.name+' (in '+item.broader+')':item.name).join(', '),container);
    for(const relation of body.relations) {const article=element('article',undefined,container);element('h4',relation.name,article);element('p',relation.from_types.join(', ')+' → '+relation.to_types.join(', '),article);element('p',relation.meaning||'Significato non dichiarato.',article);if(relation.example)element('p','Esempio: '+relation.example,article);}
    const details=element('details',undefined,container);element('summary','Schema completo · Markdown come testo',details);element('pre',plain(body.text),details);
  }
@@ -192,9 +194,9 @@ SCRIPT = r"""
    $('operation-list').replaceChildren();
    ++operationPoll;$('rebuild').disabled=true;$('operation').textContent='';
    const run=++epoch;++graphRequest;++detailRequest;state=null;invalid=false;loadingGraph=false;nodes=[];edges=[];cursor=null;filters={};
-   for(const id of ['type','relation','author','search','map-limit','apply'])$(id).disabled=true;
+   for(const id of ['type','relation','author','category','search','map-limit','apply'])$(id).disabled=true;
    vocabulary={relations:[],types:[]};$('author').replaceChildren(new Option('Tutti gli autori',''));
-   $('type').replaceChildren(new Option('Tutti i tipi',''));$('relation').replaceChildren(new Option('Tutte le relazioni',''));$('search').value='';
+   $('type').replaceChildren(new Option('Tutti i tipi',''));$('relation').replaceChildren(new Option('Tutte le relazioni',''));$('category').replaceChildren(new Option('Tutte le categorie',''));$('search').value='';
    for(const id of ['nodes','edges','map','ontology-published','diagnostics'])$(id).replaceChildren();
    $('detail').replaceChildren();element('h3','Dettaglio nodo',$('detail'));element('p','Seleziona un nodo dalla lista o dal grafo.',$('detail'));
    $('more').hidden=true;$('notice').textContent='';$('revision').textContent='';$('counts').textContent='Caricamento…';
@@ -220,10 +222,11 @@ SCRIPT = r"""
      if(results[0].status==='fulfilled') {const ontology=results[0].value;renderOntology(ontology);vocabulary={relations:ontology.relations.map(item=>item.name),types:ontology.types};
        for(const type of ontology.types)$('type').append(new Option(type,type));
        for(const relation of ontology.relations)$('relation').append(new Option(relation.name,relation.name));
+       for(const category of ontology.categories||[])$('category').append(new Option(category.broader?category.name+' ('+category.broader+')':category.name,category.name));
      } else {element('p','Ontologia pubblicata non disponibile: '+results[0].reason.message,$('ontology-published'));failure(results[0].reason);}
      if(results[1].status==='fulfilled')renderDiagnostics(results[1].value);else{element('p','Diagnostica non disponibile: '+results[1].reason.message,$('diagnostics'));admin.exportInto($('diagnostics'));failure(results[1].reason);}
      if(results[2].status==='fulfilled')for(const author of results[2].value.authors)$('author').append(new Option(author.name+' ('+author.created+' create, '+author.modified+' modificate)',author.name));
-     for(const key of ['type','relation','author','search','map-limit','apply'])$(key).disabled=invalid;
+     for(const key of ['type','relation','author','category','search','map-limit','apply'])$(key).disabled=invalid;
      if(invalid)$('counts').textContent='Caricamento interrotto: aggiorna la vista per leggere la nuova generazione.';
      else await loadGraph();
    } catch(error){if(run===epoch){$('counts').textContent='Dati non disponibili.';failure(error);}}
@@ -238,7 +241,7 @@ SCRIPT = r"""
  }
  $('vault').addEventListener('change',selectVault);$('refresh').addEventListener('click',selectVault);
  $('search').addEventListener('input',renderGraph);$('map-limit').addEventListener('change',renderGraph);$('more').addEventListener('click',()=>loadGraph(true));$('load-all').addEventListener('click',loadAll);
- $('filters').addEventListener('submit',event=>{event.preventDefault();if(invalid)return;filters={};if($('type').value)filters.type=$('type').value;if($('relation').value)filters.relation=$('relation').value;if($('author').value)filters.author=$('author').value;nodes=[];edges=[];cursor=null;renderGraph();loadGraph();});
+ $('filters').addEventListener('submit',event=>{event.preventDefault();if(invalid)return;filters={};if($('type').value)filters.type=$('type').value;if($('relation').value)filters.relation=$('relation').value;if($('author').value)filters.author=$('author').value;if($('category').value)filters.category=$('category').value;nodes=[];edges=[];cursor=null;renderGraph();loadGraph();});
  document.querySelectorAll('[data-view]').forEach(button=>button.addEventListener('click',()=>{for(const view of ['graph','ontology','diagnostics'])$(view).hidden=view!==button.dataset.view;document.querySelectorAll('[data-view]').forEach(item=>item.setAttribute('aria-pressed',String(item===button)));}));
  $('attach').addEventListener('submit',async event=>{event.preventDefault();$('connect').disabled=true;
    try {const vault=await api('/api/v1/vaults/attach',{path:$('path').value});await refreshVaults(vault.vault_id);$('message').textContent='Vault collegato. Nessun file modificato.';}
