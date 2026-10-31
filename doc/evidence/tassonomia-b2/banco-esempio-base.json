@@ -1,0 +1,106 @@
+[
+  {
+    "domanda": "a chi chiedo il ticket della settimana per poter rilasciare?",
+    "semi_grafo": 0,
+    "semi": [
+      "ServiceDesk",
+      "Acronimo del progetto"
+    ],
+    "testo": true,
+    "portate": [
+      "Acronimo del progetto",
+      "Console di rilascio",
+      "Incident settimanale",
+      "ServiceDesk"
+    ],
+    "token": 70,
+    "ms": 2,
+    "tipo": "locale",
+    "attese": [
+      "Incident settimanale",
+      "Anna Rossi"
+    ],
+    "mancanti": [
+      "Anna Rossi"
+    ],
+    "rumore": 3
+  },
+  {
+    "domanda": "dove si aprono le segnalazioni?",
+    "semi_grafo": 0,
+    "semi": [],
+    "testo": false,
+    "portate": [],
+    "token": 0,
+    "ms": 1,
+    "tipo": "locale",
+    "attese": [
+      "ServiceDesk"
+    ],
+    "mancanti": [
+      "ServiceDesk"
+    ],
+    "rumore": 0
+  },
+  {
+    "domanda": "quale sigla va nelle richieste?",
+    "semi_grafo": 0,
+    "semi": [],
+    "testo": false,
+    "portate": [],
+    "token": 0,
+    "ms": 1,
+    "tipo": "locale",
+    "attese": [
+      "Acronimo del progetto"
+    ],
+    "mancanti": [
+      "Acronimo del progetto"
+    ],
+    "rumore": 0
+  },
+  {
+    "domanda": "elenca i sistemi che abbiamo",
+    "semi_grafo": 0,
+    "semi": [],
+    "testo": false,
+    "portate": [],
+    "token": 0,
+    "ms": 1,
+    "tipo": "globale",
+    "attese": [
+      "Gestionale",
+      "Modulo fatture",
+      "Console di rilascio",
+      "ServiceDesk"
+    ],
+    "mancanti": [
+      "Gestionale",
+      "Modulo fatture",
+      "Console di rilascio",
+      "ServiceDesk"
+    ],
+    "rumore": 0
+  },
+  {
+    "domanda": "quali attività servono per pubblicare una nuova versione?",
+    "semi_grafo": 0,
+    "semi": [],
+    "testo": false,
+    "portate": [],
+    "token": 0,
+    "ms": 1,
+    "tipo": "globale",
+    "attese": [
+      "Rilascio in produzione",
+      "Incident settimanale",
+      "Console di rilascio"
+    ],
+    "mancanti": [
+      "Rilascio in produzione",
+      "Incident settimanale",
+      "Console di rilascio"
+    ],
+    "rumore": 0
+  }
+]

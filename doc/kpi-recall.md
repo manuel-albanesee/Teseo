@@ -41,6 +41,10 @@ Pagine portate, domande complete e rumore vanno lette insieme.
 
 ## Perché il massimo non è un numero fisso
 
+Il campo facoltativo `tipo` di una domanda vale `locale` (su un'entità, predefinito) o `globale` (su un insieme di
+pagine: «elenca i sistemi»). Se il banco ha entrambi i tipi, il riepilogo e il saldo del confronto si stampano anche
+per tipo: un miglioramento delle globali non deve nascondere un calo delle locali ([doc/16](16-tassonomia-ontologia-nel-grafo.md), B2).
+
 Il denominatore è la **somma delle pagine `attese` di tutte le domande del banco**. Nel vault ISP, il
 27-10-2026: 106 domande, di cui 74 con una pagina attesa, 20 con due, 4 con tre, 2 con quattro e 6 con
 nessuna (casi negativi: la domanda è fuori tema e il recall non deve portare nulla). Il totale è

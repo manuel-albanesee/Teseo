@@ -30,7 +30,7 @@ Il kit software resta distinto dal repository dati. Markdown è l'autorità dell
 | 11 | [Piano per chiudere i punti aperti](11-piano-completamento.md) | 10 | CI su tre sistemi, collaudo reale, client AI, PR, adozione legacy, pagine create/rinominate, scala |
 | 14 | [Convenzioni ICM e lavorazioni della wiki](14-piano-icm.md) | 4, 9 | Implementato (B5 deciso diversamente): contratti nelle skill, guardia contro la deriva, correzioni come segnale; pipeline ICM configurabili che leggono la wiki e producono documenti derivati |
 | 15 | [Decisione: condivisione delle lavorazioni](15-condivisione-lavorazioni.md) | 14 | Proposta: le lavorazioni restano personali; si condividono a mano con `esporta`/`nuova --modelli`; punti da modificare e criteri per riaprire la condivisione nel repository dati |
-| 16 | [Tassonomia e ontologia dentro il grafo](16-tassonomia-ontologia-nel-grafo.md) | 3 | Fase A e voce B1 implementate: ontologia nelle tabelle `onto_*`, sottotipi, categorie con tag controllati e filtro per categoria; da fare B2–B4 (misura per tipo di domanda, categoria come seme aggregato, panoramiche); proposte C–E, sempre su SQLite |
+| 16 | [Tassonomia e ontologia dentro il grafo](16-tassonomia-ontologia-nel-grafo.md) | 3 | Fase A, voci B1 e B2 implementate: ontologia nelle tabelle `onto_*`, sottotipi, categorie con tag controllati e filtro per categoria, banco misurato per domande locali e globali; da fare B3–B4 (categoria come seme aggregato, panoramiche); proposte C–E, sempre su SQLite |
 
 ```mermaid
 flowchart LR

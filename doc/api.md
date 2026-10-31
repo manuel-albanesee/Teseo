@@ -86,8 +86,9 @@ Backup consistente dei DB personali di un vault con manifest compatibile.
 
 Materiale e controllo del banco di misura del recall: le domande che il vault deve saper trovare.
 
-Il banco (.graph/banco.json) è una lista di {"domanda", "attese", "origine", "note"}: la domanda, le pagine che il
-recall deve portare, da dove viene (sintesi, hub, isolata, atteso_ko, manuale) e perché. misura.py lo misura nella
+Il banco (.graph/banco.json) è una lista di {"domanda", "attese", "origine", "note", "tipo"}: la domanda, le pagine che
+il recall deve portare, da dove viene (sintesi, hub, isolata, atteso_ko, manuale), perché e, facoltativo, il tipo di
+domanda: «locale» (un'entità, predefinito) o «globale» (un insieme di pagine), che misura.py riepiloga a parte. misura.py lo misura nella
 sezione BANCO, che è informativa e non fa uscire con 1. Le domande le scrive chi usa il banco: questo script non ne crea.
   --semi      scrive .graph/banco_semi.json, il materiale da cui scrivere le domande:
               (a) le domande di sintesi.py --tutte con le pagine della risposta: dall'uscita JSON di sintesi.py,
@@ -95,7 +96,8 @@ sezione BANCO, che è informativa e non fa uscire con 1. Le domande le scrive ch
               (b) i 15 hub più citati con menziona che non hanno relazioni tipizzate in entrata;
               (c) le pagine isolate nel grafo tipizzato: nessuna relazione tipizzata in entrata né in uscita.
               Per ogni pagina: id, tipo, descrizione, alias, i 10 vicini più collegati e il percorso del file.
-  --verifica  controlla banco.json. ERRORE (exit 1): pagina attesa inesistente, domanda doppia, voce malformata.
+  --verifica  controlla banco.json. ERRORE (exit 1): pagina attesa inesistente, domanda doppia, voce malformata,
+              tipo diverso da locale e globale.
               AVVISO (exit 0): la domanda usa metà delle parole del titolo di una pagina attesa, e il test sarebbe
               banale. Conta solo il titolo, cioè il nome della pagina, non gli alias; non vale per atteso_ko.
 
@@ -621,11 +623,13 @@ il recall vede il miglioramento senza rompere la CI. L'exit resta 0 finché i ca
 Poi il banco (BANCO, .graph/banco.json: le domande le scrive chi lo usa, banco.py --semi dà il materiale e
 banco.py --verifica lo controlla): domande con le pagine che il vault deve portare, scritte senza le parole dei titoli.
 Si misurano con lo stesso calcolo di misura_recall; senza semi per nome, con il ripiego sul testo, segnalato «T».
-Una riga per domanda e il riepilogo: pagine attese portate, domande complete, token medi, domande senza semi.
+Una riga per domanda e il riepilogo: pagine attese portate, domande complete, token medi, domande senza semi; poi lo
+stesso riepilogo per tipo di domanda (campo «tipo» del banco: «locale», su un'entità, predefinito; «globale», su un
+insieme di pagine, doc/16 B2), perché una modifica che aiuta le globali non nasconda un calo delle locali.
 È informativo: non fa uscire con 1. Senza banco.json la sezione non si stampa.
 --banco-salva FILE scrive i risultati per domanda; --banco-confronta FILE li confronta con quel salvataggio: per
 domanda MIGLIORATA o PEGGIORATA (pagine attese, e rumore, cioè pagine portate ma non attese), con la variazione dei
-token, poi il saldo; --solo-banco stampa solo il banco.
+token, poi il saldo, anche per tipo di domanda; --solo-banco stampa solo il banco.
 Con --routing non si chiama nessun modello: per ogni domanda di DOMANDE (destinazione in ATTESE) e di ROUTING
 si confronta la destinazione attesa con quella di modello_hook.instradamento, con una sessione Opus simulata.
 La correttezza automatica è solo un'approssimazione (regex sulla risposta): le risposte, salvate in --out, vanno rilette.
@@ -646,6 +650,7 @@ Uso:
 | `esito_banco(db, info, domanda)` | Le pagine che il recall porta per una domanda del banco, come misura_recall. Senza semi per nome, il ripiego |
 | `carica_banco(percorso)` | Le voci di banco.json. None se il file non c'è (la sezione non si stampa) o non è un banco valido. |
 | `misura_banco(db, percorso)` | Il banco: per domanda le pagine attese che il recall porta, token e tempo, poi il riepilogo. Informativo: non |
+| `riepilogo_banco(esiti, etichetta)` | La riga di riepilogo di un gruppo di esiti del banco (tutti, o quelli di un tipo di domanda). |
 | `carica_salvataggio(percorso)` | I risultati di un --banco-salva. None se il file non si legge o non è un salvataggio del banco. |
 | `confronta_banco(esiti, prima)` | Per domanda rispetto a un salvataggio di --banco-salva. MIGLIORATA: più pagine attese portate, o a parità meno |
 | `salva_banco(esiti, percorso)` | — |

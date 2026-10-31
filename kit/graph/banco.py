@@ -1,7 +1,8 @@
 """Materiale e controllo del banco di misura del recall: le domande che il vault deve saper trovare.
 
-Il banco (.graph/banco.json) è una lista di {"domanda", "attese", "origine", "note"}: la domanda, le pagine che il
-recall deve portare, da dove viene (sintesi, hub, isolata, atteso_ko, manuale) e perché. misura.py lo misura nella
+Il banco (.graph/banco.json) è una lista di {"domanda", "attese", "origine", "note", "tipo"}: la domanda, le pagine che
+il recall deve portare, da dove viene (sintesi, hub, isolata, atteso_ko, manuale), perché e, facoltativo, il tipo di
+domanda: «locale» (un'entità, predefinito) o «globale» (un insieme di pagine), che misura.py riepiloga a parte. misura.py lo misura nella
 sezione BANCO, che è informativa e non fa uscire con 1. Le domande le scrive chi usa il banco: questo script non ne crea.
   --semi      scrive .graph/banco_semi.json, il materiale da cui scrivere le domande:
               (a) le domande di sintesi.py --tutte con le pagine della risposta: dall'uscita JSON di sintesi.py,
@@ -9,7 +10,8 @@ sezione BANCO, che è informativa e non fa uscire con 1. Le domande le scrive ch
               (b) i 15 hub più citati con menziona che non hanno relazioni tipizzate in entrata;
               (c) le pagine isolate nel grafo tipizzato: nessuna relazione tipizzata in entrata né in uscita.
               Per ogni pagina: id, tipo, descrizione, alias, i 10 vicini più collegati e il percorso del file.
-  --verifica  controlla banco.json. ERRORE (exit 1): pagina attesa inesistente, domanda doppia, voce malformata.
+  --verifica  controlla banco.json. ERRORE (exit 1): pagina attesa inesistente, domanda doppia, voce malformata,
+              tipo diverso da locale e globale.
               AVVISO (exit 0): la domanda usa metà delle parole del titolo di una pagina attesa, e il test sarebbe
               banale. Conta solo il titolo, cioè il nome della pagina, non gli alias; non vale per atteso_ko.
 
@@ -34,6 +36,7 @@ QUI = Path(__file__).resolve().parent
 N_HUB = 15      # hub da includere in --semi
 N_VICINI = 10   # vicini per pagina
 ORIGINI = {"sintesi", "hub", "isolata", "atteso_ko", "manuale"}
+TIPI_DOMANDA = ("locale", "globale")  # uguale a misura.TIPI_DOMANDA (misura importa hook e modelli: qui non serve)
 
 
 def connetti(percorso):
@@ -157,6 +160,8 @@ def verifica(db, percorso):
         if not isinstance(attese, list) or not all(isinstance(p, str) for p in attese):
             problemi.append(("ERRORE", f"{dove}: «attese» deve essere una lista di nomi di pagina"))
             attese = []
+        if voce.get("tipo", "locale") not in TIPI_DOMANDA:
+            problemi.append(("ERRORE", f"{dove}: «tipo» deve essere uno tra {', '.join(TIPI_DOMANDA)}"))
         origine = voce.get("origine")
         if not isinstance(origine, str) or origine not in ORIGINI:
             problemi.append(("ERRORE", f"{dove}: «origine» deve essere una tra {', '.join(sorted(ORIGINI))}"))

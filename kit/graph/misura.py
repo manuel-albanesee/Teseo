@@ -24,11 +24,13 @@ il recall vede il miglioramento senza rompere la CI. L'exit resta 0 finché i ca
 Poi il banco (BANCO, .graph/banco.json: le domande le scrive chi lo usa, banco.py --semi dà il materiale e
 banco.py --verifica lo controlla): domande con le pagine che il vault deve portare, scritte senza le parole dei titoli.
 Si misurano con lo stesso calcolo di misura_recall; senza semi per nome, con il ripiego sul testo, segnalato «T».
-Una riga per domanda e il riepilogo: pagine attese portate, domande complete, token medi, domande senza semi.
+Una riga per domanda e il riepilogo: pagine attese portate, domande complete, token medi, domande senza semi; poi lo
+stesso riepilogo per tipo di domanda (campo «tipo» del banco: «locale», su un'entità, predefinito; «globale», su un
+insieme di pagine, doc/16 B2), perché una modifica che aiuta le globali non nasconda un calo delle locali.
 È informativo: non fa uscire con 1. Senza banco.json la sezione non si stampa.
 --banco-salva FILE scrive i risultati per domanda; --banco-confronta FILE li confronta con quel salvataggio: per
 domanda MIGLIORATA o PEGGIORATA (pagine attese, e rumore, cioè pagine portate ma non attese), con la variazione dei
-token, poi il saldo; --solo-banco stampa solo il banco.
+token, poi il saldo, anche per tipo di domanda; --solo-banco stampa solo il banco.
 Con --routing non si chiama nessun modello: per ogni domanda di DOMANDE (destinazione in ATTESE) e di ROUTING
 si confronta la destinazione attesa con quella di modello_hook.instradamento, con una sessione Opus simulata.
 La correttezza automatica è solo un'approssimazione (regex sulla risposta): le risposte, salvate in --out, vanno rilette.
@@ -58,6 +60,8 @@ import memoria
 import modello_hook
 from recall import formatta, nodi, punti_di_partenza, richiama
 from recall_hook import AVVISO, AVVISO_NESSUNA_PAGINA, ripiego_testo
+
+TIPI_DOMANDA = ("locale", "globale")  # banco.json, campo «tipo»: un'entità o un insieme di pagine (doc/16, B2)
 
 # (domanda come è stata fatta, pagine che il recall deve portare, regex che una risposta corretta contiene)
 # Valgono per il vault d'esempio del kit: si sostituiscono con domande reali del proprio vault (10 o più, almeno 3-4 a catena)
@@ -298,10 +302,11 @@ def carica_banco(percorso):
         return None
     valida = isinstance(voci, list) and all(
         isinstance(v, dict) and isinstance(v.get("domanda"), str) and isinstance(v.get("attese", []), list)
-        and all(isinstance(p, str) for p in v.get("attese", []))
+        and all(isinstance(p, str) for p in v.get("attese", [])) and v.get("tipo", "locale") in TIPI_DOMANDA
         for v in voci)
     if not valida:
-        print(f"banco non valido ({percorso.name}): serve una lista di oggetti con «domanda» e «attese»")
+        print(f"banco non valido ({percorso.name}): serve una lista di oggetti con «domanda» e «attese»"
+              f" (e «tipo» fra {', '.join(TIPI_DOMANDA)}, se c'è)")
         return None
     return voci
 
@@ -316,11 +321,12 @@ def misura_banco(db, percorso):
     info = {id_: (tipo, descr) for id_, tipo, descr in db.execute("SELECT id, tipo, descrizione FROM entities")}
     print()
     print(f"banco ({percorso.name}): informativo, non incide sull'exit")
-    print(f"{'domanda':<55} {'semi':>4} {'attese':>7} {'rumore':>6} {'token':>6} {'ms':>4} T")
+    print(f"{'domanda':<55} {'semi':>4} {'attese':>7} {'rumore':>6} {'token':>6} {'ms':>4} TG")
     esiti = []
     for voce in voci:
         attese = voce.get("attese", [])
         esito = esito_banco(db, info, voce["domanda"])
+        esito["tipo"] = voce.get("tipo", "locale")
         esito["attese"] = attese
         esito["mancanti"] = [p for p in attese if p not in esito["portate"]]
         esito["rumore"] = len(set(esito["portate"]) - set(attese))
@@ -328,7 +334,17 @@ def misura_banco(db, percorso):
         colonna = f"{len(attese) - len(esito['mancanti'])}/{len(attese)}" if attese else "-"
         mancano = f"   mancano: {', '.join(esito['mancanti'])}" if esito["mancanti"] else ""
         print(f"{esito['domanda'][:54]:<55} {esito['semi_grafo']:>4} {colonna:>7} {esito['rumore']:>6} {esito['token']:>6} "
-              f"{esito['ms']:>4} {'T' if esito['testo'] else ''}{mancano}")
+              f"{esito['ms']:>4} {'T' if esito['testo'] else ''}{'G' if esito['tipo'] == 'globale' else ''}{mancano}")
+    print(riepilogo_banco(esiti, "banco"))
+    tipi = [t for t in TIPI_DOMANDA if any(e["tipo"] == t for e in esiti)]
+    if len(tipi) > 1:
+        for tipo in tipi:
+            print(riepilogo_banco([e for e in esiti if e["tipo"] == tipo], f"  {tipo}"))
+    return esiti
+
+
+def riepilogo_banco(esiti, etichetta):
+    """La riga di riepilogo di un gruppo di esiti del banco (tutti, o quelli di un tipo di domanda)."""
     attese_tot = sum(len(e["attese"]) for e in esiti)
     portate_tot = sum(len(e["attese"]) - len(e["mancanti"]) for e in esiti)
     complete = sum(1 for e in esiti if not e["mancanti"] and (e["attese"] or not e["portate"]))
@@ -339,10 +355,9 @@ def misura_banco(db, percorso):
     dal_testo = sum(1 for e in esiti if e["testo"])
     token_medio = round(sum(e["token"] for e in esiti) / len(esiti)) if esiti else 0
     pct = 100 * portate_tot / attese_tot if attese_tot else 0
-    print(f"banco: pagine attese portate {portate_tot}/{attese_tot} ({pct:.0f}%), dal solo grafo {dal_grafo}"
-          f" · domande complete {complete}/{len(esiti)} · rumore medio {rumore_medio:.1f} pagine · token medio {token_medio}"
-          f" · domande con 0 semi dal grafo: {senza_semi} (di cui {dal_testo} con il ripiego T)")
-    return esiti
+    return (f"{etichetta}: pagine attese portate {portate_tot}/{attese_tot} ({pct:.0f}%), dal solo grafo {dal_grafo}"
+            f" · domande complete {complete}/{len(esiti)} · rumore medio {rumore_medio:.1f} pagine · token medio {token_medio}"
+            f" · domande con 0 semi dal grafo: {senza_semi} (di cui {dal_testo} con il ripiego T)")
 
 
 def carica_salvataggio(percorso):
@@ -357,10 +372,12 @@ def carica_salvataggio(percorso):
 
 def confronta_banco(esiti, prima):
     """Per domanda rispetto a un salvataggio di --banco-salva. MIGLIORATA: più pagine attese portate, o a parità meno
-    rumore (pagine portate ma non attese). PEGGIORATA: meno pagine attese, o a parità più rumore. Poi il saldo."""
+    rumore (pagine portate ma non attese). PEGGIORATA: meno pagine attese, o a parità più rumore. Poi il saldo, e se il
+    banco ha più tipi di domanda il saldo di ciascuno (un salvataggio senza «tipo» vale come domande locali)."""
     vecchie = {v["domanda"]: v for v in prima}
     conta = {"MIGLIORATA": 0, "PEGGIORATA": 0, "invariata": 0, "NUOVA": 0, "RIMOSSA": 0}
     tot = {"attese": 0, "rumore": 0, "token": 0}
+    per_tipo = {}  # tipo → (migliorate, peggiorate, pagine attese)
     confrontate = 0
     print()
     print(f"confronto con il salvataggio ({len(prima)} domande)")
@@ -382,6 +399,8 @@ def confronta_banco(esiti, prima):
         else:
             esito = "invariata"
         conta[esito] += 1
+        m, p, a = per_tipo.get(e.get("tipo", "locale"), (0, 0, 0))
+        per_tipo[e.get("tipo", "locale")] = (m + (esito == "MIGLIORATA"), p + (esito == "PEGGIORATA"), a + d_attese)
         tot["attese"] += d_attese
         tot["rumore"] += d_rumore
         tot["token"] += d_token
@@ -393,6 +412,10 @@ def confronta_banco(esiti, prima):
     print(f"saldo: {conta['MIGLIORATA']} migliorate · {conta['PEGGIORATA']} peggiorate · {conta['invariata']} invariate · "
           f"{conta['NUOVA']} nuove · {conta['RIMOSSA']} rimosse · pagine attese {tot['attese']:+d} · "
           f"rumore {tot['rumore']:+d} · token {tot['token']:+d}{media}")
+    if len(per_tipo) > 1:
+        for tipo in [t for t in TIPI_DOMANDA if t in per_tipo]:
+            m, p, a = per_tipo[tipo]
+            print(f"  saldo {tipo}: {m} migliorate · {p} peggiorate · pagine attese {a:+d}")
 
 
 def salva_banco(esiti, percorso):

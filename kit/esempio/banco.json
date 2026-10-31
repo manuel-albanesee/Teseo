@@ -1,5 +1,7 @@
 [
-  {"domanda": "a chi chiedo il ticket della settimana per poter rilasciare?", "attese": ["Incident settimanale", "Anna Rossi"], "origine": "manuale", "note": "esempio: catena senza i nomi delle pagine"},
-  {"domanda": "dove si aprono le segnalazioni?", "attese": ["ServiceDesk"], "origine": "manuale", "note": "esempio: «segnalazioni» non è nel vault, probabilmente non trovata"},
-  {"domanda": "quale sigla va nelle richieste?", "attese": ["Acronimo del progetto"], "origine": "manuale", "note": "esempio: sinonimo di acronimo"}
+  {"domanda": "a chi chiedo il ticket della settimana per poter rilasciare?", "attese": ["Incident settimanale", "Anna Rossi"], "origine": "manuale", "note": "esempio: catena senza i nomi delle pagine", "tipo": "locale"},
+  {"domanda": "dove si aprono le segnalazioni?", "attese": ["ServiceDesk"], "origine": "manuale", "note": "esempio: «segnalazioni» non è nel vault, probabilmente non trovata", "tipo": "locale"},
+  {"domanda": "quale sigla va nelle richieste?", "attese": ["Acronimo del progetto"], "origine": "manuale", "note": "esempio: sinonimo di acronimo", "tipo": "locale"},
+  {"domanda": "elenca i sistemi che abbiamo", "attese": ["Gestionale", "Modulo fatture", "Console di rilascio", "ServiceDesk"], "origine": "manuale", "tipo": "globale", "note": "esempio: domanda globale, tutte le pagine di un tipo"},
+  {"domanda": "quali attività servono per pubblicare una nuova versione?", "attese": ["Rilascio in produzione", "Incident settimanale", "Console di rilascio"], "origine": "manuale", "tipo": "globale", "note": "esempio: domanda globale, le pagine con il tag rilascio"}
 ]

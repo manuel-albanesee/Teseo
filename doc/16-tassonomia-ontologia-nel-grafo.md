@@ -1,6 +1,6 @@
 # 16 — Tassonomia e ontologia dentro il grafo
 
-Stato: **fase A implementata il 31 ottobre 2026 sul branch `ICM_Integration`; fase B in corso: B1 implementata, B2–B4 da fare; fasi C–E proposte.** Riferimento:
+Stato: **fase A implementata il 31 ottobre 2026 sul branch `ICM_Integration`; fase B in corso: B1 e B2 implementate, B3–B4 da fare; fasi C–E proposte.** Riferimento:
 [«Taxonomy vs. ontology vs. knowledge graph»](https://neo4j.com/blog/knowledge-graph/taxonomy-vs-ontology-vs-knowledge-graph/)
 (J. Stegeman, Neo4j, 16 giugno 2026). Il riferimento usa Neo4j; qui il grafo resta **SQLite** e Neo4j non è
 in programma. Dipendenze: [contratto 1](01-contratto-dati-operazioni.md), [editor dell'ontologia 3](03-editor-ontologia.md).
@@ -130,12 +130,18 @@ a 1440×900 e 390×844 ([schermate](evidence/tassonomia-b1/)). Non provati: lett
 `Wiki reference.md` del kit e `ADATTA.md` descrivono le due sezioni facoltative; il comportamento del modello che
 sceglie i tag durante l'ingest non è provato con un client AI.
 
-### B2 — misura per tipo di domanda
+### B2 — misura per tipo di domanda (implementata)
 
 Le voci di `banco.json` accettano `"tipo": "locale" | "globale"` (predefinito `locale`); `banco.py --verifica` rifiuta
 altri valori. `misura.py` stampa il riepilogo del banco per tipo oltre al totale, `--banco-salva` registra il tipo e
 `--banco-confronta` dà il saldo per tipo: una modifica che migliora le globali e peggiora le locali si vede. Il banco
 d'esempio riceve domande globali. Il recall non cambia; la misura di partenza si salva come base per B3.
+
+Esito: nella tabella del banco le domande globali hanno la marca `G`. Misura di partenza sul vault d'esempio
+([testo](evidence/tassonomia-b2/banco-esempio-base.txt), [salvataggio](evidence/tassonomia-b2/banco-esempio-base.json)):
+locali 1/4 pagine attese, globali **0/7**, nessuna delle due domande globali riconosciuta dal grafo. È il problema
+che B3 e B4 devono risolvere. Prove: `tests/test_banco_tipi.py` (6 test; due mutazioni sul saldo e sul riepilogo per
+tipo fatte fallire).
 
 ### B3 — la categoria come seme aggregato (dopo B2)
 

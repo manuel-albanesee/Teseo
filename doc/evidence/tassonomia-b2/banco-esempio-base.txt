@@ -1,0 +1,10 @@
+banco (banco.json): informativo, non incide sull'exit
+domanda                                                 semi  attese rumore  token   ms TG
+a chi chiedo il ticket della settimana per poter rilas     0     1/2      3     70    2 T   mancano: Anna Rossi
+dove si aprono le segnalazioni?                            0     0/1      0      0    1    mancano: ServiceDesk
+quale sigla va nelle richieste?                            0     0/1      0      0    1    mancano: Acronimo del progetto
+elenca i sistemi che abbiamo                               0     0/4      0      0    1 G   mancano: Gestionale, Modulo fatture, Console di rilascio, ServiceDesk
+quali attività servono per pubblicare una nuova versio     0     0/3      0      0    1 G   mancano: Rilascio in produzione, Incident settimanale, Console di rilascio
+banco: pagine attese portate 1/11 (9%), dal solo grafo 0 · domande complete 0/5 · rumore medio 0.6 pagine · token medio 14 · domande con 0 semi dal grafo: 5 (di cui 1 con il ripiego T)
+  locale: pagine attese portate 1/4 (25%), dal solo grafo 0 · domande complete 0/3 · rumore medio 1.0 pagine · token medio 23 · domande con 0 semi dal grafo: 3 (di cui 1 con il ripiego T)
+  globale: pagine attese portate 0/7 (0%), dal solo grafo 0 · domande complete 0/2 · rumore medio 0.0 pagine · token medio 0 · domande con 0 semi dal grafo: 2 (di cui 0 con il ripiego T)
