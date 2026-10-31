@@ -1,6 +1,6 @@
 # 16 — Tassonomia e ontologia dentro il grafo
 
-Stato: **fase A implementata il 31 ottobre 2026 sul branch `ICM_Integration`; fasi B–E proposte.** Riferimento:
+Stato: **fase A implementata il 31 ottobre 2026 sul branch `ICM_Integration`; fase B in corso (B1 → B4); fasi C–E proposte.** Riferimento:
 [«Taxonomy vs. ontology vs. knowledge graph»](https://neo4j.com/blog/knowledge-graph/taxonomy-vs-ontology-vs-knowledge-graph/)
 (J. Stegeman, Neo4j, 16 giugno 2026). Il riferimento usa Neo4j; qui il grafo resta **SQLite** e Neo4j non è
 in programma. Dipendenze: [contratto 1](01-contratto-dati-operazioni.md), [editor dell'ontologia 3](03-editor-ontologia.md).
@@ -77,20 +77,74 @@ GROUP BY r.source_id, r.type, r.target_id;
 Prove: `tests/test_ontologia_grafo.py` (catalogo dichiarato, tipi osservati, schema assente, query congiunta,
 generazione v5 a generazioni, risposta `/ontology` identica con e senza tabelle).
 
-## Fase B — tassonomia (proposta)
+## Fase B — tassonomia e domande globali
 
-1. **Gerarchia dei tipi.** Colonna facoltativa `Sottotipo di` in «Tipi ammessi» (grammatica v1 estesa a tre colonne);
-   `onto_tipi.padre`. `tipo_ammesso` accetta i discendenti: un `servizio` sottotipo di `sistema` soddisfa `usa → sistema`.
-   Cicli e padri sconosciuti sono errori dello schema. Cambia la validazione: serve una preview che mostri gli archi
-   che diventano validi.
-2. **Categorie dei tag.** Sezione `## Categorie` con `Categoria | Più ampia | Descrizione` (*broader*), tabella
-   `categorie(nome, padre, descrizione)`; tag normalizzati in `entity_tags(entity_id, tag)` invece della stringa unita.
-   Validazione dei tag facoltativa per vault, come il catalogo dei tipi; i marcatori di sistema (`entropia`, `sintesi`)
-   restano ammessi.
-3. **Faccette.** `GET /graph?category=X` include le sottocategorie con una CTE ricorsiva; l'editor del grafo propone i
-   tag del vocabolario.
+Come si risolve in letteratura il rischio di «inondare» il contesto con le pagine di una categoria, e che cosa ne
+prende Teseo:
 
-Da decidere: se le categorie danno punti di partenza al recall («i sistemi di fatturazione») o restano solo navigazione.
+| Idea | Fonte | In Teseo |
+| --- | --- | --- |
+| Domande **locali** (un'entità) e **globali** (un insieme): strategie diverse, per le globali riassunti calcolati prima | Edge et al., *From Local to Global* (GraphRAG, 2024); LightRAG (Guo et al., 2024); Adaptive-RAG (Jeong et al., 2024) | B2 separa la misura, B4 aggiunge le panoramiche come pagine per entropia |
+| La categoria è **un nodo**; i nodi con molti archi si aggregano | modello a grafo del riferimento; problema dei *supernodi* | B1 tabelle, B3 un solo seme e un solo fatto aggregato |
+| **Specificità**: una categoria vale −log(quota di pagine); l'espansione verso le sottocategorie perde peso con la distanza | Resnik (1995); Carpineto e Romano (2012) sul *query drift* | B3 |
+| **Diversità** dei risultati invece delle prime k pagine simili | MMR, Carbonell e Goldstein (1998) | B3, nella scelta delle pagine del fatto aggregato |
+| Diffusione pesata dai semi (*Personalized PageRank*) | Collins e Loftus (1975); HippoRAG (Gutiérrez et al., 2024) | esperimento separato, non in questo piano: sostituirebbe il cammino di `recall.py` |
+| Decidere misurando, **per tipo di domanda** | paradigma di Cranfield | B2 prima di toccare il recall |
+
+Ordine: B1 → B2 → B3 → B4, un commit verificato per voce. B1 e B2 non cambiano le risposte del recall; B3 e B4 si
+tengono solo se il banco non peggiora sulle domande locali.
+
+### B1 — tassonomia: gerarchia dei tipi, categorie, tag e faccette
+
+**Gerarchia dei tipi.** «Tipi ammessi» accetta una terza colonna facoltativa `Sottotipo di`
+(`Tipo | Descrizione | Sottotipo di`); vuota significa tipo radice. Il padre deve essere un tipo dichiarato, diverso
+dal tipo, senza cicli (`unknown_parent`, `type_cycle`). Il serializer scrive la terza colonna solo se almeno un tipo ha
+un padre. `tipo_ammesso` accetta un tipo se lui o un suo antenato è fra gli ammessi: un `servizio` sottotipo di
+`sistema` soddisfa `usa → sistema`; `stesso tipo` resta l'uguaglianza esatta. Vale nel builder, in `piano.py`, in
+`candidati.py` e nelle rinomine della preview. L'editor dell'ontologia ha il campo «Sottotipo di»; `update_type`
+sostituisce la definizione come oggi, quindi un padre omesso torna vuoto; `rename_type` aggiorna anche i padri.
+
+**Categorie.** Nuova sezione `## Categorie` con `Categoria | Più ampia | Descrizione` (il *broader* di SKOS): stessi
+vincoli sui nomi dei tipi, categoria più ampia dichiarata, niente cicli (`unknown_broader`, `category_cycle`), nomi
+univoci senza distinguere le maiuscole (`duplicate_category`). In questa voce la sezione si scrive a mano: il serializer
+la conserva byte per byte, l'editor non la modifica.
+
+**Tag.** Con la sezione presente ogni tag di una pagina deve essere una categoria, tranne i marcatori di sistema
+`entropia` e `sintesi` (`unknown_tag`); senza la sezione i tag restano liberi, come nei vault esistenti.
+
+**Grafo** (`BUILDER_VERSION` 6): `onto_tipi.padre` (NULL per le radici); `categorie(nome PK, padre, descrizione,
+posizione)`; `entity_tags(entity_id, tag)`, sempre riempita dai tag delle pagine, con o senza sezione;
+`onto_metadata.categorie` = `presenti` o `assenti`. `entities.tags` resta per compatibilità.
+
+**API e UI.** `GET /graph?category=X` restituisce i nodi con un tag uguale a X o a una sua sottocategoria (CTE
+ricorsiva) e gli archi fra quei nodi; senza tabelle `graph_upgrade_required`, come il filtro per autore.
+`GET /ontology` aggiunge `type_parents` (tipo → padre, solo i tipi con un padre) e `categories`
+(`name`, `broader`, `description`), anche per le generazioni precedenti, ricavati dal Markdown. Il grafo della
+dashboard ha il filtro «Categoria».
+
+Non cambia: recall, sintesi, domande. Prove: parser e serializer (roundtrip, errori), builder (sottotipi ammessi,
+tag sconosciuti), tabelle, filtro HTTP, risposta `/ontology` uguale con e senza tabelle, smoke della UI.
+
+### B2 — misura per tipo di domanda
+
+Le voci di `banco.json` accettano `"tipo": "locale" | "globale"` (predefinito `locale`); `banco.py --verifica` rifiuta
+altri valori. `misura.py` stampa il riepilogo del banco per tipo oltre al totale, `--banco-salva` registra il tipo e
+`--banco-confronta` dà il saldo per tipo: una modifica che migliora le globali e peggiora le locali si vede. Il banco
+d'esempio riceve domande globali. Il recall non cambia; la misura di partenza si salva come base per B3.
+
+### B3 — la categoria come seme aggregato (dopo B2)
+
+Una categoria nominata nella domanda (nome o forma ridotta a radici) diventa **un solo seme**, il nodo categoria, e
+**un solo fatto**: «fatturazione [categoria, parte di amministrazione]: N pagine (…)», con al più `MAX_CATEGORIA`
+pagine scelte per rilevanza e diversità e il conteggio delle omesse. Una categoria con più di `SOGLIA_CATEGORIA` delle
+pagine non fa da seme (bassa specificità). Le sottocategorie entrano con peso decrescente. Il nome di una pagina vince
+su una categoria omonima. Si tiene solo se B2 non mostra peggioramenti sulle domande locali né semi spuri.
+
+### B4 — panoramiche di categoria (dopo B3)
+
+`sintesi.py` propone una domanda «Che cosa comprende <categoria>?» per ogni categoria con almeno `MIN_ALTRE` + 1
+pagine: il lint scrive la pagina per entropia, come per le catene, e la pagina diventa il riassunto calcolato prima
+che risponde alle domande globali (le comunità di GraphRAG). Verifica e copertura come le altre famiglie di `sintesi.py`.
 
 ## Fase C — semantica letta dall'ontologia (proposta)
 
