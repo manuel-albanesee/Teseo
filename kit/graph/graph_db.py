@@ -1,5 +1,5 @@
 """Apertura readonly e revisione fissata per connessione, anche nel kit installato."""
-from dataclasses import dataclass
+from collections import namedtuple
 import json
 from pathlib import Path
 import re
@@ -10,12 +10,10 @@ class GraphDatabaseError(sqlite3.DatabaseError):
     pass
 
 
-@dataclass(frozen=True)
-class GraphReference:
-    path: Path
-    content_revision: str | None = None
-    generation: str | None = None
-    sqlite_sha256: str | None = None
+# namedtuple e non dataclass: lo importano recall_hook a ogni prompt e recall, e dataclasses carica inspect, copy e dis.
+# path: Path; content_revision, generation, sqlite_sha256: str | None (None fuori dai vault con generazioni).
+GraphReference = namedtuple("GraphReference", "path content_revision generation sqlite_sha256",
+                            defaults=(None, None, None))
 
 
 def graph_reference(path):

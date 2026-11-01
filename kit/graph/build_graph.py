@@ -46,19 +46,30 @@ import os
 import re
 import sqlite3
 import sys
-import tempfile
 import unicodedata
 from functools import lru_cache
 from pathlib import Path
 
-import yaml
-
 try:
     from .stemmer import stem
-    from .ontology import WILDCARDS, parse as parse_ontology
 except ImportError:
     from stemmer import stem
-    from ontology import WILDCARDS, parse as parse_ontology
+
+# yaml, ontology e tempfile si importano dove servono: recall_hook (a ogni prompt), recall, memoria e domande importano
+# questo modulo solo per norm e pochi altri nomi, e su Windows ogni modulo caricato costa l'apertura di un file.
+
+
+def _ontologia():
+    try:
+        from . import ontology
+    except ImportError:
+        import ontology
+    return ontology
+
+
+def parse_ontology(*args, **kwargs):
+    """ontology.parse, importato al primo uso (lo importano anche candidati.py e piano.py)."""
+    return _ontologia().parse(*args, **kwargs)
 
 # Nomi che sono anche parole comuni: valgono solo scritti con la maiuscola (stessa lista di recall.PAROLE_COMUNI,
 # che non si può importare da qui: recall importa build_graph)
@@ -153,6 +164,7 @@ def leggi_testo(testo, nome):
     if testo.startswith("---"):
         fine = testo.find("\n---", 3)
         if fine != -1:
+            import yaml
             try:
                 fm = yaml.safe_load(testo[3:fine])
                 if fm is None:
@@ -354,7 +366,7 @@ def righe_ontologia(snapshot):
     else:
         osservati = {e[1] for e in snapshot["entita"] if isinstance(e[1], str)}
         osservati |= {n for r in ontology.relations for n in r.from_types + r.to_types}
-        tipi = [(n, "", 0, i, None) for i, n in enumerate(sorted(osservati - WILDCARDS))]
+        tipi = [(n, "", 0, i, None) for i, n in enumerate(sorted(osservati - _ontologia().WILDCARDS))]
     return {"tipi": tipi,
             "categorie": [(c.name, c.broader or None, c.description, i) for i, c in enumerate(ontology.categories or ())],
             "relazioni": [(r.name, r.meaning, r.example, r.direction, i) for i, r in enumerate(ontology.relations)],
@@ -382,6 +394,7 @@ def build_candidate(snapshot, out):
     problemi = validate_snapshot(snapshot)
     if problemi:
         raise GraphValidationError(problemi)
+    import tempfile
     # Nome breve: SQLite aggiunge "-journal" e su Windows il percorso resta sotto MAX_PATH (260).
     fd, name = tempfile.mkstemp(prefix=".cand-", suffix=".tmp", dir=out.parent)
     os.close(fd)
