@@ -31,6 +31,7 @@ Il kit software resta distinto dal repository dati. Markdown è l'autorità dell
 | 14 | [Convenzioni ICM e lavorazioni della wiki](14-piano-icm.md) | 4, 9 | Implementato (B5 deciso diversamente): contratti nelle skill, guardia contro la deriva, correzioni come segnale; pipeline ICM configurabili che leggono la wiki e producono documenti derivati |
 | 15 | [Decisione: condivisione delle lavorazioni](15-condivisione-lavorazioni.md) | 14 | Proposta: le lavorazioni restano personali; si condividono a mano con `esporta`/`nuova --modelli`; punti da modificare e criteri per riaprire la condivisione nel repository dati |
 | 16 | [Tassonomia e ontologia dentro il grafo](16-tassonomia-ontologia-nel-grafo.md) | 3 | Fase A, voci B1 e B2 implementate: ontologia nelle tabelle `onto_*`, sottotipi, categorie con tag controllati e filtro per categoria, banco misurato per domande locali e globali; da fare B3–B4 (categoria come seme aggregato, panoramiche); proposte C–E, sempre su SQLite |
+| 17 | [Concetti da grafo aziendale](17-concetti-grafo-aziendale.md) | 16 | Fase 0 in corso (KPI di coerenza e peso dello schema); proposte: schema a fette, semantica dichiarata (fasi C–D di 16), vincoli, sinonimi e corrispondenze, vocabolari esterni come fonti in `raw/vocabolari/`, attributi, export Turtle |
 
 ```mermaid
 flowchart LR
@@ -97,6 +98,8 @@ Per cambiare il piano: aggiornare prima il contratto interessato, elencare motiv
   pipeline di recall, memoria, contratti degli hook e guida per aggiungere un client.
 - [Recall come KPI](kpi-recall.md): metriche del banco, perché il massimo dipende
   dal banco, baseline, regola di non regressione e strategie di miglioramento.
+- [Coerenza come KPI](kpi-coerenza.md): coerenza dei nomi, stabilità fra giri e fra
+  parafrasi, peso dello schema; quando si misurano e regola di non regressione.
 - [Analisi ECC del retrieval](analisi-retrieval-ecc.md): varianti del recall misurate
   sul banco con gate e holdout; raccomanda il ripiego a cascata.
 - [Lavorazioni](lavorazioni.md): guida alle pipeline ICM che leggono la wiki e producono documenti derivati.

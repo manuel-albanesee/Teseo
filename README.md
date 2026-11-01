@@ -506,6 +506,7 @@ memoria e conservazione dei dati. Per esplorare il codice:
 | [tests/](tests/) | Test di regressione delle integrazioni. |
 | [doc/architettura-motore.md](doc/architettura-motore.md) | Riferimento tecnico del motore: schemi SQLite, pipeline di recall, contratti degli hook. |
 | [doc/kpi-recall.md](doc/kpi-recall.md) | Il recall sul banco come KPI della salute del vault: metriche, baseline, strategie di miglioramento. |
+| [doc/kpi-coerenza.md](doc/kpi-coerenza.md) | La coerenza delle risposte come KPI: nomi canonici, stabilità fra giri e fra parafrasi, peso dello schema. |
 | [doc/api.md](doc/api.md) | Riferimento API generato dai docstring (`script/genera_api_doc.py`). |
 | [doc/](doc/) | Piano ed evidenze della dashboard e della collaborazione. |
 
