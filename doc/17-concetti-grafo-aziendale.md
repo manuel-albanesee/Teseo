@@ -92,9 +92,20 @@ I KPI sono definiti in [kpi-coerenza.md](kpi-coerenza.md). Strumenti:
   CI), `--banco-salva` la registra e `--banco-confronta` ne dà la variazione; `banco.py --verifica` controlla il campo.
 - Peso dello schema: `contratti.py --peso` sulle quattro skill e il token medio del banco.
 
-Basi: vault d'esempio in [evidence/concetti-0](evidence/concetti-0/); vault ISP (213 pagine, banco di 106 domande)
-da misurare quando il vault è disponibile su questo computer, con solo numeri aggregati nel repository. Le misure con
-un modello si lanciano solo con il via esplicito dell'autore: costano.
+Basi sul vault d'esempio (2 novembre 2026, [evidence/concetti-0](evidence/concetti-0/)):
+
+| Misura | Valore di partenza | File |
+| --- | --- | --- |
+| Recall sul banco, totale | 1/11 pagine attese (9%), domande complete 0/5, rumore medio 0,6, token medio 14 | [testo](evidence/concetti-0/banco-esempio-base.txt), [salvataggio](evidence/concetti-0/banco-esempio-base.json) |
+| Recall, locali / globali | 1/4 e 0/7 (come la base di B2 in doc/16) | stesso file |
+| K3 stabilità fra parafrasi | 0,50 su 2 voci con 2 parafrasi; stesso seme 1/2 | stesso file |
+| K4 peso dello schema, livello 3 | ingest ~4515 token, lint ~4515, query ~3194, lacune ~3194 | [testo](evidence/concetti-0/peso-skill.txt) |
+| K1, K2 | non misurati: servono un modello e un vault reale | — |
+
+Il `Wiki reference.md` del kit pesa ~4515 token e ingest e lint lo caricano per intero: sul vault d'esempio il
+guadagno della fase 1 è piccolo, per questo le basi che contano sono quelle del vault ISP (213 pagine, banco di 106
+domande). Il vault ISP non è su questo computer: quando c'è, si misurano le stesse cose e nel repository entrano solo
+numeri aggregati. Le misure con un modello (K1 e K2) si lanciano solo con il via esplicito dell'autore: costano.
 
 ## Decisioni (2 novembre 2026)
 
