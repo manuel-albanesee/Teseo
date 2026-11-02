@@ -74,7 +74,7 @@ Ordine: 0 → 1 → 2 → B3 → 3a → go/no-go → 3b → 4 → 5. B3 si può 
 | Fase | Contenuto | Soglia per tenerla | Stato |
 | --- | --- | --- | --- |
 | 0 — Misurare | [KPI di coerenza](kpi-coerenza.md): coerenza dei nomi, stabilità fra giri e fra parafrasi, peso dello schema; basi sul vault d'esempio e sul vault ISP | basi salvate | **in corso** |
-| 1 — Schema mirato | `schema.py`, tre livelli, contratti di ingest e lint, `contratti.py --peso` che conta `schema.py` | peso dello schema giù; recall e coerenza invariati | proposta |
+| 1 — Schema mirato | `schema.py`, tre livelli, contratti di ingest e lint, `contratti.py --peso` che conta `schema.py` | peso dello schema giù; recall e coerenza invariati | **implementata** (2 novembre 2026) |
 | 2 — Semantica dichiarata | ruoli, inverse, transitive e simmetriche (fasi C e D di doc/16), vincoli, blocco «Schema pertinente» nel recall; `BUILDER_VERSION` 7 | senza sezioni, domande e sintesi identiche sul vault d'esempio | proposta |
 | B3 | categoria come seme aggregato, come in doc/16 | regola di doc/16 | proposta |
 | 3a — Sinonimi interni | `## Sinonimi`, `## Corrispondenze`; sinonimo come seme; `BUILDER_VERSION` 8 | coerenza dei nomi su; semi spuri invariati | proposta |
@@ -106,6 +106,40 @@ Il `Wiki reference.md` del kit pesa ~4515 token e ingest e lint lo caricano per 
 guadagno della fase 1 è piccolo, per questo le basi che contano sono quelle del vault ISP (213 pagine, banco di 106
 domande). Il vault ISP non è su questo computer: quando c'è, si misurano le stesse cose e nel repository entrano solo
 numeri aggregati. Le misure con un modello (K1 e K2) si lanciano solo con il via esplicito dell'autore: costano.
+
+### Fase 1 — schema mirato (implementata)
+
+`kit/graph/schema.py` stampa fette di `Wiki reference.md`, in sola lettura e senza modello:
+
+| Livello | Cosa contiene | Tetto |
+| --- | --- | --- |
+| 1, sempre (`--livello 1`) | Regole non negoziabili, Convenzioni delle pagine senza le pagine generate per entropia, il formato delle Chiavi delle fonti, l'indice dei nomi di tipi, relazioni e categorie (uno per voce, senza descrizioni); con `--entropia` e `--sezione "…"` le sezioni che il lint chiede | 3000 token |
+| 2, mirato (`--per-pagine`, `--per-tipi`, `--fonti`) | Le righe complete dei tipi indicati e dei loro antenati; le relazioni che possono partire da quei tipi o arrivarci (antenati e `qualsiasi` compresi); le righe delle chiavi delle fonti citate | 1500 token |
+| 3, su richiesta | `Wiki reference.md` per intero, quando c'è un dubbio o il vault non ha `schema.py` | — |
+
+I tetti sono avvisi, non errori. Senza il catalogo «Tipi ammessi» il livello 2 stampa tutte le relazioni; con errori di
+schema avvisa di leggere il file per intero. Le fette sono tabelle e paragrafi, non sezioni h2 intere (C: sotto
+«Relazioni tipizzate» c'è la descrizione degli script).
+
+`contratti.py --peso` non esegue il comando: per `--livello 1` calcola la fetta in-process con `schema.fette`, per
+le fette mirate usa il tetto del livello 2 e marca la riga «(stima)». Le skill di ingest e lint hanno le righe di Input
+su `schema.py` e la regola «se hai un dubbio leggi tutto»; query e lacune citavano già solo sezioni.
+
+Peso dello schema nei contratti (K4, vault d'esempio, token caricati di livello 3):
+
+| Skill | Prima | Dopo | Variazione |
+| --- | --- | --- | --- |
+| ingest | ~4515 | ~2156 (livello 1 ~656 + livello 2 al tetto 1500) | −52% |
+| lint | ~4515 | ~3307 (livello 1 con entropia e manutenzione ~1807 + livello 2 al tetto 1500) | −27% |
+| query, lacune | ~3194 | invariato | — |
+
+Il livello 2 è un tetto, non una misura: sul vault d'esempio, che non ha il catalogo dei tipi, stamperebbe tutte le
+relazioni. Il guadagno reale si misura sul vault ISP. Recall e K3 sul banco non cambiano: il recall non è stato toccato;
+K1 e K2 richiedono il modello e restano da misurare con il via dell'autore.
+
+Prove: `tests/test_schema_mirato.py` (23 test: livelli, antenati, jolly, fonti, avvisi, grafo, comando, peso nei
+contratti); tre mutazioni (senza antenati, senza il jolly `qualsiasi`, entropia sempre inclusa) fatte fallire. Aggiornati
+due test di `tests/test_contratti.py` che codificavano la lettura intera.
 
 ## Decisioni (2 novembre 2026)
 

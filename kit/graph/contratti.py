@@ -25,6 +25,7 @@ Uso:
 import argparse
 import json
 import re
+import shlex
 import sys
 from pathlib import Path
 
@@ -181,6 +182,40 @@ def testo_sezione(testo, titolo):
     return None
 
 
+SCHEMA_COMANDO = re.compile(r"^python3?\s+(?:\S*[/\\])?schema\.py(?:\s+(.*))?$")
+
+
+def _peso_schema(valori, colonna, radice):
+    """La riga di peso di un Input che cita `python .graph/schema.py …`, o None se la cella è altro.
+
+    Il comando non si esegue mai: `--livello 1` senza segnaposto si calcola con schema.fette sul Wiki reference.md della
+    radice (stesso conteggio di chi lo lancia); le fette mirate (--per-pagine, --per-tipi, --fonti) valgono il tetto del
+    livello 2 e sono marcate «stima». Token None se Wiki reference.md non c'è."""
+    if len(valori) <= colonna["file"]:
+        return None
+    apici = re.search(r"`([^`]+)`", valori[colonna["file"]])
+    comando = SCHEMA_COMANDO.match(apici[1].strip()) if apici else None
+    if not comando:
+        return None
+    try:
+        import schema
+    except ImportError:  # contratti.py importato come pacchetto, senza .graph nel percorso
+        from . import schema
+    argomenti = shlex.split(comando[1] or "", posix=True)
+    livello = re.search(r"\d", valori[colonna["livello"]]) if colonna["livello"] is not None and colonna["livello"] < len(valori) else None
+    riga = {"file": apici[1].strip(), "livello": int(livello[0]) if livello else 3, "sezione": None, "token": None}
+    mirata = any(a in argomenti for a in ("--per-pagine", "--per-tipi", "--fonti"))
+    if mirata or "{" in apici[1]:
+        riga.update(token=schema.TETTO_LIVELLO_2, stima=True)
+        return riga
+    schema_md = (radice / "Wiki reference.md") if radice else None
+    if schema_md is not None and schema_md.is_file():
+        sezioni = [argomenti[i + 1] for i, a in enumerate(argomenti[:-1]) if a == "--sezione"]
+        riga["token"] = schema.fette(schema_md.read_text(encoding="utf-8"), 1, entropia="--entropia" in argomenti,
+                                     sezioni=sezioni)["token"]
+    return riga
+
+
 def peso(percorso, radice=None):
     """Contesto che il contratto fa caricare: {file, righe:[{file, livello, sezione, token}], livello3, livello4}.
 
@@ -194,7 +229,14 @@ def peso(percorso, radice=None):
     if not colonna or colonna["file"] is None:
         return risultato
     for _, riga in tabella[1:]:
-        voce = None if re.fullmatch(r"[\s:|-]+", riga) else _voce(celle(riga), colonna)
+        if re.fullmatch(r"[\s:|-]+", riga):
+            continue
+        valori = celle(riga)
+        if (comando := _peso_schema(valori, colonna, radice)) is not None:
+            risultato["livello3"] += comando["token"] or 0
+            risultato["righe"].append(comando)
+            continue
+        voce = _voce(valori, colonna)
         if voce is None or "{" in voce[0]:
             continue
         cita, livello, richieste = voce
@@ -266,7 +308,8 @@ def main(argv=None):
             print(f"{esito['file']}: " + (f"{len(esito['errori'])} errori" if esito["errori"] else "ok"))
             for voce in esito.get("peso", {}).get("righe", []):
                 dove = ", ".join(f"«{s}»" for s in voce["sezione"]) if voce["sezione"] else "tutto"
-                print(f"  livello {voce['livello']} · {voce['file']} · {dove}: " + (f"~{voce['token']} token" if voce["token"] is not None else "non trovato"))
+                print(f"  livello {voce['livello']} · {voce['file']} · {dove}: " + (f"~{voce['token']} token" if voce["token"] is not None else "non trovato")
+                      + (" (stima)" if voce.get("stima") else ""))
             if "peso" in esito:
                 print(f"  contesto caricato: livello 3 ~{esito['peso']['livello3']} token · livello 4 ~{esito['peso']['livello4']} token")
     return 1 if any(e["errori"] for e in esiti) else 0

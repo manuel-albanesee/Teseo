@@ -243,9 +243,11 @@ class SkillDelKit(unittest.TestCase):
                 self.assertEqual([(p['codice'], p['messaggio']) for p in esito['errori']], [])
 
     def test_ogni_skill_dichiara_input_sul_file_di_schema(self):
+        # Query e lacune citano sezioni di Wiki reference.md; ingest e lint le fette di schema.py (doc/17, fase 1)
         for percorso in self.skill():
             with self.subTest(skill=percorso.parent.name):
-                self.assertIn('| `Wiki reference.md` |', percorso.read_text(encoding='utf-8'))
+                testo = percorso.read_text(encoding='utf-8')
+                self.assertTrue('| `Wiki reference.md` |' in testo or '| `python .graph/schema.py ' in testo)
 
     def test_checkpoint_presente_dove_la_skill_chiede_all_utente(self):
         # Le quattro skill prevedono una scelta o una conferma dell'utente: il checkpoint è obbligatorio.
@@ -321,12 +323,16 @@ class Peso(Base):
 
 
 class SchemaSelettivo(unittest.TestCase):
-    """Query e lacune leggono solo le sezioni di Wiki reference.md che usano; ingest e lint tutto il file."""
+    """Query e lacune leggono solo le sezioni di Wiki reference.md che usano; ingest e lint le fette di schema.py."""
     KIT = Path(__file__).resolve().parents[1] / 'kit'
 
     def peso_schema(self, nome):
         esito = contratti.peso(self.KIT / 'skills' / f'obsidian-wiki-{nome}' / 'SKILL.md', radice=self.KIT / 'vault')
         return sum(r['token'] for r in esito['righe'] if r['file'] == 'Wiki reference.md' and r['token'])
+
+    def righe_schema_py(self, nome):
+        esito = contratti.peso(self.KIT / 'skills' / f'obsidian-wiki-{nome}' / 'SKILL.md', radice=self.KIT / 'vault')
+        return [r for r in esito['righe'] if r['file'].startswith('python .graph/schema.py ')]
 
     def test_query_e_lacune_caricano_meno_di_tre_quarti_dello_schema(self):
         completo = len((self.KIT / 'vault/Wiki reference.md').read_text(encoding='utf-8')) // 4
@@ -334,11 +340,16 @@ class SchemaSelettivo(unittest.TestCase):
             with self.subTest(skill=nome):
                 self.assertLessEqual(self.peso_schema(nome), completo * 0.75)
 
-    def test_ingest_e_lint_leggono_tutto_lo_schema(self):
+    def test_ingest_e_lint_leggono_lo_schema_a_fette(self):
         completo = len((self.KIT / 'vault/Wiki reference.md').read_text(encoding='utf-8')) // 4
-        for nome in ('ingest', 'lint'):
+        for nome, minimo in (('ingest', 0.6), ('lint', 0.8)):  # lint carica anche entropia e manutenzione
             with self.subTest(skill=nome):
-                self.assertEqual(self.peso_schema(nome), completo)
+                self.assertEqual(self.peso_schema(nome), 0)  # non cita più il file intero
+                righe = self.righe_schema_py(nome)
+                self.assertTrue(any('--livello 1' in r['file'] for r in righe))
+                self.assertTrue(any('--per-pagine' in r['file'] and r['stima'] for r in righe))
+                self.assertTrue(all(r['token'] for r in righe))
+                self.assertLessEqual(sum(r['token'] for r in righe), completo * minimo)
 
     def test_le_regole_non_negoziabili_sono_sempre_caricate(self):
         for nome in ('query', 'fill-gaps'):

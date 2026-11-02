@@ -31,7 +31,8 @@ Livello 3 = regole stabili del vault, livello 4 = materiale di questa esecuzione
 
 | Livello | File | Sezione | Perché |
 | --- | --- | --- | --- |
-| 3 | `Wiki reference.md` | tutto | convenzioni, vocabolario, pagine generate per entropia, manutenzione del vault |
+| 3 | `python .graph/schema.py --livello 1 --entropia --sezione "Manutenzione del vault"` | tutto | regole, convenzioni, indice dei nomi, pagine generate per entropia, manutenzione del vault |
+| 3 | `python .graph/schema.py --per-pagine {pagine} --fonti {fonti}` | tutto | righe dei tipi, relazioni applicabili e chiavi delle fonti delle pagine controllate |
 | 4 | `index.md` | tutto | mappa completa delle pagine (passo 1) |
 | 4 | `wiki/*.md` | tutte, o l'area indicata dall'utente | confronto dei claim fra pagine (passo 2) |
 | 4 | `.graph/graph.sqlite` | tabelle `entities`, `relations`, `aliases` | orfane e relazioni (passo 1) |
@@ -100,3 +101,4 @@ Livello 3 = regole stabili del vault, livello 4 = materiale di questa esecuzione
 
 - Per un lint corposo usa il modello di ricerca del client: Opus in Claude Code; Sol o Astra in Codex, secondo la configurazione del vault. Eventuali agenti in background seguono l'autorizzazione dell'utente e le capacità del client: questa skill non autorizza automaticamente una delega o un cambio di modello.
 - Il lint è per costruzione un'operazione di lettura/segnalazione, non di riscrittura massiva: se emergono correzioni ampie, proponile e chiedi conferma prima di applicarle su larga scala. Le pagine generate per entropia del passo 5 sono l'unica scrittura ammessa senza conferma: aggiungono e non modificano, portano l'avviso, e `--verifica` le controlla.
+- Lo schema si legge per fette, come dice l'Input (`.graph/schema.py`). Se ti serve una regola che non è nelle fette caricate, se hai un dubbio o se il vault non ha `.graph/schema.py`, leggi `Wiki reference.md` per intero: prevale sempre su questa skill.

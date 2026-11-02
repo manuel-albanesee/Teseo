@@ -19,7 +19,8 @@ Livello 3 = regole stabili del vault, livello 4 = materiale di questa esecuzione
 
 | Livello | File | Sezione | Perché |
 | --- | --- | --- | --- |
-| 3 | `Wiki reference.md` | tutto | convenzioni, vocabolario delle relazioni e chiavi delle fonti (passi 1 e 5) |
+| 3 | `python .graph/schema.py --livello 1` | tutto | regole, convenzioni e indice dei nomi di tipi e relazioni (passi 1 e 5) |
+| 3 | `python .graph/schema.py --per-pagine {pagine} --per-tipi {tipi_nuovi} --fonti {fonti}` | tutto | righe dei tipi, relazioni applicabili e chiavi delle fonti delle pagine toccate (passi 3–5); `{pagine}` sono quelle del piano |
 | 4 | `raw/` | la fonte grezza indicata dall'utente, per intero | materiale da distillare (passo 2) |
 | 4 | `wiki/*.md` | pagine toccate dalla fonte | pagine da aggiornare (passo 4) |
 | 4 | `lavorazioni/_ingest/<fonte>-piano.md` | tutto, com'è sul disco dopo le correzioni dell'utente | guida i passi 3–5 (passo 2b, solo con piano) |
@@ -109,3 +110,4 @@ Livello 3 = regole stabili del vault, livello 4 = materiale di questa esecuzione
 - Preferisci restare coinvolti passo-passo su fonti singole importanti (l'utente legge i riassunti e guida cosa enfatizzare); per batch di più fonti a bassa supervisione, procedi e riporta un riepilogo finale.
 - Per lavori corposi usa il modello di ricerca del client: Opus in Claude Code; Sol o Astra in Codex, secondo la configurazione del vault. Eventuali agenti in background seguono l'autorizzazione dell'utente e le capacità del client: questa skill non autorizza automaticamente una delega o un cambio di modello.
 - Non modificare mai i raw sources.
+- Lo schema si legge per fette, come dice l'Input (`.graph/schema.py`). Se ti serve una regola che non è nelle fette caricate, se hai un dubbio o se il vault non ha `.graph/schema.py`, leggi `Wiki reference.md` per intero: prevale sempre su questa skill.

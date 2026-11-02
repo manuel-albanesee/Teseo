@@ -1,6 +1,6 @@
 # Vault wiki a grafo
 
-- Leggi `Wiki reference.md`: convenzioni, chiavi delle fonti, vocabolario delle relazioni. Prevalgono su tutto il resto. Ingest e lint lo leggono per intero; query e lacune solo le sezioni indicate dalla skill, e per intero in caso di dubbio.
+- Leggi `Wiki reference.md`: convenzioni, chiavi delle fonti, vocabolario delle relazioni. Prevalgono su tutto il resto. Ingest e lint ne leggono le fette di `.graph/schema.py`, query e lacune solo le sezioni indicate dalla skill; in caso di dubbio, o senza `schema.py`, per intero.
 - Non modificare mai nulla in `raw/`.
 - Le lavorazioni (`lavorazioni/`) leggono la wiki e producono documenti derivati: non scrivono mai in `wiki/`; in `raw/` solo `promuovi`, su richiesta e con un file nuovo. Non si pubblicano con l'autosync.
 - Le operazioni si fanno con le skill: `obsidian-wiki-ingest`, `obsidian-wiki-query`, `obsidian-wiki-lint`, `obsidian-wiki-fill-gaps`, `obsidian-wiki-lavorazioni`.
