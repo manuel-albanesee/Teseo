@@ -232,6 +232,44 @@ dei tipi, sinonimo dentro il nome di una pagina, parole comuni, avvisi, ripiego 
 
 Go/no-go dopo questa fase: si procede con la 3b solo se K1 sale sul vault reale **e** esiste un vocabolario esterno concreto.
 
+**Esito del go/no-go (2 novembre 2026): no-go per ora.** Mancano le due condizioni: K1 sul vault reale (il vault ISP non è su
+questo computer e K1 richiede un modello, quindi il via esplicito dell'utente) e un vocabolario esterno concreto. La 3b resta
+proposta; si passa alla fase 4. Si riapre quando l'utente indica il vocabolario (FIBO, ESCO, altro) e il percorso `VAULT_ISP`.
+
+### Fase 4 — attributi (in corso)
+
+Un attributo è un valore scalare di una pagina, non un arco: «data_liquidazione_prevista: 2031-12-31». Si dichiara in una
+sezione facoltativa di `Wiki reference.md` e si scrive nel frontmatter sotto la chiave riservata `attributi`.
+
+| Elemento | Forma |
+| --- | --- |
+| `## Attributi` | `Attributo \| Di (tipo) \| Valore \| Descrizione`; `Di` è un tipo dichiarato (vale anche per i sottotipi); `Valore` è `testo`, `numero`, `data`, `importo`, `codice`, `sì/no` o `categoria:X` (X una categoria dichiarata) |
+| frontmatter | `attributi: {nome: valore}`, una mappa: la chiave `attributi` non è una relazione |
+| `## Vincoli` | la colonna «Relazione o attributo» può citare un attributo: minimo 1 = obbligatorio (domanda aperta se manca), massimo al più 1 |
+
+Valori: `numero` è un intero o un decimale; `data` è una data ISO (YAML la legge come `datetime.date`: si normalizza a
+`AAAA-MM-GG` prima del confronto); `importo` è un numero o «250000 EUR» (numero e codice di tre lettere maiuscole); `codice` ha
+lettere, cifre e `._/-`, fino a 64 caratteri; `sì/no` è un booleano YAML o «sì»/«no»; `categoria:X` è X o una sua
+sottocategoria. Un attributo vale per la pagina del tipo `Di` e dei suoi sottotipi; se due righe coprono la stessa pagina vince il
+tipo più specifico.
+
+Errori del parser (`ontology.py`): `invalid_attribute`, `duplicate_attribute` (stesso nome e stesso tipo), `unknown_type`,
+`unknown_name` (la categoria di `categoria:X`), `invalid_value_type`, `reserved_attribute` (nome fra le chiavi speciali del
+frontmatter o uguale a una relazione). Errori del build, per pagina: `unknown_attribute` (non dichiarato per il tipo della
+pagina), `attribute_type` (tipo Python sbagliato), `attribute_value` (tipo giusto, contenuto no). Senza la sezione il build ignora la
+mappa `attributi` e nulla cambia.
+
+**Chiave riservata** (C5): `attributi` entra in quattro insiemi che oggi dicono quali chiavi del frontmatter non sono relazioni:
+`build_graph.NON_RELAZIONI`, `correzioni.NON_RELAZIONI`, `graph_edit.RESERVED`, `ontology.SPECIAL`. Un test controlla che ci sia in
+tutti. Un vault con una relazione chiamata `attributi` riceve `reserved_relation` (da scrivere in `ADATTA.md`).
+
+**Grafo** (`BUILDER_VERSION` 9): `onto_attributi(nome, tipo, valore, descrizione, posizione)` e
+`entity_attributi(entity_id, attributo, valore)` (il valore normalizzato, come testo); metadato `attributi`.
+
+**Recall**: `formatta` aggiunge sotto ogni pagina seme una riga «· data_liquidazione_prevista: 2031-12-31; …» con al più
+`MAX_ATTRIBUTI` attributi, nell'ordine della sezione; categorie e tipi non ne hanno. **Domande**: un vincolo su un attributo
+mancante è una domanda aperta di segnale `vincolo` (chiave `<attributo> min`).
+
 ## Decisioni (2 novembre 2026)
 
 | # | Decisione | Esito |
