@@ -1,9 +1,11 @@
 """Materiale e controllo del banco di misura del recall: le domande che il vault deve saper trovare.
 
-Il banco (.graph/banco.json) è una lista di {"domanda", "attese", "origine", "note", "tipo"}: la domanda, le pagine che
-il recall deve portare, da dove viene (sintesi, hub, isolata, atteso_ko, manuale), perché e, facoltativo, il tipo di
-domanda: «locale» (un'entità, predefinito) o «globale» (un insieme di pagine), che misura.py riepiloga a parte. misura.py lo misura nella
-sezione BANCO, che è informativa e non fa uscire con 1. Le domande le scrive chi usa il banco: questo script non ne crea.
+Il banco (.graph/banco.json) è una lista di {"domanda", "attese", "origine", "note", "tipo", "parafrasi"}: la domanda, le
+pagine che il recall deve portare, da dove viene (sintesi, hub, isolata, atteso_ko, manuale), perché e, facoltativi, il tipo
+di domanda: «locale» (un'entità, predefinito) o «globale» (un insieme di pagine), che misura.py riepiloga a parte, e le
+parafrasi: altre domande con la stessa risposta, per la stabilità fra parafrasi (doc/kpi-coerenza.md). misura.py lo
+misura nella sezione BANCO, che è informativa e non fa uscire con 1. Le domande le scrive chi usa il banco: questo
+script non ne crea.
   --semi      scrive .graph/banco_semi.json, il materiale da cui scrivere le domande:
               (a) le domande di sintesi.py --tutte con le pagine della risposta: dall'uscita JSON di sintesi.py,
                   o, se non si ottiene, importando la sua candidate();
@@ -11,9 +13,10 @@ sezione BANCO, che è informativa e non fa uscire con 1. Le domande le scrive ch
               (c) le pagine isolate nel grafo tipizzato: nessuna relazione tipizzata in entrata né in uscita.
               Per ogni pagina: id, tipo, descrizione, alias, i 10 vicini più collegati e il percorso del file.
   --verifica  controlla banco.json. ERRORE (exit 1): pagina attesa inesistente, domanda doppia, voce malformata,
-              tipo diverso da locale e globale.
-              AVVISO (exit 0): la domanda usa metà delle parole del titolo di una pagina attesa, e il test sarebbe
-              banale. Conta solo il titolo, cioè il nome della pagina, non gli alias; non vale per atteso_ko.
+              tipo diverso da locale e globale, parafrasi che non sono una lista di testi, uguali a una domanda del
+              banco o ripetute.
+              AVVISO (exit 0): la domanda (o una parafrasi) usa metà delle parole del titolo di una pagina attesa, e il
+              test sarebbe banale. Conta solo il titolo, cioè il nome della pagina, non gli alias; non vale per atteso_ko.
 
 Uso:
   python .graph/banco.py --semi
@@ -149,7 +152,7 @@ def verifica(db, percorso):
     if not isinstance(voci, list):
         return [("ERRORE", f"{percorso.name}: serve una lista di oggetti")]
     pagine = {id_ for (id_,) in db.execute("SELECT id FROM entities")}
-    problemi, viste = [], {}
+    problemi, viste, da_confrontare = [], {}, []  # da_confrontare: (dove, norm della parafrasi), dopo tutte le domande
     for i, voce in enumerate(voci, 1):
         domanda = voce.get("domanda") if isinstance(voce, dict) else None
         if not isinstance(domanda, str) or not domanda.strip():
@@ -179,6 +182,23 @@ def verifica(db, percorso):
         if eco:
             nomi = ", ".join(f"«{p}»" for p in eco)
             problemi.append(("AVVISO", f"{dove}: usa le parole del titolo di {nomi}, il test sarebbe banale"))
+        parafrasi = voce.get("parafrasi", [])
+        if not isinstance(parafrasi, list) or not all(isinstance(p, str) and p.strip() for p in parafrasi):
+            problemi.append(("ERRORE", f"{dove}: «parafrasi» deve essere una lista di domande"))
+            parafrasi = []
+        for p in parafrasi:
+            da_confrontare.append((dove, norm(p)))
+            eco = [a for a in attese if a in pagine and origine != "atteso_ko" and eco_del_titolo(p, a)]
+            if eco:
+                nomi = ", ".join(f"«{a}»" for a in eco)
+                problemi.append(("AVVISO", f"{dove}: la parafrasi «{p}» usa le parole del titolo di {nomi}"))
+    gia = set()
+    for dove, chiave in da_confrontare:
+        if chiave in viste:
+            problemi.append(("ERRORE", f"{dove}: parafrasi uguale alla voce {viste[chiave]}"))
+        elif chiave in gia:
+            problemi.append(("ERRORE", f"{dove}: parafrasi ripetuta"))
+        gia.add(chiave)
     return problemi
 
 
