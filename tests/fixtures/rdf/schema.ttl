@@ -1,0 +1,87 @@
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix prov: <http://www.w3.org/ns/prov#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+<https://example.org/teseo/> rdf:type owl:Ontology .
+<https://example.org/teseo/attributo/critico> rdf:type owl:DatatypeProperty .
+<https://example.org/teseo/attributo/critico> rdfs:comment "Da presidiare"@it .
+<https://example.org/teseo/attributo/critico> rdfs:domain <https://example.org/teseo/tipo/servizio> .
+<https://example.org/teseo/attributo/critico> rdfs:label "critico" .
+<https://example.org/teseo/attributo/critico> rdfs:range xsd:boolean .
+<https://example.org/teseo/attributo/data_liquidazione_prevista> rdf:type owl:DatatypeProperty .
+<https://example.org/teseo/attributo/data_liquidazione_prevista> rdfs:comment "Quando si liquida"@it .
+<https://example.org/teseo/attributo/data_liquidazione_prevista> rdfs:domain <https://example.org/teseo/tipo/processo> .
+<https://example.org/teseo/attributo/data_liquidazione_prevista> rdfs:label "data_liquidazione_prevista" .
+<https://example.org/teseo/attributo/data_liquidazione_prevista> rdfs:range xsd:date .
+<https://example.org/teseo/attributo/importo_previsto> rdf:type owl:DatatypeProperty .
+<https://example.org/teseo/attributo/importo_previsto> rdfs:comment "Importo atteso"@it .
+<https://example.org/teseo/attributo/importo_previsto> rdfs:domain <https://example.org/teseo/tipo/processo> .
+<https://example.org/teseo/attributo/importo_previsto> rdfs:label "importo_previsto" .
+<https://example.org/teseo/attributo/importo_previsto> rdfs:range xsd:string .
+<https://example.org/teseo/attributo/livello> rdf:type owl:DatatypeProperty .
+<https://example.org/teseo/attributo/livello> rdfs:comment "Rischio"@it .
+<https://example.org/teseo/attributo/livello> rdfs:domain <https://example.org/teseo/tipo/sistema> .
+<https://example.org/teseo/attributo/livello> rdfs:label "livello" .
+<https://example.org/teseo/attributo/livello> rdfs:range skos:Concept .
+<https://example.org/teseo/attributo/nota> rdf:type owl:DatatypeProperty .
+<https://example.org/teseo/attributo/nota> rdfs:comment "Appunto"@it .
+<https://example.org/teseo/attributo/nota> rdfs:label "nota" .
+<https://example.org/teseo/attributo/nota> rdfs:range xsd:string .
+<https://example.org/teseo/attributo/utenti> rdf:type owl:DatatypeProperty .
+<https://example.org/teseo/attributo/utenti> rdfs:comment "Utenti attivi"@it .
+<https://example.org/teseo/attributo/utenti> rdfs:domain <https://example.org/teseo/tipo/sistema> .
+<https://example.org/teseo/attributo/utenti> rdfs:label "utenti" .
+<https://example.org/teseo/attributo/utenti> rdfs:range xsd:decimal .
+<https://example.org/teseo/categoria/amministrazione> rdf:type skos:Concept .
+<https://example.org/teseo/categoria/amministrazione> skos:definition "Processi amministrativi"@it .
+<https://example.org/teseo/categoria/amministrazione> skos:prefLabel "amministrazione"@it .
+<https://example.org/teseo/categoria/fatturazione> prov:wasDerivedFrom <https://example.org/teseo/fonte/fibo> .
+<https://example.org/teseo/categoria/fatturazione> rdf:type skos:Concept .
+<https://example.org/teseo/categoria/fatturazione> skos:altLabel "billing"@it .
+<https://example.org/teseo/categoria/fatturazione> skos:altLabel "contabilità clienti"@it .
+<https://example.org/teseo/categoria/fatturazione> skos:broader <https://example.org/teseo/categoria/amministrazione> .
+<https://example.org/teseo/categoria/fatturazione> skos:closeMatch <https://example.org/Invoicing> .
+<https://example.org/teseo/categoria/fatturazione> skos:definition "Fatture"@it .
+<https://example.org/teseo/categoria/fatturazione> skos:prefLabel "fatturazione"@it .
+<https://example.org/teseo/categoria/rischio> rdf:type skos:Concept .
+<https://example.org/teseo/categoria/rischio> skos:definition "Livello di rischio"@it .
+<https://example.org/teseo/categoria/rischio> skos:prefLabel "rischio"@it .
+<https://example.org/teseo/relazione/referente> rdf:type owl:ObjectProperty .
+<https://example.org/teseo/relazione/referente> rdfs:comment "Y è la persona di X"@it .
+<https://example.org/teseo/relazione/referente> rdfs:label "referente" .
+<https://example.org/teseo/relazione/referente> rdfs:range <https://example.org/teseo/tipo/persona> .
+<https://example.org/teseo/relazione/richiede> rdf:type owl:ObjectProperty .
+<https://example.org/teseo/relazione/richiede> rdf:type owl:TransitiveProperty .
+<https://example.org/teseo/relazione/richiede> rdfs:comment "X non parte senza Y"@it .
+<https://example.org/teseo/relazione/richiede> rdfs:label "richiede" .
+<https://example.org/teseo/relazione/usa> rdf:type owl:ObjectProperty .
+<https://example.org/teseo/relazione/usa> rdfs:comment "X funziona tramite Y"@it .
+<https://example.org/teseo/relazione/usa> rdfs:domain <https://example.org/teseo/tipo/processo> .
+<https://example.org/teseo/relazione/usa> rdfs:label "usa" .
+<https://example.org/teseo/relazione/usa> rdfs:range <https://example.org/teseo/tipo/sistema> .
+<https://example.org/teseo/relazione/variante_di> rdf:type owl:ObjectProperty .
+<https://example.org/teseo/relazione/variante_di> rdf:type owl:SymmetricProperty .
+<https://example.org/teseo/relazione/variante_di> rdfs:comment "X è gemello di Y"@it .
+<https://example.org/teseo/relazione/variante_di> rdfs:label "variante_di" .
+<https://example.org/teseo/tipo/fonte> rdf:type owl:Class .
+<https://example.org/teseo/tipo/fonte> rdfs:comment "Fonti"@it .
+<https://example.org/teseo/tipo/fonte> rdfs:label "fonte" .
+<https://example.org/teseo/tipo/persona> rdf:type owl:Class .
+<https://example.org/teseo/tipo/persona> rdfs:comment "Persone"@it .
+<https://example.org/teseo/tipo/persona> rdfs:label "persona" .
+<https://example.org/teseo/tipo/processo> rdf:type owl:Class .
+<https://example.org/teseo/tipo/processo> rdfs:comment "Attività"@it .
+<https://example.org/teseo/tipo/processo> rdfs:label "processo" .
+<https://example.org/teseo/tipo/servizio> prov:wasDerivedFrom <https://example.org/teseo/fonte/fibo> .
+<https://example.org/teseo/tipo/servizio> rdf:type owl:Class .
+<https://example.org/teseo/tipo/servizio> rdfs:comment "Servizi web"@it .
+<https://example.org/teseo/tipo/servizio> rdfs:label "servizio" .
+<https://example.org/teseo/tipo/servizio> rdfs:subClassOf <https://example.org/teseo/tipo/sistema> .
+<https://example.org/teseo/tipo/servizio> skos:altLabel "SPV"@it .
+<https://example.org/teseo/tipo/servizio> skos:exactMatch <urn:curie:fibo-fnd:Service> .
+<https://example.org/teseo/tipo/sistema> rdf:type owl:Class .
+<https://example.org/teseo/tipo/sistema> rdfs:comment "Strumenti"@it .
+<https://example.org/teseo/tipo/sistema> rdfs:label "sistema" .

@@ -23,7 +23,7 @@ separata di `/ecc:prp-implement`: la fase N+1 parte solo se la fase N ha superat
 | 3b — Vocabolari esterni | da decidere | go/no-go dopo la 3a |
 | 3c — Editor | facoltativa | — |
 | 4 — Attributi | implementata | — |
-| 5 — Export | da fare | — |
+| 5 — Export | implementata | — |
 
 **Parametro `VAULT_ISP`.** Il vault ISP è il vault reale della base (decisione confermata), ma sul disco non c'è
 (`C:\Obsidian\Wiki-ISP` assente il 2026-11-02). Il suo percorso serve solo al task 0.4b: tutto il resto della fase 0

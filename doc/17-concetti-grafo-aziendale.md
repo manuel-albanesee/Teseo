@@ -80,7 +80,7 @@ Ordine: 0 → 1 → 2 → B3 → 3a → go/no-go → 3b → 4 → 5. B3 si può 
 | 3a — Sinonimi interni | `## Sinonimi`, `## Corrispondenze`; sinonimo come seme; `BUILDER_VERSION` 8 | coerenza dei nomi su; semi spuri invariati | **implementata** (2 novembre 2026); go/no-go aperto: servono K1 sul vault reale |
 | 3b — Vocabolari esterni | riduttore da CSV, TSV in `raw/vocabolari/`, `schema.py --per-testo`, sezione del piano, lint delle versioni | coerenza dei nomi su rispetto alla 3a | da decidere dopo la 3a |
 | 4 — Attributi | `## Attributi`, chiave `attributi`, attributi nei fatti del recall; `BUILDER_VERSION` 9 | nessun peggioramento | **implementata** (2 novembre 2026) |
-| 5 — Export | Turtle deterministico dello schema (fase E di doc/16, ampliata) | golden file stabile | proposta |
+| 5 — Export | Turtle deterministico dello schema (fase E di doc/16, ampliata) | golden file stabile | **implementata** (2 novembre 2026) |
 
 ### Fase 0 — misurare (in corso)
 
@@ -279,6 +279,35 @@ contesto (+5%) richiede il vault reale e resta da fare con il vault ISP; (5) le 
 Prove: `tests/test_attributi.py` (29 test: parser, errori, roundtrip, chiave riservata nei quattro insiemi, preview, build, valori
 normalizzati, ereditarietà, recall, vincoli, API) con nove mutazioni (importo, albero delle categorie, tipo più specifico, sezione
 assente, data inesistente, tetto, vincolo sull'attributo, cardinalità, nomi riservati), tutte uccise.
+
+### Fase 5 — export Turtle dello schema (implementata)
+
+`python .graph/esporta_rdf.py [--db graph.sqlite] [--base IRI] [--out FILE]` scrive lo **schema** (decisione del 2 novembre 2026:
+solo lo schema, non le pagine) in Turtle, per aprirlo in uno strumento di ontologie o confrontarlo con un vocabolario esterno. Sola
+lettura del grafo corrente, solo libreria standard, nessun rdflib: il grafo resta quello che il builder ha costruito dal Markdown.
+
+| Dal grafo | In Turtle |
+| --- | --- |
+| tipi (`onto_tipi`) | `owl:Class`, `rdfs:label`, `rdfs:comment`, `rdfs:subClassOf` verso il padre |
+| categorie (`categorie`) | `skos:Concept`, `skos:prefLabel`, `skos:definition`, `skos:broader` verso la più ampia |
+| relazioni (`onto_relazioni`, `onto_vincoli`) | `owl:ObjectProperty`; `rdfs:domain` e `rdfs:range` solo se il lato ammette un tipo solo (né `qualsiasi` né `stesso tipo` né più tipi); `owl:TransitiveProperty` e `owl:SymmetricProperty` come secondo tipo |
+| attributi (`onto_attributi`) | `owl:DatatypeProperty`; `rdfs:domain` se il nome ha un solo tipo; `rdfs:range`: `xsd:date`, `xsd:decimal`, `xsd:boolean`, `xsd:string`, o `skos:Concept` per `categoria:X` |
+| sinonimi (`onto_sinonimi`) | `skos:altLabel "…"@it` sul tipo o sulla categoria |
+| corrispondenze (`onto_corrispondenze`) | `skos:exactMatch` o `skos:closeMatch` verso l'IRI, più `prov:wasDerivedFrom` verso la fonte del vocabolario |
+
+Scelte: (1) **nessun `owl:inverseOf`**: l'inversa dichiarata è un nome di lettura («è usato da»), non una relazione con un IRI (C3);
+(2) i **CURIE** delle corrispondenze non hanno una mappa di prefissi nel vault: si esportano come `urn:curie:<curie>`, riconoscibili
+e riconvertibili; (3) gli IRI dei termini sono `<base>tipo/<nome>`, `categoria/`, `relazione/`, `attributo/`, `fonte/`, con la base che
+finisce per `/` o `#` (default `https://example.org/teseo/`), i nomi codificati in percentuale; (4) **ordine totale**: ogni tripla è
+una riga `soggetto predicato oggetto .`, ordinate per soggetto, predicato, oggetto, senza date né altro che cambi fra due esecuzioni:
+due esecuzioni sullo stesso grafo producono byte identici; (5) stringhe con le fughe di Turtle (`\`, `\"`, `\n`, `\r`, `\t`,
+`\uXXXX`). Le tabelle che una generazione più vecchia non ha si saltano.
+
+Prove: `tests/test_esporta_rdf.py` (28 test: ogni tabella dello schema, dominio e codominio solo se univoci, nessun `owl:inverseOf`,
+CURIE, provenienza, forma di ogni riga, ordine totale, due esecuzioni byte identiche, golden file `tests/fixtures/rdf/schema.ttl`, base
+non valida, generazioni senza le tabelle, grafo non modificato, CLI con `--out` in LF) con otto mutazioni (univocità, jolly, ordine, dominio
+degli attributi, esattezza, CURIE, fughe, padre dei tipi, nomi non dichiarati), tutte uccise. Il file non è validato da un parser Turtle
+(niente rdflib): lo controllano la forma di ogni riga e il golden, da aprire a mano in uno strumento di ontologie la prima volta.
 
 ## Decisioni (2 novembre 2026)
 

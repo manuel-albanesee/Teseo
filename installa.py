@@ -47,7 +47,7 @@ CODEX_SCRIPT = {"codex_hook.py", "chiedi_codex.py", "leggi.py"}
 COPILOT_SCRIPT = {"copilot_hook.py", "copilot_timing_hook.py"}
 CLAUDE_SCRIPT = {"claude_hook.py"}
 CLAUDE_HANDLER = ("modello_hook.py", "learn_hook.py", "claude_hook.py")
-FACOLTATIVI = {"banco.py", "candidati.py", "coerenza.py"}
+FACOLTATIVI = {"banco.py", "candidati.py", "coerenza.py", "esporta_rdf.py"}
 DOMINIO = ("misura.py (DOMANDE, ATTESE, ROUTING, NEGATIVI, TESTO, ATTESI_FALLITI, MEMORIA), recall.py e build_graph.py "
            "(PAROLE_COMUNI, PAROLE_COMUNI_NOMI, NON_RELAZIONI), domande.py (NON_TERMINI, CON_REFERENTE)")
 
