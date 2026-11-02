@@ -77,6 +77,9 @@ Le sezioni «Sinonimi» (`Nome|Sinonimi`, separati da `;`) e «Corrispondenze» 
 fase 3a hanno lo stesso trattamento: tabelle proprie, conservate byte per byte dal serializer, citano tipi e categorie, quindi
 rinominare o togliere un tipo che citano è un errore della preview (`unknown_name`). `automatic_inference` aggiunge
 `synonym_seeds` quando ci sono sinonimi. Le operazioni sulle categorie e sulle due sezioni restano a mano (fase 3c, facoltativa).
+La sezione «Attributi» (fase 4, `Attributo|Di (tipo)|Valore|Descrizione`) segue la stessa regola: rinominare o togliere un tipo che
+cita è un errore della preview (`unknown_type`). `GET /ontology` espone `attributes`, e `model` della preview anche. La chiave
+`attributi` del frontmatter è riservata: l'editor delle relazioni delle pagine non la tocca (`graph_edit.RESERVED`).
 
 `content_revision` è lo snapshot analizzato; `graph_generation` è null. Hash
 ricontrollato dopo l'analisi e anche al replay: cambi esterni danno 409

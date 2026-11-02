@@ -66,6 +66,7 @@ from domande import TAG_ENTROPIA
 GENERICHE = {"menziona", "documentato_in"}
 PASSI = {"avanti": 3, "indietro": 2}  # passi massimi lungo le catene tipizzate, per verso
 PUNTI = {1: 100, 2: 50, 3: 40}       # punteggio base di una relazione tipizzata, per passo
+MAX_ATTRIBUTI = 6                     # attributi al più sotto ogni pagina seme (doc/17, fase 4)
 MAX_CATEGORIA = 8                     # pagine al più nel fatto aggregato di una categoria nominata (B3 di doc/16)
 SOGLIA_CATEGORIA = 0.4                # una categoria con più di questa quota delle pagine del vault non fa da seme
 FRATELLI = 3                          # da quanti fratelli in su si raccolgono in un fatto solo
@@ -672,6 +673,26 @@ def richiama_pagine(db, domanda, max_tipizzate=MAX_TIPIZZATE, max_menziona=MAX_M
     return [(s, *info[s]) for s in semi], tenuti, omessi
 
 
+def attributi_delle_pagine(db, pagine):
+    """{pagina: [(attributo, valore)]}: gli attributi di pagina (entity_attributi) nell'ordine della sezione «Attributi»,
+    al più MAX_ATTRIBUTI per pagina; {} se il grafo non ha la tabella (generazione precedente alla fase 4)."""
+    if not pagine:
+        return {}
+    try:
+        righe = db.execute(
+            "SELECT e.entity_id, e.attributo, e.valore FROM entity_attributi e "
+            "LEFT JOIN (SELECT nome, MIN(posizione) AS posizione FROM onto_attributi GROUP BY nome) o ON o.nome = e.attributo "
+            f"WHERE e.entity_id IN ({','.join('?' * len(pagine))}) ORDER BY e.entity_id, o.posizione, e.attributo",
+            list(pagine)).fetchall()
+    except sqlite3.OperationalError:
+        return {}
+    risultato = {}
+    for pagina, attributo, valore in righe:
+        if len(risultato.setdefault(pagina, [])) < MAX_ATTRIBUTI:
+            risultato[pagina].append((attributo, valore))
+    return risultato
+
+
 def nodi(fatto):
     return [n for k in ("s", "t") for n in (fatto[k] if isinstance(fatto[k], list) else [fatto[k]])]
 
@@ -682,8 +703,11 @@ def formatta(semi, fatti, info, omessi=None, db=None):
     solo se Wiki reference.md dichiara la «Semantica delle relazioni»: senza la sezione il contesto è quello di prima."""
     ids = {s[0] for s in semi}
     righe = [f"Dal grafo della wiki ({len(fatti)} fatti):"]
+    attributi = attributi_delle_pagine(db, [s[0] for s in semi]) if db is not None else {}
     for id_, tipo, descr in semi:
         righe.append(f"- {id_} [{tipo}]: {descr}")
+        if attributi.get(id_):
+            righe.append("  · " + "; ".join(f"{k}: {v}" for k, v in attributi[id_]))
     nome = lambda n: f"{len(n)} pagine ({', '.join(n)})" if isinstance(n, list) else n
     for f in fatti:
         freccia = "↔ menziona ↔" if f["reciproco"] else f"→ {f['tipo']} →"

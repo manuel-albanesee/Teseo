@@ -15,11 +15,12 @@ import test_dashboard_queries as fixture
 from kit.dashboard import graph_edit, ontology_preview
 from kit.dashboard.contracts import ContractError
 from kit.dashboard.graph_service import rebuild
-from kit.graph import build_graph, correzioni, ontology
+from kit.graph import build_graph, ontology
 from kit.graph.ontology import AttributeDef, TypeDef, parse, serialize
 
 KIT = Path(__file__).resolve().parents[1] / 'kit'
 sys.path.insert(0, str(KIT / 'graph'))
+import correzioni  # noqa: E402
 import domande  # noqa: E402
 import recall  # noqa: E402
 from graph_db import connect_graph  # noqa: E402
@@ -210,7 +211,7 @@ class Build(unittest.TestCase):
             'unknown_attribute': ('processo', {'inventato': 'x'}),
             'unknown_attribute ': ('processo', {'codice_progetto': 'X1'}),  # dichiarato per sistema, non per processo
             'attribute_type': ('sistema', {'utenti': 'molti'}),
-            'attribute_value': ('processo', {'data_liquidazione_prevista': '2031-13-45'}),
+            'attribute_value': ('processo', {'data_liquidazione_prevista': '"2031-13-45"'}),
             'attribute_value ': ('processo', {'importo_previsto': 'tanto'}),
             'attribute_value  ': ('sistema', {'livello': 'generale'}),  # esiste ma non è sotto «rischio»
             'attribute_value   ': ('sistema', {'codice_progetto': '"con spazi"'}),
@@ -219,6 +220,18 @@ class Build(unittest.TestCase):
         for etichetta, (tipo, attributi) in casi.items():
             with self.subTest(etichetta):
                 self.assertIn(etichetta.strip(), problemi(SCHEMA, P=pagina(tipo, attributi)))
+
+    def test_il_tipo_piu_specifico_vince(self):
+        schema = SCHEMA.replace('| `nota` | sistema | testo | Appunto libero |\n',
+                                '| `nota` | sistema | testo | Appunto libero |\n| `nota` | servizio | numero | Voto |\n')
+        self.assertEqual(problemi(schema, G=pagina('servizio', {'nota': '7'})), set())
+        self.assertEqual(problemi(schema, G=pagina('servizio', {'nota': 'sette'})), {'attribute_type'})
+        self.assertEqual(problemi(schema, C=pagina('sistema', {'nota': 'sette'})), set())
+
+    def test_una_data_inesistente_senza_apici_nomina_la_pagina(self):
+        testo = '---\ntipo: processo\nattributi:\n  data_liquidazione_prevista: 2031-13-45\n---\ntesto\n'
+        with self.assertRaisesRegex(ValueError, r'^P\.md: frontmatter non valido'):
+            build_graph.parse_documents(documenti(SCHEMA, P=testo))
 
     def test_attributi_deve_essere_una_mappa(self):
         testo = '---\ntipo: processo\nattributi: [uno, due]\n---\ntesto\n'
@@ -241,13 +254,14 @@ class Recall(unittest.TestCase):
 
     def test_gli_attributi_sotto_il_seme(self):
         con, senza = self.contesto(SCHEMA, 'quando si liquida Rilascio?', **self.PAGINE)
-        self.assertIn('- Rilascio [processo]: \n  · data_liquidazione_prevista: 2031-12-31; importo_previsto: 250000 EUR', con)
+        self.assertRegex(con, r'- Rilascio \[processo\]: [^\n]*\n  · data_liquidazione_prevista: 2031-12-31; '
+                              r'importo_previsto: 250000 EUR')
         self.assertNotIn('2031-12-31', senza)  # senza il grafo il contesto è quello di prima
 
     def test_nell_ordine_della_sezione_e_con_un_tetto(self):
         with mock.patch.object(recall, 'MAX_ATTRIBUTI', 1):
             con, _ = self.contesto(SCHEMA, 'quando si liquida Rilascio?', **self.PAGINE)
-        self.assertIn('  · data_liquidazione_prevista: 2031-12-31\n', con)
+        self.assertTrue(con.endswith('\n  · data_liquidazione_prevista: 2031-12-31'))
         self.assertNotIn('importo_previsto', con)
 
     def test_una_pagina_senza_attributi_non_ha_righe(self):

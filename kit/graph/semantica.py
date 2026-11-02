@@ -77,6 +77,15 @@ def vincoli(db):
         return None
 
 
+def nomi_attributi(db):
+    """I nomi degli attributi dichiarati in «Attributi» (onto_attributi); vuoto senza la sezione o in una generazione
+    precedente alla fase 4."""
+    try:
+        return {nome for (nome,) in db.execute("SELECT DISTINCT nome FROM onto_attributi")}
+    except sqlite3.OperationalError:
+        return set()
+
+
 def tipi_sotto(db, tipo):
     """Il tipo e tutti i suoi sottotipi (onto_tipi.padre): un vincolo su un tipo vale anche per loro."""
     try:

@@ -74,7 +74,7 @@ def parse_ontology(*args, **kwargs):
 # Nomi che sono anche parole comuni: valgono solo scritti con la maiuscola (stessa lista di recall.PAROLE_COMUNI,
 # che non si può importare da qui: recall importa build_graph)
 PAROLE_COMUNI_NOMI = {"portale"}  # da adattare
-NON_RELAZIONI = {"tipo", "tags", "fonti", "aggiornato", "aliases", "relazioni_dettaglio"}
+NON_RELAZIONI = {"tipo", "tags", "fonti", "aggiornato", "aliases", "relazioni_dettaglio", "attributi"}
 CONFIDENZE = ("alta", "media", "bassa")
 MAX_EVIDENZA = 500
 PAGINE_SCHEMA = {"index", "log", "wiki reference"}  # link ammessi, ma non sono nodi del grafo
@@ -167,13 +167,14 @@ def leggi_testo(testo, nome):
             import yaml
             try:
                 fm = yaml.safe_load(testo[3:fine])
-                if fm is None:
-                    fm = {}
-                if not isinstance(fm, dict):
-                    raise ValueError(f"{nome}: frontmatter deve essere una mappa YAML")
-                return fm, testo[fine + 4:]
-            except yaml.YAMLError as e:  # senza il nome della pagina l'errore di yaml non dice dove cercare
+            except (yaml.YAMLError, ValueError) as e:  # senza il nome della pagina l'errore non dice dove cercare;
+                # ValueError: una data scritta senza apici e inesistente (2031-13-45), che yaml non converte in `date`
                 raise ValueError(f"{nome}: frontmatter non valido ({str(e).strip().splitlines()[0]})") from e
+            if fm is None:
+                fm = {}
+            if not isinstance(fm, dict):
+                raise ValueError(f"{nome}: frontmatter deve essere una mappa YAML")
+            return fm, testo[fine + 4:]
         raise ValueError(f"{nome}: frontmatter senza delimitatore di chiusura")
     return {}, testo
 
@@ -241,6 +242,18 @@ def parse_documents(documents):
                                 'reason': message, 'target': target})
 
     entita, relazioni, alias, attributi, etichette = [], set(), [], [], set()
+    valori_attributi = []  # (pagina, attributo, valore normalizzato): gli attributi di pagina (doc/17, fase 4), non gli archi
+
+    definizioni_per_tipo = {}
+
+    def definizioni_attributi(tipo):
+        """{attributo: AttributeDef} validi per le pagine di questo tipo: quelli del tipo e dei suoi antenati, e se due
+        righe hanno lo stesso nome vince il tipo più specifico."""
+        if tipo not in definizioni_per_tipo:
+            catena = [tipo, *antenati.get(tipo, ())] if isinstance(tipo, str) else []
+            definizioni_per_tipo[tipo] = {d.name: d for antenato in reversed(catena)
+                                          for d in ontology.attributes if d.of_type == antenato}
+        return definizioni_per_tipo[tipo]
 
     def risolvi(pagina, raw, dove):
         t = bersaglio(raw)
@@ -268,6 +281,22 @@ def parse_documents(documents):
                         'unknown_tag', tag)
         for a in valori(fm.get("aliases")):
             alias.append((nome, a))
+        if ontology.attributes is not None and fm.get("attributi") is not None:  # senza la sezione la mappa si ignora
+            if not isinstance(fm["attributi"], dict):
+                problem(f"{nome}: attributi deve essere una mappa nome: valore", f'wiki/{nome}.md', 'attributi',
+                        'attribute_type')
+            for chiave, valore in (fm["attributi"].items() if isinstance(fm["attributi"], dict) else ()):
+                definizione = definizioni_attributi(fm.get("tipo")).get(str(chiave))
+                if definizione is None:
+                    problem(f"{nome}: attributo '{chiave}' non dichiarato per il tipo {fm.get('tipo')}",
+                            f'wiki/{nome}.md', 'attributi', 'unknown_attribute', str(chiave))
+                    continue
+                try:
+                    valori_attributi.append((nome, definizione.name, _ontologia().normalize_attribute(
+                        definizione.value_type, valore, ontology.category_tree(definizione.value_type.partition(":")[2]))))
+                except _ontologia().AttributeValueError as errore:
+                    problem(f"{nome}: attributo '{chiave}': {errore}", f'wiki/{nome}.md', 'attributi', errore.code,
+                            str(chiave))
         for chiave in valori(fm.get("fonti")):
             fonti_usate.add(chiave)
             relazioni.add((nome, chiave, "documentato_in"))
@@ -361,7 +390,7 @@ def parse_documents(documents):
     return {"pagine": pagine, "entita": entita, "relazioni": relazioni,
             "alias": alias, "attributi": attributi, "problemi": tuple(problemi), "fonti_usate": fonti_usate,
             "tipizzate": tipizzate, "vocabolario": vocabolario, "ontology": ontology, "antenati": antenati,
-            "etichette": sorted(etichette), "avvisi": tuple(avvisi),
+            "etichette": sorted(etichette), "avvisi": tuple(avvisi), "valori_attributi": sorted(valori_attributi),
             "problem_details": tuple(problem_details)}
 
 
@@ -394,6 +423,7 @@ def righe_ontologia(snapshot):
             "sinonimi": [(s.name, parola, i) for i, (s, parola) in
                          enumerate((s, parola) for s in ontology.synonyms or () for parola in s.synonyms)],
             "corrispondenze": [(m.name, m.iri, m.vocabulary, m.exactness, i) for i, m in enumerate(ontology.matches or ())],
+            "attributi": [(a.name, a.of_type, a.value_type, a.description, i) for i, a in enumerate(ontology.attributes or ())],
             "vincoli": [(r.name, lato, tipo, i) for r in ontology.relations
                         for lato, ammessi in (("da", r.from_types), ("a", r.to_types)) for i, tipo in enumerate(ammessi)],
             "metadati": [("formato", "1"), ("schema_digest", ontology.digest if ontology.source else ""),
@@ -403,7 +433,8 @@ def righe_ontologia(snapshot):
                          ("semantica", "presente" if ontology.semantics is not None else "assente"),
                          ("vincoli", "presente" if ontology.constraints is not None else "assente"),
                          ("sinonimi", "presenti" if ontology.synonyms is not None else "assenti"),
-                         ("corrispondenze", "presenti" if ontology.matches is not None else "assenti")]}
+                         ("corrispondenze", "presenti" if ontology.matches is not None else "assenti"),
+                         ("attributi", "presenti" if ontology.attributes is not None else "assenti")]}
 
 
 class GraphValidationError(ValueError):
@@ -454,6 +485,10 @@ def build_candidate(snapshot, out):
                                     PRIMARY KEY (nome, sinonimo));
         CREATE TABLE onto_corrispondenze (nome TEXT NOT NULL, iri TEXT NOT NULL, vocabolario TEXT NOT NULL,
                                           esattezza TEXT NOT NULL, posizione INTEGER NOT NULL, PRIMARY KEY (nome, iri));
+        CREATE TABLE onto_attributi (nome TEXT NOT NULL, tipo TEXT NOT NULL, valore TEXT NOT NULL,
+                                     descrizione TEXT NOT NULL, posizione INTEGER NOT NULL, PRIMARY KEY (nome, tipo));
+        CREATE TABLE entity_attributi (entity_id TEXT NOT NULL, attributo TEXT NOT NULL, valore TEXT NOT NULL,
+                                       PRIMARY KEY (entity_id, attributo));
         CREATE TABLE onto_metadata (chiave TEXT PRIMARY KEY, valore TEXT NOT NULL);
         CREATE TABLE categorie (nome TEXT PRIMARY KEY, padre TEXT, descrizione TEXT NOT NULL, posizione INTEGER NOT NULL);
         CREATE TABLE entity_tags (entity_id TEXT NOT NULL, tag TEXT NOT NULL, PRIMARY KEY (entity_id, tag));
@@ -496,6 +531,8 @@ def build_candidate(snapshot, out):
         db.executemany("INSERT INTO onto_vincoli VALUES (?,?,?,?)", onto["vincoli"])
         db.executemany("INSERT INTO onto_sinonimi VALUES (?,?,?)", onto["sinonimi"])
         db.executemany("INSERT INTO onto_corrispondenze VALUES (?,?,?,?,?)", onto["corrispondenze"])
+        db.executemany("INSERT INTO onto_attributi VALUES (?,?,?,?,?)", onto["attributi"])
+        db.executemany("INSERT INTO entity_attributi VALUES (?,?,?)", snapshot.get("valori_attributi", ()))
         db.executemany("INSERT INTO onto_metadata VALUES (?,?)", onto["metadati"])
         db.executemany("INSERT INTO testo VALUES (?,?,?,?,?)",
                        [(nome, nome, corpo, ridotto(nome), ridotto(corpo)) for nome, (_, corpo) in pagine.items()])

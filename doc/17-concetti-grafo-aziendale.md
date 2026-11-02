@@ -79,7 +79,7 @@ Ordine: 0 → 1 → 2 → B3 → 3a → go/no-go → 3b → 4 → 5. B3 si può 
 | B3 | categoria come seme aggregato, come in doc/16 | regola di doc/16 | implementata (2 novembre 2026) |
 | 3a — Sinonimi interni | `## Sinonimi`, `## Corrispondenze`; sinonimo come seme; `BUILDER_VERSION` 8 | coerenza dei nomi su; semi spuri invariati | **implementata** (2 novembre 2026); go/no-go aperto: servono K1 sul vault reale |
 | 3b — Vocabolari esterni | riduttore da CSV, TSV in `raw/vocabolari/`, `schema.py --per-testo`, sezione del piano, lint delle versioni | coerenza dei nomi su rispetto alla 3a | da decidere dopo la 3a |
-| 4 — Attributi | `## Attributi`, chiave `attributi`, attributi nei fatti del recall; `BUILDER_VERSION` 9 | nessun peggioramento | proposta |
+| 4 — Attributi | `## Attributi`, chiave `attributi`, attributi nei fatti del recall; `BUILDER_VERSION` 9 | nessun peggioramento | **implementata** (2 novembre 2026) |
 | 5 — Export | Turtle deterministico dello schema (fase E di doc/16, ampliata) | golden file stabile | proposta |
 
 ### Fase 0 — misurare (in corso)
@@ -236,7 +236,7 @@ Go/no-go dopo questa fase: si procede con la 3b solo se K1 sale sul vault reale 
 questo computer e K1 richiede un modello, quindi il via esplicito dell'utente) e un vocabolario esterno concreto. La 3b resta
 proposta; si passa alla fase 4. Si riapre quando l'utente indica il vocabolario (FIBO, ESCO, altro) e il percorso `VAULT_ISP`.
 
-### Fase 4 — attributi (in corso)
+### Fase 4 — attributi (implementata)
 
 Un attributo è un valore scalare di una pagina, non un arco: «data_liquidazione_prevista: 2031-12-31». Si dichiara in una
 sezione facoltativa di `Wiki reference.md` e si scrive nel frontmatter sotto la chiave riservata `attributi`.
@@ -269,6 +269,16 @@ tutti. Un vault con una relazione chiamata `attributi` riceve `reserved_relation
 **Recall**: `formatta` aggiunge sotto ogni pagina seme una riga «· data_liquidazione_prevista: 2031-12-31; …» con al più
 `MAX_ATTRIBUTI` attributi, nell'ordine della sezione; categorie e tipi non ne hanno. **Domande**: un vincolo su un attributo
 mancante è una domanda aperta di segnale `vincolo` (chiave `<attributo> min`).
+
+Scostamenti dal piano: (1) il build ignora la mappa `attributi` se manca la sezione, invece di segnalarla; (2) una data scritta senza
+apici e inesistente (2031-13-45) la rifiuta YAML prima di arrivare al kit: `leggi_testo` ora la trasforma in un errore che nomina la
+pagina («P.md: frontmatter non valido (month must be in 1..12)»), come già faceva per gli altri errori di YAML; (3) un vincolo su un
+attributo ammette minimo 0 o 1 e massimo vuoto o 1 (`invalid_cardinality` altrimenti); (4) il confronto del peso medio del
+contesto (+5%) richiede il vault reale e resta da fare con il vault ISP; (5) le righe che documentano le sezioni facoltative in `kit/vault/Wiki reference.md` sono brevi di proposito: stanno nel livello 1 dello schema, e con la terza versione più lunga il test dei tre quarti (`test_contratti`) è fallito per 17 token. Il dettaglio sta qui, non nello schema.
+
+Prove: `tests/test_attributi.py` (29 test: parser, errori, roundtrip, chiave riservata nei quattro insiemi, preview, build, valori
+normalizzati, ereditarietà, recall, vincoli, API) con nove mutazioni (importo, albero delle categorie, tipo più specifico, sezione
+assente, data inesistente, tetto, vincolo sull'attributo, cardinalità, nomi riservati), tutte uccise.
 
 ## Decisioni (2 novembre 2026)
 

@@ -27,7 +27,8 @@ MAX_RESPONSE = 2 * 1024 * 1024
 MAX_ITEMS = 50
 MAX_EVIDENCE = 500
 CONFIDENCE = ('alta', 'media', 'bassa')
-RESERVED = frozenset({'tipo', 'tags', 'fonti', 'aggiornato', 'aliases', 'relazioni_dettaglio', 'menziona', 'documentato_in'})
+RESERVED = frozenset({'tipo', 'tags', 'fonti', 'aggiornato', 'aliases', 'relazioni_dettaglio', 'attributi', 'menziona',
+                      'documentato_in'})
 _PLAIN = re.compile(r'[A-Za-z_À-￿][\w\-/À-￿]*')
 _WORDS = frozenset({'true', 'false', 'null', 'yes', 'no', 'on', 'off', 'y', 'n', '~'})
 _TEXT = re.compile(r'[^\x00-\x1f\x7f]+')

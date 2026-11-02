@@ -106,7 +106,7 @@ def _patch(document, operations, observed):
             raise ContractError('invalid_patch', 'Operazione non supportata; rinomina pagine e inversione automatica escluse')
         changes.append(deepcopy(operation))
     issues = ontology.validate(types, relations, current.categories, current.semantics, current.constraints,
-                               current.synonyms, current.matches)
+                               current.synonyms, current.matches, current.attributes)
     if issues:
         if len(issues) > 200:
             raise ContractError('preview_limit', 'Oltre 200 errori schema: ridurre la patch prima della preview')
@@ -287,7 +287,8 @@ def analyze(snapshot, patch):
                   'semantics': [asdict(item) for item in after.semantics or ()],
                   'constraints': [asdict(item) for item in after.constraints or ()],
                   'synonyms': [asdict(item) for item in after.synonyms or ()],
-                  'matches': [asdict(item) for item in after.matches or ()]},
+                  'matches': [asdict(item) for item in after.matches or ()],
+                  'attributes': [asdict(item) for item in after.attributes or ()]},
         'usage': {'types': dict(sorted(type_counts.items())), 'properties': dict(sorted(property_counts.items())),
                   'derived_types': dict(Counter(item[1] for item in base['entita'] if item[3] is None)), 'pages': usage},
         'impacted_pages': sorted(impacted), 'impacted_edges': edges, 'references': references,

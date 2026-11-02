@@ -27,7 +27,7 @@ from pathlib import Path
 
 from build_graph import bersaglio, leggi_testo, valori
 
-NON_RELAZIONI = {"tipo", "tags", "fonti", "aggiornato", "aliases", "relazioni_dettaglio"}
+NON_RELAZIONI = {"tipo", "tags", "fonti", "aggiornato", "aliases", "relazioni_dettaglio", "attributi"}
 TRAILER = re.compile(r"^Teseo-Skill:[ \t]*([a-z][a-z0-9-]{0,31})[ \t]*$", re.M)
 DA_CORREGGERE = {"ingest", "lint"}
 MAX_COMMIT = 1000

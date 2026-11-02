@@ -55,6 +55,8 @@ trattata come una relazione** e deve contenere link tra virgolette (`usa: "[[Con
 | `tipi non ammessi dal vocabolario` | Il `tipo` di una delle due pagine non è tra quelli ammessi da quella relazione: correggi il tipo o la relazione. |
 | `fonte '…' usata ma non censita` | Aggiungi la chiave alla tabella delle fonti. |
 | `tag '…' non è una categoria di Wiki reference` | Solo con la sezione `## Categorie`: usa una categoria della tabella o aggiungila (con la sua categoria più ampia). |
+| `reserved_relation` su `attributi` | La chiave `attributi` del frontmatter è riservata alla mappa degli attributi di pagina (sezione `## Attributi`): una relazione con quel nome va rinominata, per esempio `ha_attributi`. |
+| `unknown_attribute`, `attribute_type`, `attribute_value` | Solo con la sezione `## Attributi`: l'attributo non è dichiarato per il tipo della pagina, il valore ha il tipo sbagliato (un testo dove serve un numero) o un contenuto non valido (una data inesistente, una categoria fuori dall'albero indicato). Senza la sezione la mappa `attributi` si ignora. |
 
 Ogni pagina dovrebbe avere un `tipo` (`sistema`, `processo`, `progetto`, `persona`, `concetto`, `episodio`…):
 `sistema`, `processo` e `progetto` senza `referente` diventano domande aperte, le catene partono da processi e sistemi.

@@ -18,7 +18,7 @@ except ImportError:
     import build_graph
     from graph_db import graph_reference
 
-BUILDER_VERSION = 8  # 4: `autori` e HEAD nell'identità; 5: tabelle onto_* (doc/16); 6: `categorie`, `entity_tags`, `onto_tipi.padre`; 7: semantica e vincoli (doc/17): colonne di `onto_relazioni`, `onto_cardinalita`, vista `relazioni_dedotte`; 8: sinonimi e corrispondenze (doc/17, fase 3a): `onto_sinonimi`, `onto_corrispondenze`
+BUILDER_VERSION = 9  # 4: `autori` e HEAD nell'identità; 5: tabelle onto_* (doc/16); 6: `categorie`, `entity_tags`, `onto_tipi.padre`; 7: semantica e vincoli (doc/17): colonne di `onto_relazioni`, `onto_cardinalita`, vista `relazioni_dedotte`; 8: sinonimi e corrispondenze (doc/17, fase 3a): `onto_sinonimi`, `onto_corrispondenze`; 9: attributi di pagina (doc/17, fase 4): `onto_attributi`, `entity_attributi`
 
 
 def _atomic_marker(path, record):

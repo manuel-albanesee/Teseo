@@ -4,26 +4,32 @@ Grammatica volutamente limitata: sezioni ATX h2, una tabella contigua per sezion
 2/3 colonne per i tipi (la terza è «Sottotipo di»), 3/5 per le relazioni, 3 per le categorie
 («Categoria | Più ampia | Descrizione», doc/16), 4 per la semantica delle relazioni («Relazione | Ruolo | Inversa |
 Proprietà», doc/17) e 5 per i vincoli («Tipo | Relazione o attributo | Minimo | Massimo | Se manca»), 2 per i sinonimi («Nome | Sinonimi»,
-separati da `;`) e 4 per le corrispondenze («Nome | Corrispondenza | Vocabolario | Esattezza»). Contenuto ambiguo
+separati da `;`), 4 per le corrispondenze («Nome | Corrispondenza | Vocabolario | Esattezza») e 4 per gli attributi («Attributo |
+Di (tipo) | Valore | Descrizione»). Contenuto ambiguo
 resta manuale. Gli offset sono byte UTF-8; il serializer sostituisce solo tabelle riconosciute: categorie, semantica,
-vincoli, sinonimi e corrispondenze si conservano byte per byte (e il serializer rifiuta una modifica che li lascerebbe
+vincoli, sinonimi, corrispondenze e attributi si conservano byte per byte (e il serializer rifiuta una modifica che li lascerebbe
 con nomi non più dichiarati).
 """
 from dataclasses import dataclass
+import datetime
 import hashlib
 import re
 import unicodedata
 
 MAX_BYTES = 2 * 1024 * 1024
 MAX_ROWS = 2048
-SPECIAL = frozenset({'tipo', 'tags', 'fonti', 'aggiornato', 'aliases', 'relazioni_dettaglio', 'menziona', 'documentato_in'})
+SPECIAL = frozenset({'tipo', 'tags', 'fonti', 'aggiornato', 'aliases', 'relazioni_dettaglio', 'attributi', 'menziona',
+                     'documentato_in'})
 WILDCARDS = frozenset({'qualsiasi', 'stesso tipo'})
 HEADINGS = {'Tipi ammessi': 'types', 'Relazioni tipizzate': 'relations', 'Categorie': 'categories',
             'Semantica delle relazioni': 'semantics', 'Vincoli': 'constraints',
-            'Sinonimi': 'synonyms', 'Corrispondenze': 'matches'}
+            'Sinonimi': 'synonyms', 'Corrispondenze': 'matches', 'Attributi': 'attributes'}
 RUOLI = ('dipendenza', 'responsabile', 'composizione', 'causale', 'sequenza')  # insieme chiuso (doc/17, fase 2)
 PROPRIETA = ('transitiva', 'simmetrica')
 SE_MANCA = ('domanda', 'nulla')  # un vincolo violato diventa una domanda aperta per l'autore, oppure niente
+VALORI_ATTRIBUTO = ('testo', 'numero', 'data', 'importo', 'codice', 'sì/no')  # più `categoria:X` (doc/17, fase 4)
+IMPORTO = re.compile(r'\d+(?:\.\d+)?(?: [A-Z]{3})?')
+CODICE = re.compile(r'[A-Za-z0-9][A-Za-z0-9._/-]{0,63}')
 ESATTEZZE = ('esatta', 'vicina')  # skos:exactMatch o skos:closeMatch (doc/17, fase 3a)
 IRI = re.compile(r'[A-Za-z][A-Za-z0-9+.-]*:[^\s<>"{}|\\^`]+')  # un IRI assoluto o un CURIE (prefisso:nome locale)
 CHIAVE_VOCABOLARIO = re.compile(r'[a-z][\w.-]*')  # come le «Chiavi delle fonti» (build_graph.RIGA_FONTE)
@@ -95,6 +101,21 @@ class Correspondence:
 
 
 @dataclass(frozen=True)
+class AttributeDef:
+    name: str
+    of_type: str  # un tipo dichiarato: vale anche per i sottotipi
+    value_type: str  # uno di VALORI_ATTRIBUTO, o `categoria:X`
+    description: str = ''
+
+
+class AttributeValueError(ValueError):
+    """Il valore di un attributo non è accettabile: `code` è `attribute_type` (tipo sbagliato) o `attribute_value`."""
+    def __init__(self, code, message):
+        super().__init__(message)
+        self.code = code
+
+
+@dataclass(frozen=True)
 class Relation:
     name: str
     from_types: tuple[str, ...]
@@ -126,6 +147,8 @@ class Ontology:
     synonyms_span: Span | None = None
     matches: tuple[Correspondence, ...] | None = None
     matches_span: Span | None = None
+    attributes: tuple[AttributeDef, ...] | None = None
+    attributes_span: Span | None = None
 
     @property
     def digest(self):
@@ -136,7 +159,20 @@ class Ontology:
         return {key: span for key, span in (('types', self.types_span), ('relations', self.relations_span),
                                             ('categories', self.categories_span), ('semantics', self.semantics_span),
                                             ('constraints', self.constraints_span), ('synonyms', self.synonyms_span),
-                                            ('matches', self.matches_span)) if span}
+                                            ('matches', self.matches_span), ('attributes', self.attributes_span)) if span}
+
+    def category_tree(self, root):
+        """La categoria `root` e le sue sottocategorie (nomi); vuoto se `root` non è dichiarata."""
+        figli = {}
+        for item in self.categories or ():
+            figli.setdefault(item.broader, []).append(item.name)
+        if root not in {item.name for item in self.categories or ()}:
+            return set()
+        albero, fronte = {root}, [root]
+        while fronte:
+            fronte = [f for c in fronte for f in figli.get(c, ()) if f not in albero]
+            albero.update(fronte)
+        return albero
 
     @property
     def capabilities(self):
@@ -220,7 +256,8 @@ def _cycles(parents):
     return found
 
 
-def validate(types, relations, categories=None, semantics=None, constraints=None, synonyms=None, matches=None):
+def validate(types, relations, categories=None, semantics=None, constraints=None, synonyms=None, matches=None,
+             attributes=None):
     """Validazione del modello; impatto sulle pagine demandato al builder/preview.
 
     `semantics` e `constraints` (doc/17) sono le sezioni facoltative: i loro nomi devono restare dichiarati, quindi
@@ -309,6 +346,31 @@ def validate(types, relations, categories=None, semantics=None, constraints=None
                     issues.append(Issue('invalid_property', item.name + ': proprietà attesa fra ' + ', '.join(PROPRIETA)))
             if 'simmetrica' in item.properties and item.inverse:
                 issues.append(Issue('symmetric_with_inverse', item.name + ': una relazione simmetrica non ha un nome inverso'))
+    attribute_names = set()
+    if attributes is not None:
+        if not attributes or len(attributes) > MAX_ROWS:
+            issues.append(Issue('catalog_limit', 'Attributi vuoti o oltre 2048 righe'))
+        category_names = {item.name for item in categories or () if isinstance(item, Category)}
+        seen = set()
+        for item in attributes:
+            if (not isinstance(item, AttributeDef) or not _name(item.name) or not _name(item.of_type)
+                    or not isinstance(item.value_type, str) or not _text(item.description)):
+                issues.append(Issue('invalid_attribute', 'Nome, tipo o descrizione attributo non rappresentabile nella tabella'))
+                continue
+            attribute_names.add(item.name)
+            if item.name.casefold() in SPECIAL or item.name in relation_names:
+                issues.append(Issue('reserved_attribute', 'Nome riservato o già di una relazione: ' + item.name))
+            if types is not None and item.of_type not in known:
+                issues.append(Issue('unknown_type', f'{item.name}: attributo di un tipo non dichiarato: {item.of_type}'))
+            if item.value_type.startswith('categoria:'):
+                if item.value_type[len('categoria:'):] not in category_names:
+                    issues.append(Issue('unknown_name', f'{item.name}: categoria non dichiarata in «{item.value_type}»'))
+            elif item.value_type not in VALORI_ATTRIBUTO:
+                issues.append(Issue('invalid_value_type', f'{item.name}: «Valore» atteso fra '
+                                    + ', '.join(VALORI_ATTRIBUTO) + ' o categoria:X'))
+            if (item.name, item.of_type) in seen:
+                issues.append(Issue('duplicate_attribute', f'Attributo ripetuto: {item.name} · {item.of_type}'))
+            seen.add((item.name, item.of_type))
     if constraints is not None:
         if not constraints or len(constraints) > MAX_ROWS:
             issues.append(Issue('catalog_limit', 'Vincoli vuoti o oltre 2048 righe'))
@@ -319,10 +381,13 @@ def validate(types, relations, categories=None, semantics=None, constraints=None
                 continue
             if types is not None and item.type not in known:
                 issues.append(Issue('unknown_type', 'Vincolo su un tipo non dichiarato: ' + str(item.type)))
-            if item.relation not in relation_names:
+            if item.relation not in relation_names and item.relation not in attribute_names:
                 issues.append(Issue('unknown_relation', 'Vincolo su una relazione non dichiarata: ' + str(item.relation)))
             if item.minimum < 0 or (item.maximum is not None and item.maximum < item.minimum):
                 issues.append(Issue('invalid_cardinality', f'{item.type} · {item.relation}: minimo e massimo non coerenti'))
+            if (item.relation in attribute_names and item.relation not in relation_names
+                    and (item.minimum > 1 or (item.maximum is not None and item.maximum > 1))):
+                issues.append(Issue('invalid_cardinality', f'{item.type} · {item.relation}: un attributo ha un solo valore'))
             if item.if_missing not in SE_MANCA:
                 issues.append(Issue('invalid_if_missing', f'{item.type} · {item.relation}: «Se manca» atteso fra '
                                     + ', '.join(SE_MANCA)))
@@ -375,6 +440,70 @@ def validate(types, relations, categories=None, semantics=None, constraints=None
                 issues.append(Issue('duplicate_match', f'Corrispondenza ripetuta: {item.name} · {item.iri}'))
             seen.add((item.name, item.iri))
     return tuple(issues)
+
+
+def normalize_attribute(value_type, value, tree=frozenset()):
+    """Il valore di un attributo come testo normalizzato, o AttributeValueError.
+
+    `value` viene dal frontmatter già letto da YAML (una data senza apici è `datetime.date`, `true` è un booleano).
+    `tree` sono i nomi ammessi per `categoria:X`. Tipo Python sbagliato → `attribute_type`; tipo giusto ma contenuto no
+    (data inesistente, importo malformato, categoria fuori dall'albero) → `attribute_value`."""
+    is_number = isinstance(value, (int, float)) and not isinstance(value, bool)
+    if value_type == 'testo':
+        if not isinstance(value, str):
+            raise AttributeValueError('attribute_type', 'atteso un testo')
+        if not value.strip() or len(value) > 500:
+            raise AttributeValueError('attribute_value', 'testo vuoto o oltre 500 caratteri')
+        return value.strip()
+    if value_type == 'numero':
+        if not is_number:
+            raise AttributeValueError('attribute_type', 'atteso un numero')
+        return str(value)
+    if value_type == 'data':
+        if isinstance(value, datetime.datetime):
+            raise AttributeValueError('attribute_value', 'attesa una data, non un istante')
+        if isinstance(value, datetime.date):
+            return value.isoformat()
+        if not isinstance(value, str):
+            raise AttributeValueError('attribute_type', 'attesa una data AAAA-MM-GG')
+        try:
+            return datetime.date.fromisoformat(value.strip()).isoformat()
+        except ValueError:
+            raise AttributeValueError('attribute_value', f'«{value}» non è una data AAAA-MM-GG') from None
+    if value_type == 'importo':
+        if is_number:
+            return str(value)
+        if not isinstance(value, str):
+            raise AttributeValueError('attribute_type', 'atteso un importo (numero o «250000 EUR»)')
+        if not IMPORTO.fullmatch(value.strip()):
+            raise AttributeValueError('attribute_value', f'«{value}» non è un importo (numero e valuta di tre lettere)')
+        return value.strip()
+    if value_type == 'codice':
+        if isinstance(value, int) and not isinstance(value, bool):
+            value = str(value)
+        if not isinstance(value, str):
+            raise AttributeValueError('attribute_type', 'atteso un codice')
+        if not CODICE.fullmatch(value.strip()):
+            raise AttributeValueError('attribute_value', f'«{value}» non è un codice (lettere, cifre e ._/-, fino a 64)')
+        return value.strip()
+    if value_type == 'sì/no':
+        if isinstance(value, bool):
+            return 'sì' if value else 'no'
+        if not isinstance(value, str):
+            raise AttributeValueError('attribute_type', 'atteso sì o no')
+        if value.strip().casefold() in ('sì', 'si'):
+            return 'sì'
+        if value.strip().casefold() == 'no':
+            return 'no'
+        raise AttributeValueError('attribute_value', f'«{value}»: atteso sì o no')
+    if value_type.startswith('categoria:'):
+        if not isinstance(value, str):
+            raise AttributeValueError('attribute_type', 'attesa una categoria')
+        if value.strip() not in tree:
+            raise AttributeValueError('attribute_value',
+                                      f'«{value}» non è «{value_type[len("categoria:"):]}» né una sua sottocategoria')
+        return value.strip()
+    raise AttributeValueError('attribute_value', f'tipo di valore non riconosciuto: {value_type}')
 
 
 def _cells(line):
@@ -536,7 +665,8 @@ def parse(source):
                     key == 'semantics' and header != ['relazione', 'ruolo', 'inversa', 'proprietà']) or (
                     key == 'constraints' and header != ['tipo', 'relazione o attributo', 'minimo', 'massimo', 'se manca']) or (
                     key == 'synonyms' and header != ['nome', 'sinonimi']) or (
-                    key == 'matches' and header != ['nome', 'corrispondenza', 'vocabolario', 'esattezza']) or (key == 'relations' and (expected not in (3, 5) or header[0] not in ('nome', 'relazione') or header[1:3] != ['da', 'a'] or (expected == 5 and header[3:] != ['significato', 'esempio']))):
+                    key == 'matches' and header != ['nome', 'corrispondenza', 'vocabolario', 'esattezza']) or (
+                    key == 'attributes' and header != ['attributo', 'di', 'valore', 'descrizione']) or (key == 'relations' and (expected not in (3, 5) or header[0] not in ('nome', 'relazione') or header[1:3] != ['da', 'a'] or (expected == 5 and header[3:] != ['significato', 'esempio']))):
                 raise ValueError('Intestazione tabella non riconosciuta')
             if len(table) < 2 or len(table[1]) != expected or not all(re.fullmatch(r':?-{3,}:?', cell) for cell in table[1]):
                 raise ValueError('Separatore tabella non valido')
@@ -563,6 +693,9 @@ def parse(source):
             elif key == 'matches':
                 parsed[key] = tuple(Correspondence(_identifier(row[0]), _identifier(row[1]), _identifier(row[2]),
                                                    _identifier(row[3])) for row in table[2:])
+            elif key == 'attributes':
+                parsed[key] = tuple(AttributeDef(_identifier(row[0]), _identifier(row[1]), _identifier(row[2]), row[3])
+                                    for row in table[2:])
             else:
                 parsed[key] = tuple(Relation(_identifier(row[0]), tuple(item.strip() for item in row[1].split(',')),
                     tuple(item.strip() for item in row[2].split(',')), row[3] if expected == 5 else '', row[4] if expected == 5 else '') for row in table[2:])
@@ -571,8 +704,8 @@ def parse(source):
             issues.append(Issue('unrecognized_table', str(error), rows[0] + 1))
     types, relations, categories = parsed.get('types'), parsed.get('relations', ()), parsed.get('categories')
     semantics, constraints = parsed.get('semantics'), parsed.get('constraints')
-    synonyms, matches = parsed.get('synonyms'), parsed.get('matches')
-    issues.extend(validate(types, relations, categories, semantics, constraints, synonyms, matches))
+    synonyms, matches, attributes = parsed.get('synonyms'), parsed.get('matches'), parsed.get('attributes')
+    issues.extend(validate(types, relations, categories, semantics, constraints, synonyms, matches, attributes))
     if len(conventions) > 1:
         issues.append(Issue('ambiguous_conventions', 'Più elenchi tipo diversi negli esempi YAML', severity='warning'))
     opaque, offset = [], 0
@@ -586,7 +719,8 @@ def parse(source):
                     tuple(issues), catalog_present, next(iter(conventions)) if len(conventions) == 1 else (),
                     (lines[sections['relations'][0]][0] + (3 if sections['relations'][0] == 0 and source.startswith(b'\xef\xbb\xbf') else 0)) if 'relations' in sections else None,
                     categories, spans.get('categories'), semantics, spans.get('semantics'),
-                    constraints, spans.get('constraints'), synonyms, spans.get('synonyms'), matches, spans.get('matches'))
+                    constraints, spans.get('constraints'), synonyms, spans.get('synonyms'), matches, spans.get('matches'),
+                    attributes, spans.get('attributes'))
 
 
 def _table(types=None, relations=None, newline=b'\n', trailing=True):
@@ -617,7 +751,7 @@ def serialize(document, *, types=None, relations=None):
     if document.types is None:
         raise OntologyError('catalog_adoption_required', 'Proporre e confermare prima il catalogo dei tipi')
     issues = validate(types, relations, document.categories, document.semantics, document.constraints,
-                      document.synonyms, document.matches)
+                      document.synonyms, document.matches, document.attributes)
     if issues:
         raise OntologyError(issues[0].code, issues[0].message)
     replacements = []

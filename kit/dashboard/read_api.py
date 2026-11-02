@@ -98,7 +98,7 @@ class ReadAPI:
                 raise ContractError("graph_corrupt", "Hash del grafo non valido")
             db = connect_graph(reference.path, reference=reference)
             metadata = dict(db.execute("SELECT key, value FROM graph_metadata"))
-            if metadata.get("builder_version") not in {"2", "3", "4", "5", "6", "7", "8"}:
+            if metadata.get("builder_version") not in {"2", "3", "4", "5", "6", "7", "8", "9"}:
                 raise ContractError("graph_upgrade_required", "Ricostruire esplicitamente il grafo con il kit aggiornato")
             deadline = time.monotonic() + 5
             db.set_progress_handler(lambda: time.monotonic() > deadline, 10000)
@@ -430,9 +430,11 @@ class ReadAPI:
         synonyms = [{"name": item.name, "synonyms": list(item.synonyms)} for item in document.synonyms or ()]
         matches = [{"name": item.name, "iri": item.iri, "vocabulary": item.vocabulary, "exactness": item.exactness}
                    for item in document.matches or ()]
+        attributes = [{"name": item.name, "of_type": item.of_type, "value_type": item.value_type,
+                       "description": item.description} for item in document.attributes or ()]
         return {**_revision(reference), "types": types, "types_source": "declared" if declared else "observed_and_constraints",
                 "relations": relations, "type_parents": parents, "categories": categories,
-                "semantics": semantics, "constraints": constraints, "synonyms": synonyms, "matches": matches,
+                "semantics": semantics, "constraints": constraints, "synonyms": synonyms, "matches": matches, "attributes": attributes,
                 "opaque_sections": opaque,
                 "schema_digest": document.digest,
                 "source_spans": {key: {"start": span.start, "end": span.end} for key, span in document.source_spans.items()},

@@ -96,14 +96,18 @@ def vincoli_violati(db, pagine, area):
     """[(pagina, segnale, testo, parte)] dei vincoli dichiarati in «Vincoli» che le pagine non rispettano (se_manca =
     domanda). Un sottotipo eredita il vincolo del tipo. Il vincolo sul referente conserva il segnale e la chiave di oggi."""
     responsabili = set(semantica.relazioni_con_ruolo(db, "responsabile"))
+    attributi_noti = semantica.nomi_attributi(db)
     tipi = dict(db.execute("SELECT id, tipo FROM entities"))
     risultato, fatte = [], set()
     for regola in semantica.vincoli(db) or ():
         if regola["se_manca"] != "domanda":
             continue
         rel, minimo, massimo = regola["relazione"], regola["minimo"], regola["massimo"]
-        conta = dict(db.execute("SELECT source_id, count(DISTINCT target_id) FROM relations WHERE type = ? "
-                                "GROUP BY source_id", (rel,)))
+        if rel in attributi_noti:  # un attributo ha un solo valore: la pagina lo ha (1) o non lo ha (0)
+            conta = {e: 1 for (e,) in db.execute("SELECT DISTINCT entity_id FROM entity_attributi WHERE attributo = ?", (rel,))}
+        else:
+            conta = dict(db.execute("SELECT source_id, count(DISTINCT target_id) FROM relations WHERE type = ? "
+                                    "GROUP BY source_id", (rel,)))
         sotto = semantica.tipi_sotto(db, regola["tipo"])
         for nome, tipo in tipi.items():
             n = conta.get(nome, 0)
@@ -116,6 +120,9 @@ def vincoli_violati(db, pagine, area):
                 if rel == "referente" and n == 0:
                     risultato.append((nome, "referente", f"Chi è il referente di [[{nome}]]? "
                                       f"(nessuna relazione `referente` nel frontmatter)", ""))
+                elif rel in attributi_noti:
+                    risultato.append((nome, "vincolo", f"[[{nome}]] ({tipo}) dovrebbe avere l'attributo `{rel}` "
+                                      f"(non è nella mappa `attributi` del frontmatter).", f"{rel} min"))
                 else:
                     risultato.append((nome, "vincolo", f"[[{nome}]] ({tipo}) dovrebbe avere almeno {minimo} "
                                       f"relazione `{rel}` (ne ha {n}).", f"{rel} min"))
