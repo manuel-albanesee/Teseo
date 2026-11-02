@@ -53,7 +53,7 @@ from build_graph import costruisci
 import domande
 from build_graph import norm
 from memoria import apri, e_domanda, registra_turno, ricorda, sospendi
-from recall import formatta, nodi, per_testo_a_cascata, per_titolo, punti_di_partenza, richiama, scritto
+from recall import categorie_nominate, formatta, nodi, per_testo_a_cascata, per_titolo, punti_di_partenza, richiama, scritto
 from semantica import schema_pertinente
 
 AVVISO = "Fatti calcolati da frontmatter e wikilink: verificarli sulle pagine di wiki/ prima di citarli."
@@ -82,7 +82,9 @@ def ripiego_testo(db, testo, dal_grafo, ricordate=()):
     senza grafo e senza memoria, e solo per le domande sul contenuto (comandi, conferme e domande sul sistema darebbero
     pagine fuori tema; le date esplicite passano e_domanda, non sono comandi). Grafo e memoria li calcola il chiamante:
     misura.py non ha la memoria e passa `ricordate` vuoto. Il ripiego è a due giri (recall.per_testo_a_cascata)."""
-    return per_testo_a_cascata(db, testo) if not dal_grafo and not ricordate and e_domanda(testo) else []
+    if dal_grafo or ricordate or not e_domanda(testo) or categorie_nominate(db, testo):
+        return []  # una categoria nominata è già un aggancio del grafo (B3 di doc/16)
+    return per_testo_a_cascata(db, testo)
 
 
 def origine_semi(db, testo, dal_grafo, ricordate, dal_testo, semi):

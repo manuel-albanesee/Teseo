@@ -1,6 +1,6 @@
 # 16 — Tassonomia e ontologia dentro il grafo
 
-Stato: **fase A implementata il 31 ottobre 2026 sul branch `ICM_Integration`; fase B in corso: B1 e B2 implementate, B3–B4 da fare; fasi C–E proposte.** Riferimento:
+Stato: **fase A implementata il 31 ottobre 2026 sul branch `ICM_Integration`; fase B in corso: B1, B2 e B3 implementate (B3 il 2 novembre 2026, sul branch `feat/concetti-grafo-aziendale`), B4 da fare; fasi C–E proposte.** Riferimento:
 [«Taxonomy vs. ontology vs. knowledge graph»](https://neo4j.com/blog/knowledge-graph/taxonomy-vs-ontology-vs-knowledge-graph/)
 (J. Stegeman, Neo4j, 16 giugno 2026). Il riferimento usa Neo4j; qui il grafo resta **SQLite** e Neo4j non è
 in programma. Dipendenze: [contratto 1](01-contratto-dati-operazioni.md), [editor dell'ontologia 3](03-editor-ontologia.md).
@@ -143,13 +143,15 @@ locali 1/4 pagine attese, globali **0/7**, nessuna delle due domande globali ric
 che B3 e B4 devono risolvere. Prove: `tests/test_banco_tipi.py` (6 test; due mutazioni sul saldo e sul riepilogo per
 tipo fatte fallire).
 
-### B3 — la categoria come seme aggregato (dopo B2)
+### B3 — la categoria come seme aggregato (dopo B2) — implementata il 2 novembre 2026
 
 Una categoria nominata nella domanda (nome o forma ridotta a radici) diventa **un solo seme**, il nodo categoria, e
 **un solo fatto**: «fatturazione [categoria, parte di amministrazione]: N pagine (…)», con al più `MAX_CATEGORIA`
 pagine scelte per rilevanza e diversità e il conteggio delle omesse. Una categoria con più di `SOGLIA_CATEGORIA` delle
 pagine non fa da seme (bassa specificità). Le sottocategorie entrano con peso decrescente. Il nome di una pagina vince
 su una categoria omonima. Si tiene solo se B2 non mostra peggioramenti sulle domande locali né semi spuri.
+
+Implementazione (`recall.py`, 16 test in `tests/test_categoria_seme.py`): `categorie_nominate` riconosce il nome o le sue radici («le fatturazioni», «ciclo passivo»); `SOGLIA_CATEGORIA` = 0.4 sulle pagine del vault (non fonti, non entropia), `MAX_CATEGORIA` = 8. Le pagine del fatto si scelgono una alla volta con costo = profondità + pagine dello stesso tipo già prese (MMR), poi profondità, poi nome. Le categorie non entrano nel cammino sugli archi: i fatti delle pagine restano quelli di prima (`richiama_pagine`). Il ripiego sul testo non scatta se la domanda nomina una categoria. Il fatto si legge «fatturazione → categoria → 3 pagine (…) · N altre omesse».
 
 ### B4 — panoramiche di categoria (dopo B3)
 

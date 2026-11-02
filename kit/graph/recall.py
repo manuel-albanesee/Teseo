@@ -66,6 +66,8 @@ from domande import TAG_ENTROPIA
 GENERICHE = {"menziona", "documentato_in"}
 PASSI = {"avanti": 3, "indietro": 2}  # passi massimi lungo le catene tipizzate, per verso
 PUNTI = {1: 100, 2: 50, 3: 40}       # punteggio base di una relazione tipizzata, per passo
+MAX_CATEGORIA = 8                     # pagine al più nel fatto aggregato di una categoria nominata (B3 di doc/16)
+SOGLIA_CATEGORIA = 0.4                # una categoria con più di questa quota delle pagine del vault non fa da seme
 FRATELLI = 3                          # da quanti fratelli in su si raccolgono in un fatto solo
 MAX_TIPIZZATE = 30                    # tetto di sicurezza: di norma passano tutte le relazioni tipizzate
 MAX_MENZIONA = 10                     # link generici: i migliori per punteggio
@@ -403,7 +405,96 @@ def archi(db, nodi, solo_tipizzate, colonne=("source_id", "target_id")):
         [*(nodi * len(colonne)), *escluse]).fetchall()
 
 
+def categorie_nominate(db, domanda):
+    """[(nome, padre, descrizione)] delle categorie di Wiki reference che la domanda nomina (B3 di doc/16): per nome
+    (norm, «ciclo-passivo» → «ciclo passivo») o per radici, tutte quelle del nome presenti nelle parole della domanda
+    («le fatturazioni» → fatturazione). Una categoria con più di SOGLIA_CATEGORIA delle pagine del vault (sue e delle
+    sottocategorie) non distingue nulla e non fa da seme. Grafo senza la tabella `categorie` → []."""
+    try:
+        categorie = db.execute("SELECT nome, padre, descrizione FROM categorie ORDER BY posizione").fetchall()
+    except sqlite3.OperationalError:
+        return []
+    parole = radici(scritto(domanda))
+    pagine = [id_ for id_ in pagine_di_categoria(db)]
+    trovate = []
+    for nome, padre, descr in categorie:
+        rr = radici(nome)
+        if not rr or not rr <= parole:
+            continue
+        sue = pagine_per_categoria(db, nome)
+        if not sue or len(sue) / max(1, len(pagine)) > SOGLIA_CATEGORIA:
+            continue
+        trovate.append((nome, padre, descr))
+    return trovate
+
+
+def pagine_di_categoria(db):
+    """Le pagine del vault che contano per le categorie: né fonti né pagine per entropia (riassumono altre pagine)."""
+    return [id_ for id_, tipo, tags in db.execute("SELECT id, tipo, tags FROM entities")
+            if tipo != "fonte" and TAG_ENTROPIA not in (tags or "").split(", ")]
+
+
+def pagine_per_categoria(db, nome):
+    """{pagina: profondità}: 0 per i tag diretti, 1 per le sottocategorie e così via (la minima se più tag)."""
+    figli = {}
+    for categoria, padre in db.execute("SELECT nome, padre FROM categorie"):
+        figli.setdefault(padre, []).append(categoria)
+    profondita, fronte, livello = {nome: 0}, [nome], 0
+    while fronte:
+        livello += 1
+        fronte = [f for c in fronte for f in figli.get(c, ()) if f not in profondita]
+        profondita.update({f: livello for f in fronte})
+    pagine = {}
+    for id_ in pagine_di_categoria(db):
+        tags = db.execute("SELECT tags FROM entities WHERE id = ?", (id_,)).fetchone()[0] or ""
+        livelli = [profondita[t] for t in tags.split(", ") if t in profondita]
+        if livelli:
+            pagine[id_] = min(livelli)
+    return pagine
+
+
+def scegli_pagine(db, nome, massimo=None):
+    """(pagine, omesse): al più `massimo` (MAX_CATEGORIA) pagine della categoria, scelte una alla volta per diversità
+    (MMR, Carbonell e Goldstein 1998): costa la profondità (le sottocategorie pesano meno) più le pagine dello stesso
+    tipo già prese; a parità prima la profondità minore, poi il nome."""
+    massimo = MAX_CATEGORIA if massimo is None else massimo
+    da_scegliere = pagine_per_categoria(db, nome)
+    tipo = dict(db.execute("SELECT id, tipo FROM entities"))
+    prese, per_tipo = [], Counter()
+    while da_scegliere and len(prese) < massimo:
+        migliore = min(da_scegliere, key=lambda p: (da_scegliere[p] + per_tipo[tipo[p]], da_scegliere[p], p))
+        per_tipo[tipo[migliore]] += 1
+        prese.append(migliore)
+        del da_scegliere[migliore]
+    return prese, len(da_scegliere)
+
+
+def seme_categoria(categoria):
+    nome, padre, descr = categoria
+    return nome, "categoria" + (f", parte di {padre}" if padre else ""), descr
+
+
+def fatto_categoria(db, categoria):
+    pagine, omesse = scegli_pagine(db, categoria[0])
+    return {"s": categoria[0], "tipo": "categoria", "t": pagine, "passo": 1, "verso": "avanti", "reciproco": False,
+            "punteggio": PUNTI[1], "omesse": omesse}
+
+
 def richiama(db, domanda, max_tipizzate=MAX_TIPIZZATE, max_menziona=MAX_MENZIONA, extra=()):
+    """(semi, fatti, omessi) come richiama_pagine, più le categorie nominate (B3 di doc/16): per ognuna un seme
+    `(nome, 'categoria[, parte di X]', descrizione)` e un fatto aggregato con le pagine scelte e le `omesse`. Il nome
+    di una pagina vince su una categoria omonima: se la domanda nomina la pagina, la categoria non c'è. Le categorie
+    non entrano nel cammino sugli archi (non sono nodi del grafo): i fatti vengono dalle sole pagine."""
+    semi, fatti, omessi = richiama_pagine(db, domanda, max_tipizzate, max_menziona, extra)
+    nomi = [radici(s[0]) for s in semi]
+    categorie = [c for c in categorie_nominate(db, domanda) if radici(c[0]) not in nomi]
+    if not categorie:
+        return semi, fatti, omessi
+    return (semi + [seme_categoria(c) for c in categorie],
+            fatti + [fatto_categoria(db, c) for c in categorie], omessi)
+
+
+def richiama_pagine(db, domanda, max_tipizzate=MAX_TIPIZZATE, max_menziona=MAX_MENZIONA, extra=()):
     """(semi, fatti, omessi): omessi = {"tipizzate": n, "menziona": n} sono i fatti fuori dai limiti."""
     # extra: punti di partenza venuti da fuori, es. le pagine lette per domande simili (memoria.py)
     domanda = scritto(domanda)
@@ -504,7 +595,8 @@ def formatta(semi, fatti, info, omessi=None, db=None):
         freccia = "↔ menziona ↔" if f["reciproco"] else f"→ {f['tipo']} →"
         nuovo = f["t"] if f["verso"] == "avanti" else f["s"]
         dettaglio = "" if isinstance(nuovo, list) or nuovo in ids else f"  ({nuovo} [{info[nuovo][0]}]: {info[nuovo][1]})"
-        righe.append(f"- {nome(f['s'])} {freccia} {nome(f['t'])}{dettaglio}")
+        altre = f" · {f['omesse']} altre omesse" if f.get("omesse") else ""
+        righe.append(f"- {nome(f['s'])} {freccia} {nome(f['t'])}{dettaglio}{altre}")
     parti = [f"{omessi[k]} {testo}" for k, testo in (("tipizzate", "relazioni tipizzate omesse"),
                                                     ("menziona", "link generici omessi")) if omessi and omessi[k]]
     if parti:

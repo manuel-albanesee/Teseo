@@ -18,7 +18,7 @@ separata di `/ecc:prp-implement`: la fase N+1 parte solo se la fase N ha superat
 | 0 — Misurare | **in corso** | questa: task 0.1–0.4 |
 | 1 — Schema mirato | da fare | dopo la soglia della 0 |
 | 2 — Semantica dichiarata | da fare | — |
-| P — B3 di doc/16 | da fare | in parallelo alla 2 |
+| P — B3 di doc/16 | implementata (feat/concetti-grafo-aziendale) | in parallelo alla 2 |
 | 3a — Sinonimi interni | da fare | dopo P |
 | 3b — Vocabolari esterni | da decidere | go/no-go dopo la 3a |
 | 3c — Editor | facoltativa | — |
