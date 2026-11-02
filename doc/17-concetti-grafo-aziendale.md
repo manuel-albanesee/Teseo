@@ -192,6 +192,36 @@ hook, API) con tre confronti byte per byte con l'output di `domande.py` e `sinte
 `tests/test_ontologia_grafo.py` (versione 7, due metadati). Non misurati: K1 e K2 con il modello, e K3 e il token medio del
 banco con il blocco di schema sul vault ISP.
 
+### Fase 3a — sinonimi e corrispondenze interni (in corso)
+
+Due sezioni facoltative di `Wiki reference.md`, in tabelle proprie e conservate byte per byte dal serializer (C4):
+
+| Sezione | Colonne | Che cosa fa |
+| --- | --- | --- |
+| `## Sinonimi` | `Nome \| Sinonimi` | `Nome` è un tipo o una categoria dichiarati; i sinonimi sono separati da `;` («SPV; società veicolo»). Una domanda che nomina un sinonimo porta lo stesso seme aggregato del nome (B3) |
+| `## Corrispondenze` | `Nome \| Corrispondenza \| Vocabolario \| Esattezza` | `Corrispondenza` è un IRI o un CURIE; `Vocabolario` è una chiave censita in «Chiavi delle fonti»; `Esattezza` è `esatta` o `vicina` (solo `esatta` potrà ereditare sinonimi da un vocabolario, fase 3b) |
+
+Errori del parser (`ontology.py`): `invalid_synonyms`, `unknown_name`, `duplicate_synonyms`, `synonym_collision` (un sinonimo
+uguale dopo `norm` a un altro nome, a un suo stesso nome o a un sinonimo di un altro nome), `invalid_iri`, `invalid_exactness`,
+`duplicate_match`. Il build aggiunge `unknown_vocabulary_key` (la chiave non è fra le «Chiavi delle fonti»). Rinominare o
+togliere dall'editor un tipo o una categoria citati nelle sezioni è rifiutato con questi codici, come per la fase 2.
+
+**La pagina vince** (regola di doc/16): un sinonimo uguale dopo `norm` al nome, a un alias o a una variante di una pagina non fa da
+seme e il build lo segnala come avviso (`snapshot["avvisi"]`, stampato da `build_graph.py`), mai come errore.
+
+**Grafo** (`BUILDER_VERSION` 8): tabelle `onto_sinonimi(nome, sinonimo, posizione)` e
+`onto_corrispondenze(nome, iri, vocabolario, esattezza, posizione)`; metadati `sinonimi` e `corrispondenze`
+(`presente`/`assente`). `GET /ontology` espone `synonyms` e `matches`; `automatic_inference` aggiunge `synonym_seeds` quando ci
+sono sinonimi.
+
+**Recall** (`recall.py`): un sinonimo di una categoria produce lo stesso seme e lo stesso fatto aggregato di B3; un sinonimo di un
+tipo produce un seme `(tipo, 'tipo[, sottotipo di X]', descrizione)` e un fatto `→ tipo →` con al più `MAX_CATEGORIA` pagine di
+quel tipo e dei suoi sottotipi (stessa diversità e stessa `SOGLIA_CATEGORIA`). `PAROLE_COMUNI` vale anche per i sinonimi, e un
+sinonimo contenuto nel nome di una pagina già riconosciuta non conta. Il ripiego sul testo non scatta se la domanda nomina un
+sinonimo. Senza le sezioni nulla cambia.
+
+Go/no-go dopo questa fase: si procede con la 3b solo se K1 sale sul vault reale **e** esiste un vocabolario esterno concreto.
+
 ## Decisioni (2 novembre 2026)
 
 | # | Decisione | Esito |
