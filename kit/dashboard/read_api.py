@@ -98,7 +98,7 @@ class ReadAPI:
                 raise ContractError("graph_corrupt", "Hash del grafo non valido")
             db = connect_graph(reference.path, reference=reference)
             metadata = dict(db.execute("SELECT key, value FROM graph_metadata"))
-            if metadata.get("builder_version") not in {"2", "3", "4", "5", "6", "7"}:
+            if metadata.get("builder_version") not in {"2", "3", "4", "5", "6", "7", "8"}:
                 raise ContractError("graph_upgrade_required", "Ricostruire esplicitamente il grafo con il kit aggiornato")
             deadline = time.monotonic() + 5
             db.set_progress_handler(lambda: time.monotonic() > deadline, 10000)
@@ -427,9 +427,13 @@ class ReadAPI:
                      for item in document.semantics or ()]
         constraints = [{"type": item.type, "relation": item.relation, "minimum": item.minimum, "maximum": item.maximum,
                         "if_missing": item.if_missing} for item in document.constraints or ()]
+        synonyms = [{"name": item.name, "synonyms": list(item.synonyms)} for item in document.synonyms or ()]
+        matches = [{"name": item.name, "iri": item.iri, "vocabulary": item.vocabulary, "exactness": item.exactness}
+                   for item in document.matches or ()]
         return {**_revision(reference), "types": types, "types_source": "declared" if declared else "observed_and_constraints",
                 "relations": relations, "type_parents": parents, "categories": categories,
-                "semantics": semantics, "constraints": constraints, "opaque_sections": opaque,
+                "semantics": semantics, "constraints": constraints, "synonyms": synonyms, "matches": matches,
+                "opaque_sections": opaque,
                 "schema_digest": document.digest,
                 "source_spans": {key: {"start": span.start, "end": span.end} for key, span in document.source_spans.items()},
                 "editable": document.editable, "catalog_adoption_required": not document.catalog_present,

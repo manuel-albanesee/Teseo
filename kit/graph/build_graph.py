@@ -343,10 +343,25 @@ def parse_documents(documents):
         if altro != nome:
             problem(f"alias '{a}' di {nome} coincide con {altro}", f'wiki/{nome}.md', 'aliases', 'alias_collision', altro)
 
+    # Sinonimi e corrispondenze (doc/17, fase 3a). La pagina vince sul sinonimo omonimo: nome, alias o variante grafica
+    # uguali dopo norm; il sinonimo non fa da seme (recall.py) e il build lo dichiara come avviso, mai come errore.
+    proprietari = {norm(p): p for p in pagine}
+    for nome, a in alias:
+        proprietari.setdefault(norm(a), nome)
+    for nome, variante in varianti_nomi([(nome, nome) for nome in pagine] + alias):
+        proprietari.setdefault(norm(variante), nome)
+    avvisi = [f"sinonimo '{parola}' di {voce.name} coincide con la pagina {proprietari[norm(parola)]}: "
+              "la pagina vince, il sinonimo non fa da seme"
+              for voce in ontology.synonyms or () for parola in voce.synonyms if norm(parola) in proprietari]
+    for voce in ontology.matches or ():
+        if voce.vocabulary not in fonti_censite:
+            problem(f"corrispondenza di {voce.name}: vocabolario '{voce.vocabulary}' non censito in Wiki reference",
+                    'Wiki reference.md', 'corrispondenze', 'unknown_vocabulary_key', voce.vocabulary)
+
     return {"pagine": pagine, "entita": entita, "relazioni": relazioni,
             "alias": alias, "attributi": attributi, "problemi": tuple(problemi), "fonti_usate": fonti_usate,
             "tipizzate": tipizzate, "vocabolario": vocabolario, "ontology": ontology, "antenati": antenati,
-            "etichette": sorted(etichette),
+            "etichette": sorted(etichette), "avvisi": tuple(avvisi),
             "problem_details": tuple(problem_details)}
 
 
@@ -376,6 +391,9 @@ def righe_ontologia(snapshot):
                           for i, r in enumerate(ontology.relations)],
             "cardinalita": [(c.type, c.relation, c.minimum, c.maximum, c.if_missing, i)
                             for i, c in enumerate(ontology.constraints or ())],
+            "sinonimi": [(s.name, parola, i) for i, (s, parola) in
+                         enumerate((s, parola) for s in ontology.synonyms or () for parola in s.synonyms)],
+            "corrispondenze": [(m.name, m.iri, m.vocabulary, m.exactness, i) for i, m in enumerate(ontology.matches or ())],
             "vincoli": [(r.name, lato, tipo, i) for r in ontology.relations
                         for lato, ammessi in (("da", r.from_types), ("a", r.to_types)) for i, tipo in enumerate(ammessi)],
             "metadati": [("formato", "1"), ("schema_digest", ontology.digest if ontology.source else ""),
@@ -383,7 +401,9 @@ def righe_ontologia(snapshot):
                          ("vocabolario", "presente" if snapshot["vocabolario"] is not None else "assente"),
                          ("categorie", "presenti" if ontology.categories is not None else "assenti"),
                          ("semantica", "presente" if ontology.semantics is not None else "assente"),
-                         ("vincoli", "presente" if ontology.constraints is not None else "assente")]}
+                         ("vincoli", "presente" if ontology.constraints is not None else "assente"),
+                         ("sinonimi", "presenti" if ontology.synonyms is not None else "assenti"),
+                         ("corrispondenze", "presenti" if ontology.matches is not None else "assenti")]}
 
 
 class GraphValidationError(ValueError):
@@ -430,6 +450,10 @@ def build_candidate(snapshot, out):
                                        se_manca TEXT NOT NULL, posizione INTEGER NOT NULL, PRIMARY KEY (tipo, relazione));
         CREATE TABLE onto_vincoli (relazione TEXT NOT NULL, lato TEXT NOT NULL CHECK (lato IN ('da', 'a')),
                                    tipo TEXT NOT NULL, posizione INTEGER NOT NULL, PRIMARY KEY (relazione, lato, tipo));
+        CREATE TABLE onto_sinonimi (nome TEXT NOT NULL, sinonimo TEXT NOT NULL, posizione INTEGER NOT NULL,
+                                    PRIMARY KEY (nome, sinonimo));
+        CREATE TABLE onto_corrispondenze (nome TEXT NOT NULL, iri TEXT NOT NULL, vocabolario TEXT NOT NULL,
+                                          esattezza TEXT NOT NULL, posizione INTEGER NOT NULL, PRIMARY KEY (nome, iri));
         CREATE TABLE onto_metadata (chiave TEXT PRIMARY KEY, valore TEXT NOT NULL);
         CREATE TABLE categorie (nome TEXT PRIMARY KEY, padre TEXT, descrizione TEXT NOT NULL, posizione INTEGER NOT NULL);
         CREATE TABLE entity_tags (entity_id TEXT NOT NULL, tag TEXT NOT NULL, PRIMARY KEY (entity_id, tag));
@@ -470,6 +494,8 @@ def build_candidate(snapshot, out):
         db.executemany("INSERT INTO onto_relazioni VALUES (?,?,?,?,?,?,?,?,?)", onto["relazioni"])
         db.executemany("INSERT INTO onto_cardinalita VALUES (?,?,?,?,?,?)", onto["cardinalita"])
         db.executemany("INSERT INTO onto_vincoli VALUES (?,?,?,?)", onto["vincoli"])
+        db.executemany("INSERT INTO onto_sinonimi VALUES (?,?,?)", onto["sinonimi"])
+        db.executemany("INSERT INTO onto_corrispondenze VALUES (?,?,?,?,?)", onto["corrispondenze"])
         db.executemany("INSERT INTO onto_metadata VALUES (?,?)", onto["metadati"])
         db.executemany("INSERT INTO testo VALUES (?,?,?,?,?)",
                        [(nome, nome, corpo, ridotto(nome), ridotto(corpo)) for nome, (_, corpo) in pagine.items()])
@@ -525,6 +551,8 @@ def costruisci(vault, out):
     print(f"{len(pagine)} pagine, {len(fonti_usate)} fonti · {conta('menziona')} menziona, "
           f"{conta('documentato_in')} documentato_in, {len(tipizzate)} tipizzate, {len(alias)} alias"
           f"{'' if vocabolario is not None else ' · vocabolario non definito in Wiki reference'}")
+    for avviso in snapshot.get("avvisi", ()):
+        print(f"avviso: {avviso}")
     print(f"→ {out}")
     return []
 

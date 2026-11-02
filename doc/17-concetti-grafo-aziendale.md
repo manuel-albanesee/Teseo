@@ -77,7 +77,7 @@ Ordine: 0 → 1 → 2 → B3 → 3a → go/no-go → 3b → 4 → 5. B3 si può 
 | 1 — Schema mirato | `schema.py`, tre livelli, contratti di ingest e lint, `contratti.py --peso` che conta `schema.py` | peso dello schema giù; recall e coerenza invariati | **implementata** (2 novembre 2026) |
 | 2 — Semantica dichiarata | ruoli, inverse, transitive e simmetriche (fasi C e D di doc/16), vincoli, blocco «Schema pertinente» nel recall; `BUILDER_VERSION` 7 | senza sezioni, domande e sintesi identiche sul vault d'esempio | **implementata** (2 novembre 2026) |
 | B3 | categoria come seme aggregato, come in doc/16 | regola di doc/16 | implementata (2 novembre 2026) |
-| 3a — Sinonimi interni | `## Sinonimi`, `## Corrispondenze`; sinonimo come seme; `BUILDER_VERSION` 8 | coerenza dei nomi su; semi spuri invariati | proposta |
+| 3a — Sinonimi interni | `## Sinonimi`, `## Corrispondenze`; sinonimo come seme; `BUILDER_VERSION` 8 | coerenza dei nomi su; semi spuri invariati | **implementata** (2 novembre 2026); go/no-go aperto: servono K1 sul vault reale |
 | 3b — Vocabolari esterni | riduttore da CSV, TSV in `raw/vocabolari/`, `schema.py --per-testo`, sezione del piano, lint delle versioni | coerenza dei nomi su rispetto alla 3a | da decidere dopo la 3a |
 | 4 — Attributi | `## Attributi`, chiave `attributi`, attributi nei fatti del recall; `BUILDER_VERSION` 9 | nessun peggioramento | proposta |
 | 5 — Export | Turtle deterministico dello schema (fase E di doc/16, ampliata) | golden file stabile | proposta |
@@ -192,7 +192,7 @@ hook, API) con tre confronti byte per byte con l'output di `domande.py` e `sinte
 `tests/test_ontologia_grafo.py` (versione 7, due metadati). Non misurati: K1 e K2 con il modello, e K3 e il token medio del
 banco con il blocco di schema sul vault ISP.
 
-### Fase 3a — sinonimi e corrispondenze interni (in corso)
+### Fase 3a — sinonimi e corrispondenze interni (implementata)
 
 Due sezioni facoltative di `Wiki reference.md`, in tabelle proprie e conservate byte per byte dal serializer (C4):
 
@@ -219,6 +219,16 @@ tipo produce un seme `(tipo, 'tipo[, sottotipo di X]', descrizione)` e un fatto 
 quel tipo e dei suoi sottotipi (stessa diversità e stessa `SOGLIA_CATEGORIA`). `PAROLE_COMUNI` vale anche per i sinonimi, e un
 sinonimo contenuto nel nome di una pagina già riconosciuta non conta. Il ripiego sul testo non scatta se la domanda nomina un
 sinonimo. Senza le sezioni nulla cambia.
+
+Scostamenti dal piano: (1) `onto_sinonimi` ha anche `posizione`, come le altre tabelle `onto_*`; (2) il confronto fra sinonimo e
+pagina usa nomi, alias e varianti grafiche, non le sole pagine; (3) `unknown_vocabulary_key` è un errore del build (serve
+l'elenco delle «Chiavi delle fonti», che il parser dello schema non ha), gli altri codici sono del parser; (4) il sinonimo si
+confronta con la frase ridotta a radici e contigua, non con le radici sparse; (5) il banco d'esempio resta senza sinonimi: la
+sezione è facoltativa e `kit/vault/Wiki reference.md` la documenta soltanto, la misura utile è quella sul vault ISP.
+
+Prove: `tests/test_sinonimi.py` (31 test: parser, errori, roundtrip, preview, tabelle, avvisi, seme di categoria e di tipo,
+soglia, pagina che vince, parole comuni, ripiego, API) con otto mutazioni (collisione, pagina che vince, contiguità, soglia
+dei tipi, sinonimo dentro il nome di una pagina, parole comuni, avvisi, ripiego sul testo), tutte uccise.
 
 Go/no-go dopo questa fase: si procede con la 3b solo se K1 sale sul vault reale **e** esiste un vocabolario esterno concreto.
 

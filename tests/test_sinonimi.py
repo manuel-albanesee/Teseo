@@ -53,7 +53,7 @@ PAGINE = {
     'Console': pagina('sistema'),
     'Gateway': pagina('servizio'),
     'Rilascio': pagina('processo', ['rilasci']),
-    **{f'Filler{i}': pagina('processo', ['generale']) for i in range(6)},
+    **{f'Filler{i}': pagina('sistema' if i < 4 else 'processo', ['generale']) for i in range(6)},
 }
 
 
@@ -143,6 +143,12 @@ class Parser(unittest.TestCase):
         proprio = SCHEMA.replace('| `sistema` | strumenti |', '| `sistema` | Sistema |')
         self.assertIn('synonym_collision', codici(proprio))
 
+    def test_la_norma_dei_sinonimi_e_quella_del_builder(self):
+        from kit.graph import ontology
+        for testo in ('Contabilità Clienti', 'S.P.V.', 'ciclo-passivo', 'Èè ùà', 'a_b  c'):
+            with self.subTest(testo):
+                self.assertEqual(ontology._norm(testo), build_graph.norm(testo))
+
     def test_il_nome_puo_essere_una_categoria_o_un_tipo(self):
         self.assertEqual(codici(SCHEMA), set())
         self.assertIn('unknown_name', codici(SCHEMA.replace('| `fatturazione` | billing', '| `fatturazioni` | billing')))
@@ -194,7 +200,7 @@ class Tabelle(unittest.TestCase):
         self.assertEqual((metadati['sinonimi'], metadati['corrispondenze']), ('assenti', 'assenti'))
 
     def test_chiave_di_vocabolario_non_censita(self):
-        parsed, _ = self.costruisci(SCHEMA.replace('| `fibo` | Vocabolario FIBO |\n', ''))
+        parsed = build_graph.parse_documents(documenti(SCHEMA.replace('| `fibo` | Vocabolario FIBO |\n', '')))
         self.assertIn('unknown_vocabulary_key', {d['code'] for d in parsed['problem_details']})
         self.assertTrue(any('fibo' in p for p in parsed['problemi']))
 
@@ -222,6 +228,12 @@ class Seme(Base):
     def test_sinonimo_a_piu_parole(self):
         semi, _ = self.aggregati(self.vault(), 'chi gestisce la contabilità clienti?')
         self.assertEqual([s[0] for s in semi], ['fatturazione'])
+
+    def test_le_parole_del_sinonimo_devono_essere_contigue(self):
+        db = self.vault()
+        self.assertEqual(self.aggregati(db, 'i servizi che usano il web'), ([], []))
+        semi, _ = self.aggregati(db, 'quali servizi web ci sono?')
+        self.assertEqual([s[0] for s in semi], ['servizio'])
 
     def test_nome_e_sinonimo_insieme_sono_un_solo_seme(self):
         semi, fatti = self.aggregati(self.vault(), 'la fatturazione, cioè il billing')
@@ -292,7 +304,7 @@ class Seme(Base):
     def test_il_ripiego_sul_testo_non_scatta(self):
         db = self.vault()
         with mock.patch.object(recall_hook, 'per_testo_a_cascata', return_value=['X']):
-            self.assertEqual(recall_hook.ripiego_testo(db, 'che cosa sono gli SPV?', []), [])
+            self.assertEqual(recall_hook.ripiego_testo(db, 'come funzionano gli SPV?', []), [])
             self.assertEqual(recall_hook.ripiego_testo(db, 'quanto costa il billing?', []), [])
             self.assertEqual(recall_hook.ripiego_testo(db, 'che cosa comprende la contabilità?', []), ['X'])
 

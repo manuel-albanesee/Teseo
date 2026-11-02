@@ -3,9 +3,11 @@
 Grammatica volutamente limitata: sezioni ATX h2, una tabella contigua per sezione,
 2/3 colonne per i tipi (la terza è «Sottotipo di»), 3/5 per le relazioni, 3 per le categorie
 («Categoria | Più ampia | Descrizione», doc/16), 4 per la semantica delle relazioni («Relazione | Ruolo | Inversa |
-Proprietà», doc/17) e 5 per i vincoli («Tipo | Relazione o attributo | Minimo | Massimo | Se manca»). Contenuto ambiguo
-resta manuale. Gli offset sono byte UTF-8; il serializer sostituisce solo tabelle riconosciute: categorie, semantica e
-vincoli si conservano byte per byte (e il serializer rifiuta una modifica che li lascerebbe con nomi non più dichiarati).
+Proprietà», doc/17) e 5 per i vincoli («Tipo | Relazione o attributo | Minimo | Massimo | Se manca»), 2 per i sinonimi («Nome | Sinonimi»,
+separati da `;`) e 4 per le corrispondenze («Nome | Corrispondenza | Vocabolario | Esattezza»). Contenuto ambiguo
+resta manuale. Gli offset sono byte UTF-8; il serializer sostituisce solo tabelle riconosciute: categorie, semantica,
+vincoli, sinonimi e corrispondenze si conservano byte per byte (e il serializer rifiuta una modifica che li lascerebbe
+con nomi non più dichiarati).
 """
 from dataclasses import dataclass
 import hashlib
@@ -17,10 +19,14 @@ MAX_ROWS = 2048
 SPECIAL = frozenset({'tipo', 'tags', 'fonti', 'aggiornato', 'aliases', 'relazioni_dettaglio', 'menziona', 'documentato_in'})
 WILDCARDS = frozenset({'qualsiasi', 'stesso tipo'})
 HEADINGS = {'Tipi ammessi': 'types', 'Relazioni tipizzate': 'relations', 'Categorie': 'categories',
-            'Semantica delle relazioni': 'semantics', 'Vincoli': 'constraints'}
+            'Semantica delle relazioni': 'semantics', 'Vincoli': 'constraints',
+            'Sinonimi': 'synonyms', 'Corrispondenze': 'matches'}
 RUOLI = ('dipendenza', 'responsabile', 'composizione', 'causale', 'sequenza')  # insieme chiuso (doc/17, fase 2)
 PROPRIETA = ('transitiva', 'simmetrica')
 SE_MANCA = ('domanda', 'nulla')  # un vincolo violato diventa una domanda aperta per l'autore, oppure niente
+ESATTEZZE = ('esatta', 'vicina')  # skos:exactMatch o skos:closeMatch (doc/17, fase 3a)
+IRI = re.compile(r'[A-Za-z][A-Za-z0-9+.-]*:[^\s<>"{}|\\^`]+')  # un IRI assoluto o un CURIE (prefisso:nome locale)
+CHIAVE_VOCABOLARIO = re.compile(r'[a-z][\w.-]*')  # come le «Chiavi delle fonti» (build_graph.RIGA_FONTE)
 
 
 class OntologyError(ValueError):
@@ -75,6 +81,20 @@ class Constraint:
 
 
 @dataclass(frozen=True)
+class Synonyms:
+    name: str  # un tipo o una categoria dichiarati
+    synonyms: tuple[str, ...] = ()  # altre parole con cui la domanda può nominarlo (skos:altLabel)
+
+
+@dataclass(frozen=True)
+class Correspondence:
+    name: str  # un tipo o una categoria dichiarati
+    iri: str  # IRI o CURIE del concetto di un vocabolario esterno
+    vocabulary: str  # chiave censita in «Chiavi delle fonti»
+    exactness: str = 'esatta'  # uno di ESATTEZZE
+
+
+@dataclass(frozen=True)
 class Relation:
     name: str
     from_types: tuple[str, ...]
@@ -102,6 +122,10 @@ class Ontology:
     semantics_span: Span | None = None
     constraints: tuple[Constraint, ...] | None = None
     constraints_span: Span | None = None
+    synonyms: tuple[Synonyms, ...] | None = None
+    synonyms_span: Span | None = None
+    matches: tuple[Correspondence, ...] | None = None
+    matches_span: Span | None = None
 
     @property
     def digest(self):
@@ -111,7 +135,8 @@ class Ontology:
     def source_spans(self):
         return {key: span for key, span in (('types', self.types_span), ('relations', self.relations_span),
                                             ('categories', self.categories_span), ('semantics', self.semantics_span),
-                                            ('constraints', self.constraints_span)) if span}
+                                            ('constraints', self.constraints_span), ('synonyms', self.synonyms_span),
+                                            ('matches', self.matches_span)) if span}
 
     @property
     def capabilities(self):
@@ -121,7 +146,8 @@ class Ontology:
                   ('inverse_labels', any(item.inverse for item in semantics)),
                   ('transitive_views', any('transitiva' in item.properties for item in semantics)),
                   ('symmetric_views', any('simmetrica' in item.properties for item in semantics)),
-                  ('cardinality_questions', any(item.if_missing == 'domanda' for item in self.constraints or ())))
+                  ('cardinality_questions', any(item.if_missing == 'domanda' for item in self.constraints or ())),
+                  ('synonym_seeds', bool(self.synonyms)))
         return tuple(nome for nome, attiva in attive if attiva)
 
     @property
@@ -174,6 +200,13 @@ def _text(value):
             and not any(ord(char) < 32 or 0xD800 <= ord(char) <= 0xDFFF for char in value))
 
 
+def _norm(value):
+    """Come build_graph.norm (un test li confronta): senza maiuscole, accenti e punteggiatura. Qui perché build_graph
+    importa questo modulo e non il contrario."""
+    value = ''.join(char for char in unicodedata.normalize('NFKD', str(value)) if not unicodedata.combining(char))
+    return re.sub(r'[^a-z0-9]+', ' ', value.lower()).strip()
+
+
 def _cycles(parents):
     """I nomi che stanno in un ciclo di `parents` ({figlio: padre})."""
     found = set()
@@ -187,11 +220,12 @@ def _cycles(parents):
     return found
 
 
-def validate(types, relations, categories=None, semantics=None, constraints=None):
+def validate(types, relations, categories=None, semantics=None, constraints=None, synonyms=None, matches=None):
     """Validazione del modello; impatto sulle pagine demandato al builder/preview.
 
     `semantics` e `constraints` (doc/17) sono le sezioni facoltative: i loro nomi devono restare dichiarati, quindi
-    rinominare o togliere una relazione o un tipo che citano è un errore finché non si correggono a mano."""
+    rinominare o togliere una relazione o un tipo che citano è un errore finché non si correggono a mano. Lo stesso vale
+    per `synonyms` e `matches` (fase 3a), che citano tipi e categorie."""
     if (types is not None and not types) or len(types or ()) > MAX_ROWS or len(relations) > MAX_ROWS:
         return (Issue('catalog_limit', 'Catalogo vuoto o oltre 2048 righe'),)
     issues, seen = [], set()
@@ -295,6 +329,51 @@ def validate(types, relations, categories=None, semantics=None, constraints=None
             if (item.type, item.relation) in seen:
                 issues.append(Issue('duplicate_cardinality', f'Vincolo ripetuto: {item.type} · {item.relation}'))
             seen.add((item.type, item.relation))
+    if synonyms is not None or matches is not None:
+        declared = {item.name for item in types or () if isinstance(item, TypeDef)}
+        declared |= {item.name for item in categories or () if isinstance(item, Category)}
+        names_known = types is not None or categories is not None
+    if synonyms is not None:
+        if not synonyms or len(synonyms) > MAX_ROWS:
+            issues.append(Issue('catalog_limit', 'Sinonimi vuoti o oltre 2048 righe'))
+        owner = {_norm(name): name for name in declared}  # forma normalizzata → chi la usa (nome dichiarato o sinonimo)
+        seen = set()
+        for item in synonyms:
+            if (not isinstance(item, Synonyms) or not isinstance(item.synonyms, tuple) or not item.synonyms
+                    or any(not _text(word) or not _norm(word) for word in item.synonyms)):
+                issues.append(Issue('invalid_synonyms', 'Riga dei sinonimi non rappresentabile nella tabella'))
+                continue
+            if names_known and item.name not in declared:
+                issues.append(Issue('unknown_name', 'Sinonimi di un tipo o una categoria non dichiarati: ' + str(item.name)))
+            if item.name in seen:
+                issues.append(Issue('duplicate_synonyms', 'Sinonimi ripetuti: ' + item.name))
+            seen.add(item.name)
+            for word in item.synonyms:
+                key = _norm(word)
+                if key in owner:
+                    issues.append(Issue('synonym_collision', f'{item.name}: «{word}» coincide con «{owner[key]}»'))
+                owner.setdefault(key, item.name)
+    if matches is not None:
+        if not matches or len(matches) > MAX_ROWS:
+            issues.append(Issue('catalog_limit', 'Corrispondenze vuote o oltre 2048 righe'))
+        seen = set()
+        for item in matches:
+            if (not isinstance(item, Correspondence) or not isinstance(item.iri, str)
+                    or not isinstance(item.vocabulary, str) or not isinstance(item.exactness, str)):
+                issues.append(Issue('invalid_match', 'Riga delle corrispondenze non rappresentabile nella tabella'))
+                continue
+            if names_known and item.name not in declared:
+                issues.append(Issue('unknown_name', 'Corrispondenza di un tipo o una categoria non dichiarati: '
+                                    + str(item.name)))
+            if len(item.iri) > 512 or not IRI.fullmatch(item.iri):
+                issues.append(Issue('invalid_iri', f'{item.name}: atteso un IRI o un CURIE, non «{item.iri}»'))
+            if not CHIAVE_VOCABOLARIO.fullmatch(item.vocabulary):
+                issues.append(Issue('invalid_match', f'{item.name}: chiave del vocabolario non valida: «{item.vocabulary}»'))
+            if item.exactness not in ESATTEZZE:
+                issues.append(Issue('invalid_exactness', f'{item.name}: «Esattezza» attesa fra ' + ', '.join(ESATTEZZE)))
+            if (item.name, item.iri) in seen:
+                issues.append(Issue('duplicate_match', f'Corrispondenza ripetuta: {item.name} · {item.iri}'))
+            seen.add((item.name, item.iri))
     return tuple(issues)
 
 
@@ -455,7 +534,9 @@ def parse(source):
                                                   ['tipo', 'descrizione', 'sottotipo di'], ['nome', 'descrizione', 'sottotipo di'])) or (
                     key == 'categories' and header != ['categoria', 'più ampia', 'descrizione']) or (
                     key == 'semantics' and header != ['relazione', 'ruolo', 'inversa', 'proprietà']) or (
-                    key == 'constraints' and header != ['tipo', 'relazione o attributo', 'minimo', 'massimo', 'se manca']) or (key == 'relations' and (expected not in (3, 5) or header[0] not in ('nome', 'relazione') or header[1:3] != ['da', 'a'] or (expected == 5 and header[3:] != ['significato', 'esempio']))):
+                    key == 'constraints' and header != ['tipo', 'relazione o attributo', 'minimo', 'massimo', 'se manca']) or (
+                    key == 'synonyms' and header != ['nome', 'sinonimi']) or (
+                    key == 'matches' and header != ['nome', 'corrispondenza', 'vocabolario', 'esattezza']) or (key == 'relations' and (expected not in (3, 5) or header[0] not in ('nome', 'relazione') or header[1:3] != ['da', 'a'] or (expected == 5 and header[3:] != ['significato', 'esempio']))):
                 raise ValueError('Intestazione tabella non riconosciuta')
             if len(table) < 2 or len(table[1]) != expected or not all(re.fullmatch(r':?-{3,}:?', cell) for cell in table[1]):
                 raise ValueError('Separatore tabella non valido')
@@ -475,6 +556,13 @@ def parse(source):
             elif key == 'constraints':
                 parsed[key] = tuple(Constraint(_identifier(row[0]), _identifier(row[1]), _count(row[2]) or 0,
                                                _count(row[3]), row[4] or 'domanda') for row in table[2:])
+            elif key == 'synonyms':
+                parsed[key] = tuple(Synonyms(_identifier(row[0]),
+                                             tuple(word.strip() for word in row[1].split(';') if word.strip()))
+                                    for row in table[2:])
+            elif key == 'matches':
+                parsed[key] = tuple(Correspondence(_identifier(row[0]), _identifier(row[1]), _identifier(row[2]),
+                                                   _identifier(row[3])) for row in table[2:])
             else:
                 parsed[key] = tuple(Relation(_identifier(row[0]), tuple(item.strip() for item in row[1].split(',')),
                     tuple(item.strip() for item in row[2].split(',')), row[3] if expected == 5 else '', row[4] if expected == 5 else '') for row in table[2:])
@@ -483,7 +571,8 @@ def parse(source):
             issues.append(Issue('unrecognized_table', str(error), rows[0] + 1))
     types, relations, categories = parsed.get('types'), parsed.get('relations', ()), parsed.get('categories')
     semantics, constraints = parsed.get('semantics'), parsed.get('constraints')
-    issues.extend(validate(types, relations, categories, semantics, constraints))
+    synonyms, matches = parsed.get('synonyms'), parsed.get('matches')
+    issues.extend(validate(types, relations, categories, semantics, constraints, synonyms, matches))
     if len(conventions) > 1:
         issues.append(Issue('ambiguous_conventions', 'Più elenchi tipo diversi negli esempi YAML', severity='warning'))
     opaque, offset = [], 0
@@ -497,7 +586,7 @@ def parse(source):
                     tuple(issues), catalog_present, next(iter(conventions)) if len(conventions) == 1 else (),
                     (lines[sections['relations'][0]][0] + (3 if sections['relations'][0] == 0 and source.startswith(b'\xef\xbb\xbf') else 0)) if 'relations' in sections else None,
                     categories, spans.get('categories'), semantics, spans.get('semantics'),
-                    constraints, spans.get('constraints'))
+                    constraints, spans.get('constraints'), synonyms, spans.get('synonyms'), matches, spans.get('matches'))
 
 
 def _table(types=None, relations=None, newline=b'\n', trailing=True):
@@ -527,7 +616,8 @@ def serialize(document, *, types=None, relations=None):
         raise OntologyError('ontology_manual', 'Documento ambiguo o non valido: editing manuale richiesto')
     if document.types is None:
         raise OntologyError('catalog_adoption_required', 'Proporre e confermare prima il catalogo dei tipi')
-    issues = validate(types, relations, semantics=document.semantics, constraints=document.constraints)
+    issues = validate(types, relations, document.categories, document.semantics, document.constraints,
+                      document.synonyms, document.matches)
     if issues:
         raise OntologyError(issues[0].code, issues[0].message)
     replacements = []

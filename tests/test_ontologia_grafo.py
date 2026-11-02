@@ -61,7 +61,8 @@ class Tabelle(unittest.TestCase):
                                     "ORDER BY lato DESC").fetchall(), [('da', 'qualsiasi'), ('a', 'stesso tipo')])
         self.assertEqual(dict(db.execute('SELECT chiave, valore FROM onto_metadata')),
                          {'formato': '1', 'schema_digest': parse(schema).digest, 'tipi': 'dichiarati',
-                          'vocabolario': 'presente', 'categorie': 'assenti', 'semantica': 'assente', 'vincoli': 'assente'})
+                          'vocabolario': 'presente', 'categorie': 'assenti', 'semantica': 'assente', 'vincoli': 'assente',
+                      'sinonimi': 'assenti', 'corrispondenze': 'assenti'})
 
     def test_senza_catalogo_i_tipi_sono_osservati_e_quelli_dei_vincoli(self):
         db = self.grafo(pagine(RELAZIONI + FONTI))
@@ -81,7 +82,8 @@ class Tabelle(unittest.TestCase):
                          ['persona', 'processo', 'sistema'])
         self.assertEqual(dict(db.execute('SELECT chiave, valore FROM onto_metadata')),
                          {'formato': '1', 'schema_digest': '', 'tipi': 'osservati', 'vocabolario': 'assente',
-                          'categorie': 'assenti', 'semantica': 'assente', 'vincoli': 'assente'})
+                          'categorie': 'assenti', 'semantica': 'assente', 'vincoli': 'assente',
+                      'sinonimi': 'assenti', 'corrispondenze': 'assenti'})
 
     def test_archi_derivati_non_sono_relazioni_dell_ontologia(self):
         db = self.grafo(pagine(TIPI + RELAZIONI + FONTI))
@@ -114,10 +116,10 @@ class Generazioni(unittest.TestCase):
     setUp = fixture.Queries.setUp
 
     def test_la_generazione_ha_le_tabelle_e_la_nuova_versione(self):
-        self.assertEqual(BUILDER_VERSION, 7)
+        self.assertEqual(BUILDER_VERSION, 8)
         db = sqlite3.connect(self.reference.path)
         try:
-            self.assertEqual(dict(db.execute('SELECT key, value FROM graph_metadata'))['builder_version'], '7')
+            self.assertEqual(dict(db.execute('SELECT key, value FROM graph_metadata'))['builder_version'], '8')
             self.assertEqual([n for (n,) in db.execute('SELECT nome FROM onto_relazioni')], ['usa'])
         finally:
             db.close()

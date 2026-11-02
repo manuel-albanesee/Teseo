@@ -73,6 +73,10 @@ schema li segnala con `shared_mapping_unavailable`, senza ignorarli o modificarl
 «Vincoli» di Wiki reference.md, [doc/17](17-concetti-grafo-aziendale.md)): aggiungere o rinominare relazioni non aggiorna
 le euristiche di sintesi/domande se non passando dai ruoli dichiarati; rinominare o togliere una relazione o un tipo citati
 nelle due sezioni è un errore della preview (`unknown_relation`, `unknown_type`) finché non si correggono le sezioni.
+Le sezioni «Sinonimi» (`Nome|Sinonimi`, separati da `;`) e «Corrispondenze» (`Nome|Corrispondenza|Vocabolario|Esattezza`) della
+fase 3a hanno lo stesso trattamento: tabelle proprie, conservate byte per byte dal serializer, citano tipi e categorie, quindi
+rinominare o togliere un tipo che citano è un errore della preview (`unknown_name`). `automatic_inference` aggiunge
+`synonym_seeds` quando ci sono sinonimi. Le operazioni sulle categorie e sulle due sezioni restano a mano (fase 3c, facoltativa).
 
 `content_revision` è lo snapshot analizzato; `graph_generation` è null. Hash
 ricontrollato dopo l'analisi e anche al replay: cambi esterni danno 409

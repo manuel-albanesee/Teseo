@@ -405,27 +405,88 @@ def archi(db, nodi, solo_tipizzate, colonne=("source_id", "target_id")):
         [*(nodi * len(colonne)), *escluse]).fetchall()
 
 
-def categorie_nominate(db, domanda):
+def nomi_di_pagina(db):
+    """Le forme normalizzate (norm) con cui una pagina si nomina: nome, alias e varianti grafiche. Chi le usa vince sul
+    sinonimo omonimo (doc/17, fase 3a; la regola di doc/16 per le categorie)."""
+    nomi = {norm(id_) for (id_,) in db.execute("SELECT id FROM entities WHERE tipo != 'fonte'")}
+    nomi |= {norm(alias) for (alias,) in db.execute("SELECT alias FROM aliases")}
+    try:
+        nomi |= {norm(variante) for (variante,) in db.execute("SELECT variante FROM varianti")}
+    except sqlite3.OperationalError:
+        pass
+    return nomi
+
+
+def sinonimi_per_nome(db, domanda, escludi=()):
+    """{nome: [sinonimo, …]} dei sinonimi dichiarati (onto_sinonimi) che la domanda nomina: la frase del sinonimo, con le
+    parole ridotte a radice, compare uguale e contigua fra le parole della domanda («gli SPV» → SPV). Non contano i
+    sinonimi uguali al nome, a un alias o a una variante di una pagina (la pagina vince), quelli compresi nel nome di
+    una pagina in `escludi` (già riconosciuta: «Billing SPV» non porta «SPV») e quelli in PAROLE_COMUNI scritti
+    diversamente da come sono dichiarati. Grafo senza la tabella → {}."""
+    try:
+        righe = db.execute("SELECT nome, sinonimo FROM onto_sinonimi ORDER BY posizione").fetchall()
+    except sqlite3.OperationalError:
+        return {}
+    scritta = scritto(domanda)
+    parole = [radice(w) for w in norm(scritta).split()]
+    tolti = [f" {norm(nome)} " for nome in escludi]
+    proprie = nomi_di_pagina(db)
+    trovati = {}
+    for nome, sinonimo in righe:
+        frase = norm(sinonimo)
+        if not frase or frase in proprie or any(f" {frase} " in t for t in tolti):
+            continue
+        if frase in PAROLE_COMUNI and not re.search(rf"\b{re.escape(sinonimo)}\b", scritta):
+            continue
+        rr = [radice(w) for w in frase.split()]
+        if any(parole[i:i + len(rr)] == rr for i in range(len(parole) - len(rr) + 1)):
+            trovati.setdefault(nome, []).append(sinonimo)
+    return trovati
+
+
+def categorie_nominate(db, domanda, escludi=()):
     """[(nome, padre, descrizione)] delle categorie di Wiki reference che la domanda nomina (B3 di doc/16): per nome
     (norm, «ciclo-passivo» → «ciclo passivo») o per radici, tutte quelle del nome presenti nelle parole della domanda
-    («le fatturazioni» → fatturazione). Una categoria con più di SOGLIA_CATEGORIA delle pagine del vault (sue e delle
-    sottocategorie) non distingue nulla e non fa da seme. Grafo senza la tabella `categorie` → []."""
+    («le fatturazioni» → fatturazione), o per un loro sinonimo (sinonimi_per_nome, doc/17 fase 3a). Una categoria con più
+    di SOGLIA_CATEGORIA delle pagine del vault (sue e delle sottocategorie) non distingue nulla e non fa da seme.
+    Grafo senza la tabella `categorie` → []. `escludi`: i nomi delle pagine già punti di partenza."""
     try:
         categorie = db.execute("SELECT nome, padre, descrizione FROM categorie ORDER BY posizione").fetchall()
     except sqlite3.OperationalError:
         return []
     parole = radici(scritto(domanda))
-    pagine = [id_ for id_ in pagine_di_categoria(db)]
+    pagine = pagine_di_categoria(db)
+    per_sinonimo = sinonimi_per_nome(db, domanda, escludi)
     trovate = []
     for nome, padre, descr in categorie:
         rr = radici(nome)
-        if not rr or not rr <= parole:
+        if not (rr and rr <= parole) and nome not in per_sinonimo:
             continue
         sue = pagine_per_categoria(db, nome)
         if not sue or len(sue) / max(1, len(pagine)) > SOGLIA_CATEGORIA:
             continue
         trovate.append((nome, padre, descr))
     return trovate
+
+
+def tipi_nominati(db, domanda, escludi=()):
+    """[(nome, padre, descrizione)] dei tipi che la domanda nomina con un loro sinonimo (doc/17, fase 3a): il nome di un
+    tipo da solo non è un punto di partenza. Stessa soglia delle categorie (SOGLIA_CATEGORIA) sulle pagine del tipo e
+    dei suoi sottotipi. Grafo senza `onto_sinonimi` o `onto_tipi` → []."""
+    per_sinonimo = sinonimi_per_nome(db, domanda, escludi)
+    if not per_sinonimo:
+        return []
+    try:
+        tipi = db.execute("SELECT nome, padre, descrizione FROM onto_tipi ORDER BY posizione").fetchall()
+    except sqlite3.OperationalError:
+        return []
+    pagine = pagine_di_categoria(db)
+    trovati = []
+    for nome, padre, descr in tipi:
+        sue = pagine_per_tipo(db, nome)
+        if nome in per_sinonimo and sue and len(sue) / max(1, len(pagine)) <= SOGLIA_CATEGORIA:
+            trovati.append((nome, padre, descr))
+    return trovati
 
 
 def pagine_di_categoria(db):
@@ -453,12 +514,31 @@ def pagine_per_categoria(db, nome):
     return pagine
 
 
-def scegli_pagine(db, nome, massimo=None):
-    """(pagine, omesse): al più `massimo` (MAX_CATEGORIA) pagine della categoria, scelte una alla volta per diversità
-    (MMR, Carbonell e Goldstein 1998): costa la profondità (le sottocategorie pesano meno) più le pagine dello stesso
-    tipo già prese; a parità prima la profondità minore, poi il nome."""
+def pagine_per_tipo(db, nome):
+    """{pagina: profondità}: 0 per le pagine del tipo, 1 per quelle dei suoi sottotipi e così via."""
+    try:
+        figli = {}
+        for tipo, padre in db.execute("SELECT nome, padre FROM onto_tipi"):
+            figli.setdefault(padre, []).append(tipo)
+    except sqlite3.OperationalError:
+        return {}
+    profondita, fronte, livello = {nome: 0}, [nome], 0
+    while fronte:
+        livello += 1
+        fronte = [f for t in fronte for f in figli.get(t, ()) if f not in profondita]
+        profondita.update({f: livello for f in fronte})
+    base = set(pagine_di_categoria(db))
+    return {id_: profondita[tipo] for id_, tipo in db.execute("SELECT id, tipo FROM entities")
+            if id_ in base and tipo in profondita}
+
+
+def scegli_pagine(db, da_scegliere, massimo=None):
+    """(pagine, omesse): al più `massimo` (MAX_CATEGORIA) pagine fra `da_scegliere` ({pagina: profondità}, di una
+    categoria o di un tipo), scelte una alla volta per diversità (MMR, Carbonell e Goldstein 1998): costa la profondità
+    (le sottocategorie pesano meno) più le pagine dello stesso tipo già prese; a parità prima la profondità minore,
+    poi il nome."""
     massimo = MAX_CATEGORIA if massimo is None else massimo
-    da_scegliere = pagine_per_categoria(db, nome)
+    da_scegliere = dict(da_scegliere)
     tipo = dict(db.execute("SELECT id, tipo FROM entities"))
     prese, per_tipo = [], Counter()
     while da_scegliere and len(prese) < massimo:
@@ -475,23 +555,37 @@ def seme_categoria(categoria):
 
 
 def fatto_categoria(db, categoria):
-    pagine, omesse = scegli_pagine(db, categoria[0])
+    pagine, omesse = scegli_pagine(db, pagine_per_categoria(db, categoria[0]))
     return {"s": categoria[0], "tipo": "categoria", "t": pagine, "passo": 1, "verso": "avanti", "reciproco": False,
             "punteggio": PUNTI[1], "omesse": omesse}
 
 
+def seme_tipo(tipo):
+    nome, padre, descr = tipo
+    return nome, "tipo" + (f", sottotipo di {padre}" if padre else ""), descr
+
+
+def fatto_tipo(db, tipo):
+    pagine, omesse = scegli_pagine(db, pagine_per_tipo(db, tipo[0]))
+    return {"s": tipo[0], "tipo": "tipo", "t": pagine, "passo": 1, "verso": "avanti", "reciproco": False,
+            "punteggio": PUNTI[1], "omesse": omesse}
+
+
 def richiama(db, domanda, max_tipizzate=MAX_TIPIZZATE, max_menziona=MAX_MENZIONA, extra=()):
-    """(semi, fatti, omessi) come richiama_pagine, più le categorie nominate (B3 di doc/16): per ognuna un seme
-    `(nome, 'categoria[, parte di X]', descrizione)` e un fatto aggregato con le pagine scelte e le `omesse`. Il nome
-    di una pagina vince su una categoria omonima: se la domanda nomina la pagina, la categoria non c'è. Le categorie
+    """(semi, fatti, omessi) come richiama_pagine, più le categorie nominate (B3 di doc/16) e i tipi nominati con un
+    sinonimo (doc/17, fase 3a): per ognuno un seme `(nome, 'categoria[, parte di X]' o 'tipo[, sottotipo di X]',
+    descrizione)` e un fatto aggregato con le pagine scelte e le `omesse`. Il nome di una pagina vince su una
+    categoria omonima e su un sinonimo uguale: se la domanda nomina la pagina, la categoria non c'è. Categorie e tipi
     non entrano nel cammino sugli archi (non sono nodi del grafo): i fatti vengono dalle sole pagine."""
     semi, fatti, omessi = richiama_pagine(db, domanda, max_tipizzate, max_menziona, extra)
-    nomi = [radici(s[0]) for s in semi]
-    categorie = [c for c in categorie_nominate(db, domanda) if radici(c[0]) not in nomi]
-    if not categorie:
+    pagine = [s[0] for s in semi]
+    nomi = [radici(nome) for nome in pagine]
+    categorie = [c for c in categorie_nominate(db, domanda, pagine) if radici(c[0]) not in nomi]
+    tipi = tipi_nominati(db, domanda, pagine)
+    if not categorie and not tipi:
         return semi, fatti, omessi
-    return (semi + [seme_categoria(c) for c in categorie],
-            fatti + [fatto_categoria(db, c) for c in categorie], omessi)
+    return (semi + [seme_categoria(c) for c in categorie] + [seme_tipo(t) for t in tipi],
+            fatti + [fatto_categoria(db, c) for c in categorie] + [fatto_tipo(db, t) for t in tipi], omessi)
 
 
 def richiama_pagine(db, domanda, max_tipizzate=MAX_TIPIZZATE, max_menziona=MAX_MENZIONA, extra=()):
