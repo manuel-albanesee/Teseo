@@ -1,0 +1,53 @@
+[
+ {
+  "coperta_da": null,
+  "domanda": "Per Rilascio in produzione: cosa serve, in che ordine e a chi mi rivolgo?",
+  "famiglia": "catena",
+  "pagine": [
+   "Rilascio in produzione",
+   "Console di rilascio",
+   "Incident settimanale",
+   "Anna Rossi",
+   "ServiceDesk"
+  ],
+  "partenza": "Rilascio in produzione",
+  "percorso": [
+   "Rilascio in produzione →usa→ Console di rilascio",
+   "Console di rilascio →richiede→ Incident settimanale",
+   "Incident settimanale →referente→ Anna Rossi",
+   "Incident settimanale →usa→ ServiceDesk"
+  ]
+ },
+ {
+  "coperta_da": "Incident settimanale",
+  "domanda": "Per Console di rilascio: cosa serve, in che ordine e a chi mi rivolgo?",
+  "famiglia": "catena",
+  "pagine": [
+   "Console di rilascio",
+   "Incident settimanale",
+   "Anna Rossi",
+   "ServiceDesk"
+  ],
+  "partenza": "Console di rilascio",
+  "percorso": [
+   "Console di rilascio →richiede→ Incident settimanale",
+   "Incident settimanale →referente→ Anna Rossi",
+   "Incident settimanale →usa→ ServiceDesk"
+  ]
+ },
+ {
+  "coperta_da": "Anna Rossi",
+  "domanda": "Per cosa mi rivolgo a Anna Rossi?",
+  "famiglia": "persona",
+  "pagine": [
+   "Anna Rossi",
+   "Incident settimanale",
+   "Modulo fatture"
+  ],
+  "partenza": "Anna Rossi",
+  "percorso": [
+   "Incident settimanale →referente→ Anna Rossi",
+   "Modulo fatture →referente→ Anna Rossi"
+  ]
+ }
+]

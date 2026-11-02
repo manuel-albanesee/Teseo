@@ -1,0 +1,56 @@
+[
+ {
+  "chiave": "verifica|Rilascio in produzione|da verificare il giorno di rilascio",
+  "pagine": [
+   "Rilascio in produzione"
+  ],
+  "rinvii": 0,
+  "segnale": "verifica",
+  "testo": "In [[Rilascio in produzione]] resta da verificare: «da verificare: il giorno di rilascio, mercoledì secondo il manuale e venerdì secondo la call.»"
+ },
+ {
+  "chiave": "referente|Gestionale|",
+  "pagine": [
+   "Gestionale"
+  ],
+  "rinvii": 0,
+  "segnale": "referente",
+  "testo": "Chi è il referente di [[Gestionale]]? (nessuna relazione `referente` nel frontmatter)"
+ },
+ {
+  "chiave": "referente|Rilascio in produzione|",
+  "pagine": [
+   "Rilascio in produzione"
+  ],
+  "rinvii": 0,
+  "segnale": "referente",
+  "testo": "Chi è il referente di [[Rilascio in produzione]]? (nessuna relazione `referente` nel frontmatter)"
+ },
+ {
+  "chiave": "referente|ServiceDesk|",
+  "pagine": [
+   "ServiceDesk"
+  ],
+  "rinvii": 0,
+  "segnale": "referente",
+  "testo": "Chi è il referente di [[ServiceDesk]]? (nessuna relazione `referente` nel frontmatter)"
+ },
+ {
+  "chiave": "relazioni|Gestionale|",
+  "pagine": [
+   "Gestionale"
+  ],
+  "rinvii": 0,
+  "segnale": "relazioni",
+  "testo": "[[Gestionale]] non dichiara relazioni tipizzate: di cosa fa parte, cosa usa o richiede, cosa precede o sostituisce?"
+ },
+ {
+  "chiave": "relazioni|ServiceDesk|",
+  "pagine": [
+   "ServiceDesk"
+  ],
+  "rinvii": 0,
+  "segnale": "relazioni",
+  "testo": "[[ServiceDesk]] non dichiara relazioni tipizzate: di cosa fa parte, cosa usa o richiede, cosa precede o sostituisce?"
+ }
+]
