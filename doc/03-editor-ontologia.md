@@ -69,8 +69,10 @@ futuro apply; nessuna pagina è riscritta. `manual_review` localizza occorrenze
 letterali nel testo libero senza attribuirgli significato. `shared_records`
 elenca i file condivisi: fino al formato del passo 5 una modifica reale di
 schema li segnala con `shared_mapping_unavailable`, senza ignorarli o modificarli.
-`semantic_capabilities.automatic_inference` è sempre false: aggiungere o
-rinominare relazioni non aggiorna le euristiche di sintesi/domande.
+`semantic_capabilities.automatic_inference` è un elenco (vuoto senza le sezioni «Semantica delle relazioni» e
+«Vincoli» di Wiki reference.md, [doc/17](17-concetti-grafo-aziendale.md)): aggiungere o rinominare relazioni non aggiorna
+le euristiche di sintesi/domande se non passando dai ruoli dichiarati; rinominare o togliere una relazione o un tipo citati
+nelle due sezioni è un errore della preview (`unknown_relation`, `unknown_type`) finché non si correggono le sezioni.
 
 `content_revision` è lo snapshot analizzato; `graph_generation` è null. Hash
 ricontrollato dopo l'analisi e anche al replay: cambi esterni danno 409

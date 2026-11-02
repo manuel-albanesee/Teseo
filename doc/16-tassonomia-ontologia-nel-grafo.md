@@ -157,7 +157,7 @@ su una categoria omonima. Si tiene solo se B2 non mostra peggioramenti sulle dom
 pagine: il lint scrive la pagina per entropia, come per le catene, e la pagina diventa il riassunto calcolato prima
 che risponde alle domande globali (le comunità di GraphRAG). Verifica e copertura come le altre famiglie di `sintesi.py`.
 
-## Fase C — semantica letta dall'ontologia (proposta)
+## Fase C — semantica letta dall'ontologia (ripresa e implementata dal [piano 17](17-concetti-grafo-aziendale.md), fase 2)
 
 Ruoli semantici in un insieme chiuso, dichiarati in `Wiki reference.md` e copiati in `onto_relazioni.ruolo`:
 `dipendenza` (oggi `usa`, `richiede`), `responsabile` (`referente`), `composizione` (`parte_di`), `causale`
@@ -165,7 +165,7 @@ Ruoli semantici in un insieme chiuso, dichiarati in `Wiki reference.md` e copiat
 di default identica alle costanti di oggi. Pesi per relazione nel recall e nome dell'inversa in `formatta`.
 `semantic_capabilities.automatic_inference` diventa un elenco dei comportamenti attivati dai ruoli.
 
-## Fase D — deduzione dichiarata (proposta)
+## Fase D — deduzione dichiarata (ripresa e implementata dal [piano 17](17-concetti-grafo-aziendale.md), fase 2)
 
 Flag `transitiva` e nome `inversa` per relazione; le deduzioni sono viste SQL (`relazioni_dedotte`) ricalcolate a ogni
 build, marcate come dedotte nel recall e nelle API, mai scritte nelle note.

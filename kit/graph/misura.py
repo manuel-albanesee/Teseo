@@ -210,7 +210,7 @@ def misura_recall(db):
         ms = (time.perf_counter() - inizio) * 1000
         portate = {s[0] for s in semi} | {n for f in fatti for n in nodi(f)}
         mancanti = [p for p in attese if p not in portate]
-        testo = formatta(semi, fatti, info, omessi) if semi else ""
+        testo = formatta(semi, fatti, info, omessi, db) if semi else ""
         trovate_tot += len(attese) - len(mancanti)
         attese_tot += len(attese)
         print(f"{domanda[:54]:<55} {len(semi):>4} {len(attese) - len(mancanti):>7}/{len(attese):<5} "
@@ -292,7 +292,7 @@ def esito_banco(db, info, domanda):
         semi, fatti, omessi = richiama(db, domanda, extra=dal_testo)
     ms = (time.perf_counter() - inizio) * 1000
     portate = {s[0] for s in semi} | {n for f in fatti for n in nodi(f)}
-    testo = formatta(semi, fatti, info, omessi) if semi else ""
+    testo = formatta(semi, fatti, info, omessi, db) if semi else ""
     return {"domanda": domanda, "semi_grafo": per_nome, "semi": [s[0] for s in semi], "testo": bool(dal_testo),
             "portate": sorted(portate), "token": len(testo) // 4, "ms": round(ms)}
 
@@ -596,9 +596,9 @@ def esegui_hook(claude, vault, db_path, modello, domanda, regole, precarica):
     try:
         info = {id_: (tipo, descr) for id_, tipo, descr in db.execute("SELECT id, tipo, descrizione FROM entities")}
         semi, fatti, omessi = richiama(db, domanda)
+        contesto = f"{formatta(semi, fatti, info, omessi, db)}\n{AVVISO}" if semi else ""
     finally:
         db.close()
-    contesto = f"{formatta(semi, fatti, info, omessi)}\n{AVVISO}" if semi else ""
     pagine = modello_hook.pagine_precaricate(domanda, vault) if precarica else ""
     cmd = modello_hook.argomenti_haiku(claude, modello, regole)
     cmd[cmd.index("json")] = "stream-json"  # per ricavare le pagine lette

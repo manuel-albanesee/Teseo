@@ -235,7 +235,7 @@ class Ruoli(unittest.TestCase):
     def test_il_dichiarato_sovrascrive_solo_le_relazioni_indicate(self):
         _, db = crea_vault(self, SCHEMA.replace('| `precede` | sequenza |', '| `precede` | dipendenza |'))
         self.assertEqual(semantica.relazioni_con_ruolo(db, 'dipendenza', 'responsabile'),
-                         ('usa', 'richiede', 'precede', 'referente'))
+                         ('usa', 'richiede', 'referente', 'precede'))  # prima i default, poi le aggiunte della sezione
         self.assertEqual(semantica.relazioni_con_ruolo(db, 'causale'), ('causa',))  # la sezione non la nomina: resta il default
         self.assertEqual(semantica.inverse(db), {'usa': 'è usato da', 'richiede': 'è richiesto da', 'precede': 'segue'})
         self.assertTrue(semantica.dichiarata(db))
@@ -399,6 +399,41 @@ class Recall(unittest.TestCase):
         self.assertEqual(semantica.schema_pertinente(db, fatti, massimo=5), '')
         with mock.patch.dict(os.environ, {'GRAFO_SENZA_SCHEMA': '1'}):
             self.assertNotIn('Schema pertinente', recall.formatta(semi, fatti, info, omessi, db=db))
+
+
+class Hook(unittest.TestCase):
+    """L'hook chiude il grafo prima di comporre il contesto: il blocco di schema va calcolato prima (regressione)."""
+
+    def contesto(self, schema):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        vault = Path(temp.name)
+        shutil.copytree(KIT / 'graph', vault / '.graph', ignore=shutil.ignore_patterns('__pycache__', '*.sqlite'))
+        (vault / 'wiki').mkdir()
+        (vault / 'Wiki reference.md').write_text(schema, encoding='utf-8')
+        for nome in ('index.md', 'log.md'):
+            (vault / nome).write_text('# ' + nome + '\n', encoding='utf-8')
+        for nome, testo in {'Rilascio': pagina('processo', usa='Console'), 'Console': pagina('sistema')}.items():
+            (vault / 'wiki' / (nome + '.md')).write_text(testo, encoding='utf-8')
+        subprocess.run([sys.executable, '.graph/build_graph.py'], cwd=vault, check=True, capture_output=True)
+        ambiente = {**os.environ, 'PYTHONIOENCODING': 'utf-8', 'GRAFO_SENZA_MEMORIA': '1', 'GRAFO_SENZA_DOMANDE': '1'}
+        esito = subprocess.run([sys.executable, '.graph/recall_hook.py'], cwd=vault, env=ambiente, timeout=120,
+                               input=json.dumps({'prompt': 'Rilascio', 'session_id': 't'}).encode('utf-8'),
+                               capture_output=True)
+        uscita = json.loads(esito.stdout.decode('utf-8'))
+        return uscita['hookSpecificOutput']['additionalContext'], uscita.get('systemMessage', '')
+
+    def test_il_blocco_di_schema_arriva_nel_contesto(self):
+        contesto, messaggio = self.contesto(SCHEMA)
+        self.assertNotIn('non riuscito', messaggio)
+        self.assertIn('Schema pertinente', contesto)
+        self.assertIn('- usa (dipendenza; inversa: è usato da): X funziona tramite Y', contesto)
+
+    def test_senza_la_sezione_il_contesto_non_ha_il_blocco(self):
+        contesto, messaggio = self.contesto(BASE)
+        self.assertNotIn('non riuscito', messaggio)
+        self.assertIn('Dal grafo della wiki', contesto)
+        self.assertNotIn('Schema pertinente', contesto)
 
 
 class Api(unittest.TestCase):

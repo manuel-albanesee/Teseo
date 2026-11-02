@@ -2,8 +2,10 @@
 
 Grammatica volutamente limitata: sezioni ATX h2, una tabella contigua per sezione,
 2/3 colonne per i tipi (la terza è «Sottotipo di»), 3/5 per le relazioni, 3 per le categorie
-(«Categoria | Più ampia | Descrizione», doc/16). Contenuto ambiguo resta manuale.
-Gli offset sono byte UTF-8; il serializer sostituisce solo tabelle riconosciute: le categorie si conservano byte per byte.
+(«Categoria | Più ampia | Descrizione», doc/16), 4 per la semantica delle relazioni («Relazione | Ruolo | Inversa |
+Proprietà», doc/17) e 5 per i vincoli («Tipo | Relazione o attributo | Minimo | Massimo | Se manca»). Contenuto ambiguo
+resta manuale. Gli offset sono byte UTF-8; il serializer sostituisce solo tabelle riconosciute: categorie, semantica e
+vincoli si conservano byte per byte (e il serializer rifiuta una modifica che li lascerebbe con nomi non più dichiarati).
 """
 from dataclasses import dataclass
 import hashlib
@@ -14,7 +16,11 @@ MAX_BYTES = 2 * 1024 * 1024
 MAX_ROWS = 2048
 SPECIAL = frozenset({'tipo', 'tags', 'fonti', 'aggiornato', 'aliases', 'relazioni_dettaglio', 'menziona', 'documentato_in'})
 WILDCARDS = frozenset({'qualsiasi', 'stesso tipo'})
-HEADINGS = {'Tipi ammessi': 'types', 'Relazioni tipizzate': 'relations', 'Categorie': 'categories'}
+HEADINGS = {'Tipi ammessi': 'types', 'Relazioni tipizzate': 'relations', 'Categorie': 'categories',
+            'Semantica delle relazioni': 'semantics', 'Vincoli': 'constraints'}
+RUOLI = ('dipendenza', 'responsabile', 'composizione', 'causale', 'sequenza')  # insieme chiuso (doc/17, fase 2)
+PROPRIETA = ('transitiva', 'simmetrica')
+SE_MANCA = ('domanda', 'nulla')  # un vincolo violato diventa una domanda aperta per l'autore, oppure niente
 
 
 class OntologyError(ValueError):
@@ -52,6 +58,23 @@ class Category:
 
 
 @dataclass(frozen=True)
+class RelationSemantics:
+    name: str
+    role: str = ''  # uno di RUOLI, o vuoto: vale il ruolo di default del kit (semantica.RUOLI_DEFAULT)
+    inverse: str = ''  # nome leggibile della relazione al contrario («è usato da»): mai un arco, mai nelle pagine
+    properties: tuple[str, ...] = ()  # sottoinsieme di PROPRIETA
+
+
+@dataclass(frozen=True)
+class Constraint:
+    type: str  # vale anche per i sottotipi
+    relation: str
+    minimum: int = 0
+    maximum: int | None = None
+    if_missing: str = 'domanda'
+
+
+@dataclass(frozen=True)
 class Relation:
     name: str
     from_types: tuple[str, ...]
@@ -75,6 +98,10 @@ class Ontology:
     adoption_offset: int | None
     categories: tuple[Category, ...] | None = None
     categories_span: Span | None = None
+    semantics: tuple[RelationSemantics, ...] | None = None
+    semantics_span: Span | None = None
+    constraints: tuple[Constraint, ...] | None = None
+    constraints_span: Span | None = None
 
     @property
     def digest(self):
@@ -83,7 +110,19 @@ class Ontology:
     @property
     def source_spans(self):
         return {key: span for key, span in (('types', self.types_span), ('relations', self.relations_span),
-                                            ('categories', self.categories_span)) if span}
+                                            ('categories', self.categories_span), ('semantics', self.semantics_span),
+                                            ('constraints', self.constraints_span)) if span}
+
+    @property
+    def capabilities(self):
+        """I comportamenti che le sezioni dichiarate attivano, in ordine fisso: nessuno senza le sezioni (doc/17)."""
+        semantics = self.semantics or ()
+        attive = (('role_chains', any(item.role for item in semantics)),
+                  ('inverse_labels', any(item.inverse for item in semantics)),
+                  ('transitive_views', any('transitiva' in item.properties for item in semantics)),
+                  ('symmetric_views', any('simmetrica' in item.properties for item in semantics)),
+                  ('cardinality_questions', any(item.if_missing == 'domanda' for item in self.constraints or ())))
+        return tuple(nome for nome, attiva in attive if attiva)
 
     @property
     def structurally_editable(self):
@@ -148,8 +187,11 @@ def _cycles(parents):
     return found
 
 
-def validate(types, relations, categories=None):
-    """Validazione del modello; impatto sulle pagine demandato al builder/preview."""
+def validate(types, relations, categories=None, semantics=None, constraints=None):
+    """Validazione del modello; impatto sulle pagine demandato al builder/preview.
+
+    `semantics` e `constraints` (doc/17) sono le sezioni facoltative: i loro nomi devono restare dichiarati, quindi
+    rinominare o togliere una relazione o un tipo che citano è un errore finché non si correggono a mano."""
     if (types is not None and not types) or len(types or ()) > MAX_ROWS or len(relations) > MAX_ROWS:
         return (Issue('catalog_limit', 'Catalogo vuoto o oltre 2048 righe'),)
     issues, seen = [], set()
@@ -211,6 +253,48 @@ def validate(types, relations, categories=None):
                 issues.append(Issue('unknown_broader', name + ': categoria più ampia non dichiarata: ' + str(parent)))
         for name in sorted(_cycles(broader)):
             issues.append(Issue('category_cycle', 'Gerarchia delle categorie circolare: ' + name))
+    relation_names = {item.name for item in relations if isinstance(item, Relation)}
+    if semantics is not None:
+        if not semantics or len(semantics) > MAX_ROWS:
+            issues.append(Issue('catalog_limit', 'Semantica vuota o oltre 2048 righe'))
+        seen = set()
+        for item in semantics:
+            if (not isinstance(item, RelationSemantics) or not isinstance(item.role, str) or not _text(item.inverse)
+                    or not isinstance(item.properties, tuple)):
+                issues.append(Issue('invalid_semantics', 'Riga della semantica non rappresentabile nella tabella'))
+                continue
+            if item.name not in relation_names:
+                issues.append(Issue('unknown_relation', 'Semantica di una relazione non dichiarata: ' + str(item.name)))
+            if item.name in seen:
+                issues.append(Issue('duplicate_semantics', 'Semantica ripetuta: ' + item.name))
+            seen.add(item.name)
+            if item.role and item.role not in RUOLI:
+                issues.append(Issue('invalid_role', item.name + ': ruolo atteso fra ' + ', '.join(RUOLI)))
+            for proprieta in item.properties:
+                if proprieta not in PROPRIETA:
+                    issues.append(Issue('invalid_property', item.name + ': proprietà attesa fra ' + ', '.join(PROPRIETA)))
+            if 'simmetrica' in item.properties and item.inverse:
+                issues.append(Issue('symmetric_with_inverse', item.name + ': una relazione simmetrica non ha un nome inverso'))
+    if constraints is not None:
+        if not constraints or len(constraints) > MAX_ROWS:
+            issues.append(Issue('catalog_limit', 'Vincoli vuoti o oltre 2048 righe'))
+        seen = set()
+        for item in constraints:
+            if not isinstance(item, Constraint) or not isinstance(item.minimum, int) or isinstance(item.minimum, bool):
+                issues.append(Issue('invalid_cardinality', 'Riga dei vincoli non rappresentabile nella tabella'))
+                continue
+            if types is not None and item.type not in known:
+                issues.append(Issue('unknown_type', 'Vincolo su un tipo non dichiarato: ' + str(item.type)))
+            if item.relation not in relation_names:
+                issues.append(Issue('unknown_relation', 'Vincolo su una relazione non dichiarata: ' + str(item.relation)))
+            if item.minimum < 0 or (item.maximum is not None and item.maximum < item.minimum):
+                issues.append(Issue('invalid_cardinality', f'{item.type} · {item.relation}: minimo e massimo non coerenti'))
+            if item.if_missing not in SE_MANCA:
+                issues.append(Issue('invalid_if_missing', f'{item.type} · {item.relation}: «Se manca» atteso fra '
+                                    + ', '.join(SE_MANCA)))
+            if (item.type, item.relation) in seen:
+                issues.append(Issue('duplicate_cardinality', f'Vincolo ripetuto: {item.type} · {item.relation}'))
+            seen.add((item.type, item.relation))
     return tuple(issues)
 
 
@@ -232,6 +316,15 @@ def _cells(line):
             current.append(char)
         index += 1
     return cells + [''.join(current).strip()]
+
+
+def _count(cell):
+    """Un numero intero non negativo scritto in una cella, o None se la cella è vuota."""
+    if not cell:
+        return None
+    if not cell.isdecimal() or len(cell) > 6:
+        raise ValueError('Minimo e massimo attesi come numeri interi')
+    return int(cell)
 
 
 def _identifier(cell):
@@ -360,7 +453,9 @@ def parse(source):
             expected = len(header)
             if (key == 'types' and header not in (['tipo', 'descrizione'], ['nome', 'descrizione'],
                                                   ['tipo', 'descrizione', 'sottotipo di'], ['nome', 'descrizione', 'sottotipo di'])) or (
-                    key == 'categories' and header != ['categoria', 'più ampia', 'descrizione']) or (key == 'relations' and (expected not in (3, 5) or header[0] not in ('nome', 'relazione') or header[1:3] != ['da', 'a'] or (expected == 5 and header[3:] != ['significato', 'esempio']))):
+                    key == 'categories' and header != ['categoria', 'più ampia', 'descrizione']) or (
+                    key == 'semantics' and header != ['relazione', 'ruolo', 'inversa', 'proprietà']) or (
+                    key == 'constraints' and header != ['tipo', 'relazione o attributo', 'minimo', 'massimo', 'se manca']) or (key == 'relations' and (expected not in (3, 5) or header[0] not in ('nome', 'relazione') or header[1:3] != ['da', 'a'] or (expected == 5 and header[3:] != ['significato', 'esempio']))):
                 raise ValueError('Intestazione tabella non riconosciuta')
             if len(table) < 2 or len(table[1]) != expected or not all(re.fullmatch(r':?-{3,}:?', cell) for cell in table[1]):
                 raise ValueError('Separatore tabella non valido')
@@ -373,6 +468,13 @@ def parse(source):
                                     for row in table[2:])
             elif key == 'categories':
                 parsed[key] = tuple(Category(_identifier(row[0]), _identifier(row[1]), row[2]) for row in table[2:])
+            elif key == 'semantics':
+                parsed[key] = tuple(RelationSemantics(_identifier(row[0]), _identifier(row[1]), row[2],
+                                                      tuple(item.strip() for item in row[3].split(',') if item.strip()))
+                                    for row in table[2:])
+            elif key == 'constraints':
+                parsed[key] = tuple(Constraint(_identifier(row[0]), _identifier(row[1]), _count(row[2]) or 0,
+                                               _count(row[3]), row[4] or 'domanda') for row in table[2:])
             else:
                 parsed[key] = tuple(Relation(_identifier(row[0]), tuple(item.strip() for item in row[1].split(',')),
                     tuple(item.strip() for item in row[2].split(',')), row[3] if expected == 5 else '', row[4] if expected == 5 else '') for row in table[2:])
@@ -380,7 +482,8 @@ def parse(source):
         except ValueError as error:
             issues.append(Issue('unrecognized_table', str(error), rows[0] + 1))
     types, relations, categories = parsed.get('types'), parsed.get('relations', ()), parsed.get('categories')
-    issues.extend(validate(types, relations, categories))
+    semantics, constraints = parsed.get('semantics'), parsed.get('constraints')
+    issues.extend(validate(types, relations, categories, semantics, constraints))
     if len(conventions) > 1:
         issues.append(Issue('ambiguous_conventions', 'Più elenchi tipo diversi negli esempi YAML', severity='warning'))
     opaque, offset = [], 0
@@ -393,7 +496,8 @@ def parse(source):
     return Ontology(source, types, relations, spans.get('types'), spans.get('relations'), tuple(opaque),
                     tuple(issues), catalog_present, next(iter(conventions)) if len(conventions) == 1 else (),
                     (lines[sections['relations'][0]][0] + (3 if sections['relations'][0] == 0 and source.startswith(b'\xef\xbb\xbf') else 0)) if 'relations' in sections else None,
-                    categories, spans.get('categories'))
+                    categories, spans.get('categories'), semantics, spans.get('semantics'),
+                    constraints, spans.get('constraints'))
 
 
 def _table(types=None, relations=None, newline=b'\n', trailing=True):
@@ -423,7 +527,7 @@ def serialize(document, *, types=None, relations=None):
         raise OntologyError('ontology_manual', 'Documento ambiguo o non valido: editing manuale richiesto')
     if document.types is None:
         raise OntologyError('catalog_adoption_required', 'Proporre e confermare prima il catalogo dei tipi')
-    issues = validate(types, relations)
+    issues = validate(types, relations, semantics=document.semantics, constraints=document.constraints)
     if issues:
         raise OntologyError(issues[0].code, issues[0].message)
     replacements = []

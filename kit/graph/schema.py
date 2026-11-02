@@ -121,12 +121,23 @@ def _livello_2(testo, ontologia, tipi, fonti):
             righe = [[f"`{t.name}`", _cella(t.description), t.parent] for t in ontologia.types if t.name in rilevanti]
             if righe:
                 parti.append("## Tipi\n" + _tabella(["Tipo", "Descrizione", "Sottotipo di"], righe))
+        applicabili = [r for r in ontologia.relations
+                       if rilevanti is None or any(t in rilevanti or t == QUALSIASI for t in (*r.from_types, *r.to_types))]
         righe = [[f"`{r.name}`", ", ".join(r.from_types), ", ".join(r.to_types), _cella(r.meaning), _cella(r.example)]
-                 for r in ontologia.relations
-                 if rilevanti is None or any(t in rilevanti or t == QUALSIASI for t in (*r.from_types, *r.to_types))]
+                 for r in applicabili]
         if righe:
             parti.append("## Relazioni applicabili\n"
                          + _tabella(["Relazione", "Da (tipo)", "A (tipo)", "Significato", "Esempio"], righe))
+        nomi = {r.name for r in applicabili}
+        righe = [[f"`{s.name}`", s.role, _cella(s.inverse), ", ".join(s.properties)]
+                 for s in ontologia.semantics or () if s.name in nomi]
+        if righe:  # doc/17, fase 2: ruoli, inverse e proprietà delle relazioni applicabili
+            parti.append("## Semantica delle relazioni\n" + _tabella(["Relazione", "Ruolo", "Inversa", "Proprietà"], righe))
+        righe = [[f"`{c.type}`", f"`{c.relation}`", str(c.minimum), "" if c.maximum is None else str(c.maximum), c.if_missing]
+                 for c in ontologia.constraints or () if rilevanti is None or c.type in rilevanti]
+        if righe:  # il vincolo di un tipo vale anche per i suoi sottotipi: ci sono gli antenati in `rilevanti`
+            parti.append("## Vincoli\n"
+                         + _tabella(["Tipo", "Relazione o attributo", "Minimo", "Massimo", "Se manca"], righe))
     if fonti:
         trovate = {}
         for riga in testo.splitlines():

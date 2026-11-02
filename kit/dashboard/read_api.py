@@ -44,6 +44,18 @@ def _has_table(db, name):
     return db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone() is not None
 
 
+def _relazioni_causali(db):
+    """Le relazioni che /causal segue: `causa` (il ruolo di default) e quelle che Wiki reference.md dichiara «causale»
+    (doc/17); un ruolo dichiarato diverso su `causa` la toglie. Le generazioni precedenti usano solo `causa`."""
+    causali = {"causa"}
+    try:
+        for nome, ruolo in db.execute("SELECT nome, ruolo FROM onto_relazioni WHERE ruolo IS NOT NULL"):
+            (causali.add if ruolo == "causale" else causali.discard)(nome)
+    except sqlite3.OperationalError:
+        pass
+    return sorted(causali) or ["causa"]
+
+
 def _issue(code, severity, message, revision, path=None):
     return {"code": code, "severity": severity, "message": message, "path": path, "revision": revision}
 
@@ -86,7 +98,7 @@ class ReadAPI:
                 raise ContractError("graph_corrupt", "Hash del grafo non valido")
             db = connect_graph(reference.path, reference=reference)
             metadata = dict(db.execute("SELECT key, value FROM graph_metadata"))
-            if metadata.get("builder_version") not in {"2", "3", "4", "5", "6"}:
+            if metadata.get("builder_version") not in {"2", "3", "4", "5", "6", "7"}:
                 raise ContractError("graph_upgrade_required", "Ricostruire esplicitamente il grafo con il kit aggiornato")
             deadline = time.monotonic() + 5
             db.set_progress_handler(lambda: time.monotonic() > deadline, 10000)
@@ -326,17 +338,19 @@ class ReadAPI:
             join, columns = (("LEFT JOIN relation_attributes a ON a.source_id=r.source_id AND a.target_id=r.target_id AND a.type=r.type",
                               "a.confidenza,a.evidenza") if _has_table(db, "relation_attributes") else ("", "NULL,NULL"))
             column = "r.source_id" if forward else "r.target_id"
+            causali = _relazioni_causali(db)
             frontier, seen, edges, truncated = [node], {node}, [], False
             for level in range(int(depth)):
                 found = []
                 for current in frontier:
-                    rows = db.execute(f"SELECT r.source_id,r.target_id,{columns} FROM relations r {join} "
-                                      f"WHERE r.type='causa' AND {column}=? ORDER BY r.source_id,r.target_id", (current,)).fetchall()
-                    for source, target, confidence, evidence in rows:
+                    rows = db.execute(f"SELECT r.source_id,r.target_id,r.type,{columns} FROM relations r {join} "
+                                      f"WHERE r.type IN ({','.join('?' * len(causali))}) AND {column}=? "
+                                      "ORDER BY r.source_id,r.target_id,r.type", (*causali, current)).fetchall()
+                    for source, target, kind, confidence, evidence in rows:
                         if len(edges) >= MAX_CAUSAL_EDGES:
                             truncated = True
                             break
-                        edges.append({"source_id": source, "target_id": target, "type": "causa", "level": level + 1,
+                        edges.append({"source_id": source, "target_id": target, "type": kind, "level": level + 1,
                                       "confidenza": confidence, "evidenza": evidence})
                         follow = target if forward else source
                         if follow not in seen:
@@ -408,8 +422,14 @@ class ReadAPI:
                 types = sorted(types - {"qualsiasi", "stesso tipo"})
         opaque = [html.escape(document.source[span.start:span.end].decode('utf-8'), quote=False)
                   for span in document.opaque_sections]
+        # doc/17: semantica e vincoli vengono sempre dal Markdown della generazione, come l'ontologia delle versioni precedenti
+        semantics = [{"name": item.name, "role": item.role, "inverse": item.inverse, "properties": list(item.properties)}
+                     for item in document.semantics or ()]
+        constraints = [{"type": item.type, "relation": item.relation, "minimum": item.minimum, "maximum": item.maximum,
+                        "if_missing": item.if_missing} for item in document.constraints or ()]
         return {**_revision(reference), "types": types, "types_source": "declared" if declared else "observed_and_constraints",
-                "relations": relations, "type_parents": parents, "categories": categories, "opaque_sections": opaque,
+                "relations": relations, "type_parents": parents, "categories": categories,
+                "semantics": semantics, "constraints": constraints, "opaque_sections": opaque,
                 "schema_digest": document.digest,
                 "source_spans": {key: {"start": span.start, "end": span.end} for key, span in document.source_spans.items()},
                 "editable": document.editable, "catalog_adoption_required": not document.catalog_present,

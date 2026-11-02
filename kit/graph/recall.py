@@ -58,6 +58,7 @@ import sys
 from collections import Counter, namedtuple
 from pathlib import Path
 
+import semantica
 from build_graph import norm
 from stemmer import stem
 from domande import TAG_ENTROPIA
@@ -490,7 +491,10 @@ def nodi(fatto):
     return [n for k in ("s", "t") for n in (fatto[k] if isinstance(fatto[k], list) else [fatto[k]])]
 
 
-def formatta(semi, fatti, info, omessi=None):
+def formatta(semi, fatti, info, omessi=None, db=None):
+    """Il contesto «Dal grafo della wiki…». Con `db` aggiunge in coda il blocco «Schema pertinente» (semantica.py): il
+    significato, il ruolo e l'inversa delle sole relazioni presenti nei fatti, entro MAX_SCHEMA_TOKEN token. Il blocco c'è
+    solo se Wiki reference.md dichiara la «Semantica delle relazioni»: senza la sezione il contesto è quello di prima."""
     ids = {s[0] for s in semi}
     righe = [f"Dal grafo della wiki ({len(fatti)} fatti):"]
     for id_, tipo, descr in semi:
@@ -505,6 +509,8 @@ def formatta(semi, fatti, info, omessi=None):
                                                     ("menziona", "link generici omessi")) if omessi and omessi[k]]
     if parti:
         righe.append(f"({'; '.join(parti)}: il contesto è parziale, cercare nelle pagine se serve)")
+    if db is not None and (schema := semantica.schema_pertinente(db, fatti)):
+        righe.append(schema)
     return "\n".join(righe)
 
 
@@ -533,7 +539,7 @@ def main():
         print(json.dumps(result, ensure_ascii=False, indent=2))
     else:
         info = {id_: (tipo, descr) for id_, tipo, descr in db.execute("SELECT id, tipo, descrizione FROM entities")}
-        print(formatta(semi, fatti, info, omessi))
+        print(formatta(semi, fatti, info, omessi, db))
 
 
 if __name__ == "__main__":

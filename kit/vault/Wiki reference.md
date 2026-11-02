@@ -82,6 +82,11 @@ I wikilink nel testo dicono solo che due pagine sono collegate. Le relazioni che
 - La relazione sta sulla pagina da cui parte la freccia; l'inversa («è referente di») non si scrive, la calcola il grafo.
 - **Alias** (`aliases`): altri nomi con cui una pagina compare nelle fonti — sigle sciolte, forme «Cognome Nome», errori di trascrizione già risolti. Mai un alias ambiguo (un nome di battesimo da solo) né uno non ancora verificato.
 
+Sezioni facoltative, solo se servono (senza di esse nulla cambia):
+
+- `## Semantica delle relazioni` — tabella `Relazione | Ruolo | Inversa | Proprietà`. `Ruolo` è uno di `dipendenza` (cosa serve: `usa`, `richiede`), `responsabile` (a chi rivolgersi: `referente`), `composizione` (`parte_di`), `causale` (`causa`), `sequenza` (`precede`): le catene delle pagine per entropia, le domande sul referente e `/causal` leggono i ruoli e non i nomi. `Inversa` è il nome con cui si legge la relazione al contrario («è usato da»): è un'etichetta, **mai un arco**, e non si scrive nelle pagine. `Proprietà` è `transitiva` e/o `simmetrica`: il grafo ne ricava la vista SQL `relazioni_dedotte`, marcata «dedotto», che non entra mai nelle pagine. Una riga senza ruolo lascia il ruolo di default; per rinominare o togliere una relazione citata qui si corregge prima la tabella.
+- `## Vincoli` — tabella `Tipo | Relazione o attributo | Minimo | Massimo | Se manca`. Un vincolo vale anche per i sottotipi. `Se manca` è `domanda` (default: il vincolo violato diventa una domanda aperta per l'autore, mai un errore del `--check`) oppure `nulla`. Se la sezione c'è, sostituisce il vincolo di default (sistemi, processi e progetti hanno un `referente`, salvo le parti di un tutto): va riscritto se lo si vuole.
+
 Gli script in `.graph/` lavorano così:
 
 - `build_graph.py` costruisce da frontmatter, wikilink e `fonti` il grafo `.graph/graph.sqlite`, con il testo delle pagine nella tabella FTS5 `testo` e le grafie alternative dei nomi nella tabella `varianti` (ServiceDesk → «service desk»). `--check` segnala relazioni fuori tabella, tipi non ammessi, link non risolti, fonti non censite e alias duplicati; con un frontmatter YAML non valido si ferma e nomina la pagina.

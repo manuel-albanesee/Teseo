@@ -75,7 +75,7 @@ Ordine: 0 → 1 → 2 → B3 → 3a → go/no-go → 3b → 4 → 5. B3 si può 
 | --- | --- | --- | --- |
 | 0 — Misurare | [KPI di coerenza](kpi-coerenza.md): coerenza dei nomi, stabilità fra giri e fra parafrasi, peso dello schema; basi sul vault d'esempio e sul vault ISP | basi salvate | **in corso** |
 | 1 — Schema mirato | `schema.py`, tre livelli, contratti di ingest e lint, `contratti.py --peso` che conta `schema.py` | peso dello schema giù; recall e coerenza invariati | **implementata** (2 novembre 2026) |
-| 2 — Semantica dichiarata | ruoli, inverse, transitive e simmetriche (fasi C e D di doc/16), vincoli, blocco «Schema pertinente» nel recall; `BUILDER_VERSION` 7 | senza sezioni, domande e sintesi identiche sul vault d'esempio | proposta |
+| 2 — Semantica dichiarata | ruoli, inverse, transitive e simmetriche (fasi C e D di doc/16), vincoli, blocco «Schema pertinente» nel recall; `BUILDER_VERSION` 7 | senza sezioni, domande e sintesi identiche sul vault d'esempio | **implementata** (2 novembre 2026) |
 | B3 | categoria come seme aggregato, come in doc/16 | regola di doc/16 | proposta |
 | 3a — Sinonimi interni | `## Sinonimi`, `## Corrispondenze`; sinonimo come seme; `BUILDER_VERSION` 8 | coerenza dei nomi su; semi spuri invariati | proposta |
 | 3b — Vocabolari esterni | riduttore da CSV, TSV in `raw/vocabolari/`, `schema.py --per-testo`, sezione del piano, lint delle versioni | coerenza dei nomi su rispetto alla 3a | da decidere dopo la 3a |
@@ -140,6 +140,57 @@ K1 e K2 richiedono il modello e restano da misurare con il via dell'autore.
 Prove: `tests/test_schema_mirato.py` (23 test: livelli, antenati, jolly, fonti, avvisi, grafo, comando, peso nei
 contratti); tre mutazioni (senza antenati, senza il jolly `qualsiasi`, entropia sempre inclusa) fatte fallire. Aggiornati
 due test di `tests/test_contratti.py` che codificavano la lettura intera.
+
+### Fase 2 — semantica dichiarata (implementata)
+
+Due sezioni facoltative di `Wiki reference.md`, in tabelle separate dalle esistenti (C4) e conservate byte per byte dal
+serializer:
+
+| Sezione | Colonne | Che cosa fa |
+| --- | --- | --- |
+| `## Semantica delle relazioni` | `Relazione \| Ruolo \| Inversa \| Proprietà` | `Ruolo` in un insieme chiuso (`dipendenza`, `responsabile`, `composizione`, `causale`, `sequenza`); `Inversa` è un nome di lettura (C3: mai un arco, `verso` resta fisso); `Proprietà` è `transitiva` e/o `simmetrica` |
+| `## Vincoli` | `Tipo \| Relazione o attributo \| Minimo \| Massimo \| Se manca` | un vincolo vale anche per i sottotipi; `Se manca` = `domanda` (default) o `nulla` |
+
+Errori del parser (`ontology.py`): `unknown_relation`, `invalid_role`, `invalid_property`, `duplicate_semantics`,
+`symmetric_with_inverse`, `unknown_type`, `invalid_cardinality`, `invalid_if_missing`, `duplicate_cardinality`. Rinominare
+o togliere dall'editor una relazione o un tipo citati nelle sezioni è rifiutato dalla preview con questi codici, non
+perde righe in silenzio.
+
+**Grafo** (`BUILDER_VERSION` 7): colonne `ruolo`, `inversa`, `transitiva`, `simmetrica` in `onto_relazioni`; tabella
+`onto_cardinalita`; metadati `semantica` e `vincoli` (`presente`/`assente`); vista `relazioni_dedotte(source_id,
+target_id, type, origine)`: chiusura delle relazioni transitive fino a 3 passi e speculari delle simmetriche, mai ciò che
+una pagina già dichiara, `origine = 'dedotto'`, ricalcolata a ogni build e mai scritta nelle pagine.
+
+**I ruoli di default stanno nel codice, non nelle tabelle** (`semantica.RUOLI_DEFAULT`: `usa` e `richiede` dipendenza,
+`referente` responsabile, `parte_di` composizione, `causa` causale). Le tabelle hanno solo ciò che l'autore dichiara, e un
+ruolo dichiarato sostituisce il default di quella relazione: una sezione che dichiara solo inverse non toglie a `causa` il
+suo ruolo causale, e una che dà `precede: dipendenza` la fa entrare nelle catene.
+
+**Letto dai ruoli**: le catene e le persone di `sintesi.py`, il vincolo sul referente e le aree (`parte_di`) di
+`domande.py`, `/causal` di `read_api.py`. La sezione «Vincoli», se c'è, sostituisce il vincolo di default (sistemi,
+processi e progetti hanno un referente, salvo le parti di un tutto). Il vincolo sul referente conserva segnale e chiave
+(`referente|<pagina>|`: C7), quindi rinvii e risposte già archiviati restano; gli altri hanno segnale `vincolo` (chiave
+`vincolo|<pagina>|<relazione> min` o `max`), dopo `referente` nell'ordine.
+
+**Recall**: se la semantica è dichiarata, `formatta` aggiunge in coda il blocco «Schema pertinente», al più 300 token:
+«- usa (dipendenza; inversa: è usato da): X funziona tramite Y», solo per le relazioni presenti nei fatti.
+`GRAFO_SENZA_SCHEMA=1` lo spegne. Senza la sezione il contesto è quello di prima. L'hook lo calcola prima di chiudere il
+grafo (un test lo copre: la prima versione falliva con «closed database»).
+
+**Altro**: `GET /ontology` espone `semantics` e `constraints`; `semantic_capabilities.automatic_inference` è l'elenco dei
+comportamenti attivati (`role_chains`, `inverse_labels`, `transitive_views`, `symmetric_views`, `cardinality_questions`),
+vuoto senza le sezioni; il livello 2 di `schema.py` porta con i tipi toccati anche le righe di ruoli, inverse e vincoli.
+
+Scostamenti dal piano: (1) le relazioni dedotte restano una vista SQL e non entrano ancora nei fatti del recall né nelle
+API, per non toccare il cammino di `recall.py`; (2) le inverse compaiono nel blocco di schema e non nelle righe dei
+fatti; (3) un vincolo si riferisce per ora a una relazione, gli attributi arrivano con la fase 4.
+
+Prove: `tests/test_semantica.py` (36 test: parser, roundtrip, errori, preview, tabelle e vista, ruoli, vincoli, recall,
+hook, API) con tre confronti byte per byte con l'output di `domande.py` e `sintesi.py` di prima della fase
+(`tests/fixtures/semantica/`): senza sezioni, con sole inverse e con ruoli e vincolo uguali ai default. Tre mutazioni
+(sottotipi ignorati nei vincoli, ruoli dichiarati ignorati, profondità della vista) fatte fallire. Aggiornati
+`tests/test_ontologia_grafo.py` (versione 7, due metadati). Non misurati: K1 e K2 con il modello, e K3 e il token medio del
+banco con il blocco di schema sul vault ISP.
 
 ## Decisioni (2 novembre 2026)
 

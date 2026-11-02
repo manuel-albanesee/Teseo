@@ -105,7 +105,7 @@ def _patch(document, operations, observed):
         else:
             raise ContractError('invalid_patch', 'Operazione non supportata; rinomina pagine e inversione automatica escluse')
         changes.append(deepcopy(operation))
-    issues = ontology.validate(types, relations)
+    issues = ontology.validate(types, relations, semantics=current.semantics, constraints=current.constraints)
     if issues:
         if len(issues) > 200:
             raise ContractError('preview_limit', 'Oltre 200 errori schema: ridurre la patch prima della preview')
@@ -269,9 +269,11 @@ def analyze(snapshot, patch):
                     'reason': 'Occorrenze letterali nel testo libero: significato e sostituzioni da revisionare, nessuna riscrittura automatica'})
                 impacted.add(path)
     added = sorted(after_relations.keys() - before_relations.keys())
-    semantic = {'automatic_inference': False, 'new_relations': added,
+    # doc/17: le sezioni «Semantica delle relazioni» e «Vincoli» attivano solo letture dichiarate (ruoli, nomi inversi, viste
+    # SQL, domande di cardinalità); senza le sezioni l'elenco è vuoto. Nessun reasoner e nessun arco scritto nelle pagine.
+    semantic = {'automatic_inference': list(after.capabilities), 'new_relations': added,
         'requires_review': sorted(changed_relations),
-        'message': 'Nessuna nuova inferenza automatica. Le euristiche di sintesi/domande sono codice del kit; rinomine, rimozioni e cambi di significato richiedono revisione.'}
+        'message': 'Nessuna nuova inferenza automatica. Le euristiche di sintesi/domande sono codice del kit, o ruoli e vincoli dichiarati in Wiki reference.md; rinomine, rimozioni e cambi di significato richiedono revisione.'}
     diff = ''.join(difflib.unified_diff(document.source.decode('utf-8').splitlines(keepends=True),
         candidate.decode('utf-8').splitlines(keepends=True), fromfile='Wiki reference.md (base)', tofile='Wiki reference.md (proposta)'))
     candidate_digest = hashlib.sha256(candidate).hexdigest()
@@ -280,7 +282,9 @@ def analyze(snapshot, patch):
         'base_schema_digest': document.digest, 'candidate_schema_digest': candidate_digest, 'proposal_hash': proposal_hash,
         'candidate_schema': html.escape(candidate.decode('utf-8'), quote=False), 'schema_diff': html.escape(diff, quote=False),
         'text_format': 'escaped_markdown', 'changes': changes,
-        'model': {'types': [asdict(item) for item in after.types or ()], 'relations': [asdict(item) for item in after.relations]},
+        'model': {'types': [asdict(item) for item in after.types or ()], 'relations': [asdict(item) for item in after.relations],
+                  'semantics': [asdict(item) for item in after.semantics or ()],
+                  'constraints': [asdict(item) for item in after.constraints or ()]},
         'usage': {'types': dict(sorted(type_counts.items())), 'properties': dict(sorted(property_counts.items())),
                   'derived_types': dict(Counter(item[1] for item in base['entita'] if item[3] is None)), 'pages': usage},
         'impacted_pages': sorted(impacted), 'impacted_edges': edges, 'references': references,

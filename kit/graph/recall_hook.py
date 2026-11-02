@@ -54,6 +54,7 @@ import domande
 from build_graph import norm
 from memoria import apri, e_domanda, registra_turno, ricorda, sospendi
 from recall import formatta, nodi, per_testo_a_cascata, per_titolo, punti_di_partenza, richiama, scritto
+from semantica import schema_pertinente
 
 AVVISO = "Fatti calcolati da frontmatter e wikilink: verificarli sulle pagine di wiki/ prima di citarli."
 MAX_ERRORE = 200  # caratteri di un errore nei messaggi
@@ -151,6 +152,7 @@ def recall():
         ricordate = [(p, d) for p, d in ricorda(mem, testo, info) if p not in dal_grafo] if mem else []
         dal_testo = ripiego_testo(db, testo, dal_grafo, ricordate)
         semi, fatti, omessi = richiama(db, testo, extra=[p for p, _ in ricordate] + dal_testo)
+        blocco_schema = schema_pertinente(db, fatti)  # col grafo aperto: dopo il finally non si può più interrogare
         if mem:
             try:  # il log dei turni è un di più: mai un errore dell'hook
                 turno = (origine_semi(db, testo, dal_grafo, ricordate, dal_testo, semi),
@@ -202,6 +204,8 @@ def recall():
         return uscita
     pagine = ", ".join(s[0] for s in semi)
     contesto = formatta(semi, fatti, info, omessi)
+    if blocco_schema:
+        contesto += "\n" + blocco_schema
     if ricordate:
         contesto += "\nPagine lette in passato per domande simili:\n" + "\n".join(
             f"- {p}  (per «{d}»)" for p, d in ricordate)

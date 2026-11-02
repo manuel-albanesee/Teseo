@@ -361,6 +361,9 @@ def righe_ontologia(snapshot):
     posizione)], "vincoli": [(relazione, lato, tipo, posizione)], "categorie": [(nome, padre, descrizione, posizione)],
     "metadati": [(chiave, valore)]}"""
     ontology = snapshot["ontology"]
+    # ruolo, inversa, transitiva, simmetrica solo se dichiarati: i ruoli di default stanno nel codice di lettura (semantica.py)
+    semantica = {s.name: (s.role or None, s.inverse or None, int("transitiva" in s.properties), int("simmetrica" in s.properties))
+                 for s in ontology.semantics or ()}
     if ontology.types is not None:
         tipi = [(t.name, t.description, 1, i, t.parent or None) for i, t in enumerate(ontology.types)]
     else:
@@ -369,13 +372,18 @@ def righe_ontologia(snapshot):
         tipi = [(n, "", 0, i, None) for i, n in enumerate(sorted(osservati - _ontologia().WILDCARDS))]
     return {"tipi": tipi,
             "categorie": [(c.name, c.broader or None, c.description, i) for i, c in enumerate(ontology.categories or ())],
-            "relazioni": [(r.name, r.meaning, r.example, r.direction, i) for i, r in enumerate(ontology.relations)],
+            "relazioni": [(r.name, r.meaning, r.example, r.direction, i, *semantica.get(r.name, (None, None, 0, 0)))
+                          for i, r in enumerate(ontology.relations)],
+            "cardinalita": [(c.type, c.relation, c.minimum, c.maximum, c.if_missing, i)
+                            for i, c in enumerate(ontology.constraints or ())],
             "vincoli": [(r.name, lato, tipo, i) for r in ontology.relations
                         for lato, ammessi in (("da", r.from_types), ("a", r.to_types)) for i, tipo in enumerate(ammessi)],
             "metadati": [("formato", "1"), ("schema_digest", ontology.digest if ontology.source else ""),
                          ("tipi", "dichiarati" if ontology.types is not None else "osservati"),
                          ("vocabolario", "presente" if snapshot["vocabolario"] is not None else "assente"),
-                         ("categorie", "presenti" if ontology.categories is not None else "assenti")]}
+                         ("categorie", "presenti" if ontology.categories is not None else "assenti"),
+                         ("semantica", "presente" if ontology.semantics is not None else "assente"),
+                         ("vincoli", "presente" if ontology.constraints is not None else "assente")]}
 
 
 class GraphValidationError(ValueError):
@@ -416,13 +424,34 @@ def build_candidate(snapshot, out):
         CREATE TABLE onto_tipi (nome TEXT PRIMARY KEY, descrizione TEXT NOT NULL, dichiarato INTEGER NOT NULL,
                                 posizione INTEGER NOT NULL, padre TEXT);
         CREATE TABLE onto_relazioni (nome TEXT PRIMARY KEY, significato TEXT NOT NULL, esempio TEXT NOT NULL,
-                                     verso TEXT NOT NULL, posizione INTEGER NOT NULL);
+                                     verso TEXT NOT NULL, posizione INTEGER NOT NULL, ruolo TEXT, inversa TEXT,
+                                     transitiva INTEGER NOT NULL DEFAULT 0, simmetrica INTEGER NOT NULL DEFAULT 0);
+        CREATE TABLE onto_cardinalita (tipo TEXT NOT NULL, relazione TEXT NOT NULL, minimo INTEGER NOT NULL, massimo INTEGER,
+                                       se_manca TEXT NOT NULL, posizione INTEGER NOT NULL, PRIMARY KEY (tipo, relazione));
         CREATE TABLE onto_vincoli (relazione TEXT NOT NULL, lato TEXT NOT NULL CHECK (lato IN ('da', 'a')),
                                    tipo TEXT NOT NULL, posizione INTEGER NOT NULL, PRIMARY KEY (relazione, lato, tipo));
         CREATE TABLE onto_metadata (chiave TEXT PRIMARY KEY, valore TEXT NOT NULL);
         CREATE TABLE categorie (nome TEXT PRIMARY KEY, padre TEXT, descrizione TEXT NOT NULL, posizione INTEGER NOT NULL);
         CREATE TABLE entity_tags (entity_id TEXT NOT NULL, tag TEXT NOT NULL, PRIMARY KEY (entity_id, tag));
         CREATE INDEX entity_tags_tag ON entity_tags (tag);
+        -- Deduzioni dichiarate (doc/17): chiusura delle relazioni transitive fino a 3 passi e speculari delle simmetriche.
+        -- Mai ciò che una pagina già dichiara, mai scritto nelle pagine: una vista ricalcolata a ogni build.
+        CREATE VIEW relazioni_dedotte AS
+        WITH RECURSIVE transitive(source_id, target_id, type, passo) AS (
+            SELECT r.source_id, r.target_id, r.type, 1 FROM relations r
+            JOIN onto_relazioni o ON o.nome = r.type WHERE o.transitiva = 1
+            UNION
+            SELECT t.source_id, r.target_id, t.type, t.passo + 1 FROM transitive t
+            JOIN relations r ON r.source_id = t.target_id AND r.type = t.type
+            WHERE t.passo < 3 AND r.target_id <> t.source_id)
+        SELECT DISTINCT t.source_id, t.target_id, t.type, 'dedotto' AS origine FROM transitive t
+        WHERE t.passo > 1 AND NOT EXISTS (SELECT 1 FROM relations x
+            WHERE x.source_id = t.source_id AND x.target_id = t.target_id AND x.type = t.type)
+        UNION
+        SELECT r.target_id, r.source_id, r.type, 'dedotto' FROM relations r
+        JOIN onto_relazioni o ON o.nome = r.type
+        WHERE o.simmetrica = 1 AND NOT EXISTS (SELECT 1 FROM relations x
+            WHERE x.source_id = r.target_id AND x.target_id = r.source_id AND x.type = r.type);
         CREATE VIRTUAL TABLE testo USING fts5(id UNINDEXED, titolo, corpo, radici_titolo, radici_corpo,
                                               tokenize = 'unicode61 remove_diacritics 2');
         """)
@@ -438,7 +467,8 @@ def build_candidate(snapshot, out):
         db.executemany("INSERT INTO onto_tipi VALUES (?,?,?,?,?)", onto["tipi"])
         db.executemany("INSERT INTO categorie VALUES (?,?,?,?)", onto["categorie"])
         db.executemany("INSERT INTO entity_tags VALUES (?,?)", snapshot.get("etichette", ()))
-        db.executemany("INSERT INTO onto_relazioni VALUES (?,?,?,?,?)", onto["relazioni"])
+        db.executemany("INSERT INTO onto_relazioni VALUES (?,?,?,?,?,?,?,?,?)", onto["relazioni"])
+        db.executemany("INSERT INTO onto_cardinalita VALUES (?,?,?,?,?,?)", onto["cardinalita"])
         db.executemany("INSERT INTO onto_vincoli VALUES (?,?,?,?)", onto["vincoli"])
         db.executemany("INSERT INTO onto_metadata VALUES (?,?)", onto["metadati"])
         db.executemany("INSERT INTO testo VALUES (?,?,?,?,?)",

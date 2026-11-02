@@ -157,6 +157,51 @@ class Livello2(unittest.TestCase):
         self.assertTrue(any('leggere Wiki reference.md per intero' in a for a in esito['avvisi']))
 
 
+SEMANTICA = """
+## Semantica delle relazioni
+
+| Relazione | Ruolo | Inversa | Proprietà |
+| --- | --- | --- | --- |
+| `usa` | dipendenza | è usato da | |
+| `gestisce` | responsabile | è gestito da | transitiva |
+
+## Vincoli
+
+| Tipo | Relazione o attributo | Minimo | Massimo | Se manca |
+| --- | --- | --- | --- | --- |
+| `sistema` | `referente` | 1 | | domanda |
+| `persona` | `gestisce` | 0 | 3 | domanda |
+"""
+
+
+class Livello2ConSemantica(unittest.TestCase):
+    """Dalla fase 2 di doc/17 le righe di ruoli, inverse e vincoli dei tipi toccati viaggiano con quelle dei tipi."""
+
+    def test_semantica_e_vincoli_dei_tipi_toccati(self):
+        testo = schema.fette(SCHEMA + SEMANTICA, livello=2, tipi=('portale',))['testo']
+        self.assertTrue(righe_tabella(testo, 'usa'))
+        self.assertIn('| `usa` | dipendenza | è usato da |', testo)
+        self.assertNotIn('è gestito da', testo)  # gestisce parte da persona: non si applica a un portale
+        self.assertIn('| `sistema` | `referente` | 1 |', testo)  # il vincolo del padre vale per il sottotipo
+        self.assertNotIn('`persona` | `gestisce`', testo)
+
+    def test_un_altro_tipo_porta_le_sue_righe(self):
+        testo = schema.fette(SCHEMA + SEMANTICA, livello=2, tipi=('persona',))['testo']
+        self.assertIn('| `gestisce` | responsabile | è gestito da | transitiva |', testo)
+        self.assertIn('| `persona` | `gestisce` | 0 | 3 | domanda |', testo)
+        self.assertNotIn('è usato da', testo)
+
+    def test_senza_le_sezioni_nulla_in_piu(self):
+        testo = schema.fette(SCHEMA, livello=2, tipi=('portale',))['testo']
+        self.assertNotIn('## Semantica', testo)
+        self.assertNotIn('## Vincoli', testo)
+
+    def test_il_livello_1_non_le_porta(self):
+        testo = schema.fette(SCHEMA + SEMANTICA, livello=1)['testo']
+        self.assertNotIn('è usato da', testo)
+        self.assertNotIn('Vincoli', testo)
+
+
 class DaiDatiDelGrafo(unittest.TestCase):
     def test_tipi_delle_pagine(self):
         db = sqlite3.connect(':memory:')

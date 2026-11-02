@@ -43,10 +43,14 @@ from datetime import datetime
 from pathlib import Path
 
 import domande
+import semantica
 from build_graph import LINK, bersaglio, leggi, valori
 
 PASSI = 3
-CATENA = ("usa", "richiede", "referente")  # non precede: dice cosa viene dopo, non cosa serve
+# Le relazioni che la catena segue sono quelle con ruolo «dipendenza» o «responsabile» (semantica.relazioni_con_ruolo): di
+# default queste, perché precede (ruolo «sequenza») dice cosa viene dopo, non cosa serve. Wiki reference.md può dichiarare altro.
+CATENA = ("usa", "richiede", "referente")
+RUOLI_CATENA = ("dipendenza", "responsabile")
 DA_CATENA = {"processo", "sistema"}
 MIN_ALTRE = 2   # pagine della risposta oltre al punto di partenza
 PRIORITA = {"memoria": 0, "catena": 1, "termine": 2, "persona": 3}
@@ -74,8 +78,10 @@ def copertura(uscenti, pagine):
 def catene(db):
     tipi = dict(db.execute("SELECT id, tipo FROM entities"))
     avanti = defaultdict(list)
+    catena = semantica.relazioni_con_ruolo(db, *RUOLI_CATENA)
+    responsabili = set(semantica.relazioni_con_ruolo(db, "responsabile"))
     for s, t, rel in db.execute("SELECT source_id, target_id, type FROM relations "
-                                f"WHERE type IN ({','.join('?' * len(CATENA))})", CATENA):
+                                f"WHERE type IN ({','.join('?' * len(catena))})", catena):
         avanti[s].append((rel, t))
     for partenza in sorted(avanti):
         if tipi.get(partenza) not in DA_CATENA:
@@ -92,7 +98,7 @@ def catene(db):
             fronte = nuovo
         if len(raggiunte) < MIN_ALTRE or len({a.split(" →")[0] for a in archi}) < 2:
             continue  # serve almeno un passo oltre il primo: altrimenti risponde la pagina di partenza
-        chi = " e a chi mi rivolgo" if "referente" in raggiunte.values() else ""
+        chi = " e a chi mi rivolgo" if responsabili & set(raggiunte.values()) else ""
         yield {"famiglia": "catena", "domanda": f"Per {partenza}: cosa serve, in che ordine{chi}?",
                "partenza": partenza, "pagine": [partenza, *raggiunte], "percorso": archi}
 
@@ -107,13 +113,17 @@ def termini(db, vault):
 
 def persone(db):
     per_persona = defaultdict(list)
-    for s, t in db.execute("SELECT source_id, target_id FROM relations WHERE type = 'referente' ORDER BY source_id"):
-        per_persona[t].append(s)
-    for persona, di in sorted(per_persona.items()):
+    responsabili = semantica.relazioni_con_ruolo(db, "responsabile")
+    for s, t, rel in db.execute("SELECT source_id, target_id, type FROM relations "
+                                f"WHERE type IN ({','.join('?' * len(responsabili))}) ORDER BY source_id, type",
+                                responsabili):
+        per_persona[t].append((s, rel))
+    for persona, voci in sorted(per_persona.items()):
+        di = [s for s, _ in voci]
         if len(di) >= 2:
             yield {"famiglia": "persona", "domanda": f"Per cosa mi rivolgo a {persona}?",
                    "partenza": persona, "pagine": [persona, *di],
-                   "percorso": [f"{s} →referente→ {persona}" for s in di]}
+                   "percorso": [f"{s} →{rel}→ {persona}" for s, rel in voci]}
 
 
 def memoria(qui, esistenti):

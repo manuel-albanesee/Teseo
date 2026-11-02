@@ -41,6 +41,7 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
+import semantica
 from build_graph import CODICE, LINK, bersaglio, leggi, norm, valori
 
 QUI = Path(__file__).resolve().parent
@@ -52,7 +53,9 @@ PAROLE_CHIAVE = 6   # parole iniziali del testo che identificano una domanda anc
 PER_DOMANDA = {"punto", "scartata"}  # una voce dell'indice o una domanda scartata: una sola, anche se linka più pagine
 MIN_PAGINE = 3
 MIN_AREE = 3
-ORDINE = ("scartata", "punto", "verifica", "referente")
+ORDINE = ("scartata", "punto", "verifica", "referente", "vincolo")
+# Il vincolo di default: questi tipi hanno un referente (ruolo «responsabile»), salvo le parti di un tutto (ruolo
+# «composizione»). Con la sezione «Vincoli» in Wiki reference.md valgono invece i vincoli dichiarati (doc/17).
 CON_REFERENTE = {"sistema", "processo", "progetto"}
 TERMINE = re.compile(r"`([A-Za-z][\w.]{4,40})`")
 HASH = re.compile(r"^[0-9a-f]{7,40}$")
@@ -81,6 +84,48 @@ def punti_aperti(vault):
     return [" ".join(v) for v in voci]
 
 
+def archi_con_ruolo(db, *ruoli):
+    """[(sorgente, destinazione)] delle relazioni che hanno uno di questi ruoli (semantica.py): di default usa/richiede/
+    referente per «dipendenza» e «responsabile», parte_di per «composizione», causa per «causale»."""
+    nomi = semantica.relazioni_con_ruolo(db, *ruoli)
+    return db.execute(f"SELECT source_id, target_id FROM relations WHERE type IN ({','.join('?' * len(nomi))})",
+                      nomi).fetchall()
+
+
+def vincoli_violati(db, pagine, area):
+    """[(pagina, segnale, testo, parte)] dei vincoli dichiarati in «Vincoli» che le pagine non rispettano (se_manca =
+    domanda). Un sottotipo eredita il vincolo del tipo. Il vincolo sul referente conserva il segnale e la chiave di oggi."""
+    responsabili = set(semantica.relazioni_con_ruolo(db, "responsabile"))
+    tipi = dict(db.execute("SELECT id, tipo FROM entities"))
+    risultato, fatte = [], set()
+    for regola in semantica.vincoli(db) or ():
+        if regola["se_manca"] != "domanda":
+            continue
+        rel, minimo, massimo = regola["relazione"], regola["minimo"], regola["massimo"]
+        conta = dict(db.execute("SELECT source_id, count(DISTINCT target_id) FROM relations WHERE type = ? "
+                                "GROUP BY source_id", (rel,)))
+        sotto = semantica.tipi_sotto(db, regola["tipo"])
+        for nome, tipo in tipi.items():
+            n = conta.get(nome, 0)
+            if tipo not in sotto or nome not in pagine or (nome, rel) in fatte:
+                continue
+            if rel in responsabili and nome in area and n == 0:
+                continue  # una parte ha il referente del tutto
+            if n < minimo:
+                fatte.add((nome, rel))
+                if rel == "referente" and n == 0:
+                    risultato.append((nome, "referente", f"Chi è il referente di [[{nome}]]? "
+                                      f"(nessuna relazione `referente` nel frontmatter)", ""))
+                else:
+                    risultato.append((nome, "vincolo", f"[[{nome}]] ({tipo}) dovrebbe avere almeno {minimo} "
+                                      f"relazione `{rel}` (ne ha {n}).", f"{rel} min"))
+            elif massimo is not None and n > massimo:
+                fatte.add((nome, rel))
+                risultato.append((nome, "vincolo", f"[[{nome}]] ({tipo}) dovrebbe avere al più {massimo} "
+                                  f"relazioni `{rel}` (ne ha {n}).", f"{rel} max"))
+    return risultato
+
+
 def pagine_fonte(vault):
     """Le pagine di wiki/ tranne quelle generate per entropia, che non sono fonte di domande."""
     pagine = {p.stem: leggi(p) for p in sorted((vault / "wiki").glob("*.md"))}
@@ -97,7 +142,7 @@ def termini(db, vault):
     """
     nomi = {norm(p.stem) for p in (vault / "wiki").glob("*.md")}
     nomi |= {norm(a) for (a,) in db.execute("SELECT alias FROM aliases")}
-    area = dict(db.execute("SELECT source_id, target_id FROM relations WHERE type = 'parte_di'"))
+    area = dict(archi_con_ruolo(db, "composizione"))
     citato = defaultdict(set)
     for nome, (_, corpo) in pagine_fonte(vault).items():
         for t in set(TERMINE.findall(re.sub(r"^```.*?^```", "", corpo, flags=re.M | re.S))):
@@ -170,12 +215,16 @@ def rileva(db, vault):
                 aggiungi(nome, "verifica", f"In [[{nome}]] resta da verificare: «{pulisci(riga)}»", stabile(riga))
 
     # Una parte (parte_di) ha il referente del tutto: la domanda vale solo per chi non è parte di nulla
-    area = dict(db.execute("SELECT source_id, target_id FROM relations WHERE type = 'parte_di'"))
-    con_ref = {s for (s,) in db.execute("SELECT source_id FROM relations WHERE type = 'referente'")}
-    for nome, tipo in db.execute("SELECT id, tipo FROM entities"):
-        if tipo in CON_REFERENTE and nome in pagine and nome not in con_ref and nome not in area:
-            aggiungi(nome, "referente", f"Chi è il referente di [[{nome}]]? "
-                                        f"(nessuna relazione `referente` nel frontmatter)", "")
+    area = dict(archi_con_ruolo(db, "composizione"))
+    if semantica.vincoli(db) is None:  # nessuna sezione «Vincoli»: il vincolo di default sul referente
+        con_ref = {s for s, _ in archi_con_ruolo(db, "responsabile")}
+        for nome, tipo in db.execute("SELECT id, tipo FROM entities"):
+            if tipo in CON_REFERENTE and nome in pagine and nome not in con_ref and nome not in area:
+                aggiungi(nome, "referente", f"Chi è il referente di [[{nome}]]? "
+                                            f"(nessuna relazione `referente` nel frontmatter)", "")
+    else:
+        for nome, segnale, testo, parte in vincoli_violati(db, pagine, area):
+            aggiungi(nome, segnale, testo, parte)
 
     for nome in domande:
         domande[nome].sort(key=lambda d: ORDINE.index(d[0]))
