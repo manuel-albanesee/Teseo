@@ -170,6 +170,7 @@ Una pagina con frontmatter YAML non valido non si salta: il build si ferma con u
 
 | Funzione | Descrizione |
 | --- | --- |
+| `parse_ontology(*args, **kwargs)` | ontology.parse, importato al primo uso (lo importano anche candidati.py e piano.py). |
 | `norm(s)` | — |
 | `ridotto(testo)` | Il testo normalizzato (norm) con ogni parola ridotta alla radice (stemmer.stem): «rilasciare il rilascio» → |
 | `varianti_nomi(nomi)` | [(id pagina, variante)] dai nomi di pagina e dagli alias `nomi` = [(id, nome)]: forma spezzata e attaccata. |
@@ -459,7 +460,6 @@ Apertura readonly e revisione fissata per connessione, anche nel kit installato.
 | Classe | Descrizione |
 | --- | --- |
 | `GraphDatabaseError` | — |
-| `GraphReference` | — |
 | `GraphConnection` | Attributi content_revision e graph_generation fissati all'apertura. |
 
 | Funzione | Descrizione |
