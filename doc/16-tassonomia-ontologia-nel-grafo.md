@@ -1,6 +1,6 @@
 # 16 — Tassonomia e ontologia dentro il grafo
 
-Stato: **fase A implementata il 31 ottobre 2026 sul branch `ICM_Integration`; fase B in corso: B1, B2 e B3 implementate (B3 il 2 novembre 2026, sul branch `feat/concetti-grafo-aziendale`), B4 da fare; fasi C–E proposte.** Riferimento:
+Stato: **fase A implementata il 31 ottobre 2026 sul branch `ICM_Integration`; fase B in corso: B1–B4 implementate (B3 il 2 novembre 2026, B4 il 6 novembre 2026, sul branch `feat/concetti-grafo-aziendale`); fasi C–E proposte.** Riferimento:
 [«Taxonomy vs. ontology vs. knowledge graph»](https://neo4j.com/blog/knowledge-graph/taxonomy-vs-ontology-vs-knowledge-graph/)
 (J. Stegeman, Neo4j, 16 giugno 2026). Il riferimento usa Neo4j; qui il grafo resta **SQLite** e Neo4j non è
 in programma. Dipendenze: [contratto 1](01-contratto-dati-operazioni.md), [editor dell'ontologia 3](03-editor-ontologia.md).
@@ -153,11 +153,28 @@ su una categoria omonima. Si tiene solo se B2 non mostra peggioramenti sulle dom
 
 Implementazione (`recall.py`, 16 test in `tests/test_categoria_seme.py`): `categorie_nominate` riconosce il nome o le sue radici («le fatturazioni», «ciclo passivo»); `SOGLIA_CATEGORIA` = 0.4 sulle pagine del vault (non fonti, non entropia), `MAX_CATEGORIA` = 8. Le pagine del fatto si scelgono una alla volta con costo = profondità + pagine dello stesso tipo già prese (MMR), poi profondità, poi nome. Le categorie non entrano nel cammino sugli archi: i fatti delle pagine restano quelli di prima (`richiama_pagine`). Il ripiego sul testo non scatta se la domanda nomina una categoria. Il fatto si legge «fatturazione → categoria → 3 pagine (…) · N altre omesse».
 
-### B4 — panoramiche di categoria (dopo B3)
+### B4 — panoramiche di categoria (dopo B3) — implementata il 6 novembre 2026
 
 `sintesi.py` propone una domanda «Che cosa comprende <categoria>?» per ogni categoria con almeno `MIN_ALTRE` + 1
 pagine: il lint scrive la pagina per entropia, come per le catene, e la pagina diventa il riassunto calcolato prima
 che risponde alle domande globali (le comunità di GraphRAG). Verifica e copertura come le altre famiglie di `sintesi.py`.
+
+Implementazione:
+
+- **Famiglia `categoria`** in `sintesi.py`, ultima per priorità. Le pagine della risposta sono quelle di B3
+  (`recall.pagine_per_categoria`: tag diretti e sottocategorie, né fonti né pagine per entropia), in ordine di
+  profondità e poi di nome; il percorso dice «P → categoria → X» o «P → sottocategoria → X». Si salta una categoria che
+  supera `SOGLIA_CATEGORIA` delle pagine del vault: B3 non la usa come seme, quindi la panoramica non arriverebbe mai a
+  una domanda, e la pagina sarebbe un elenco di mezzo vault. Senza la sezione «Categorie» la famiglia è vuota: le
+  candidate dei vault esistenti non cambiano.
+- **La panoramica porta il tag della categoria**, oltre a `entropia`: è così che il recall la ritrova. `--verifica`
+  segnala una panoramica senza quel tag («manca il tag «X»: il recall non la trova dalla categoria»).
+- **Recall** (`recall.richiama`): per ogni categoria nominata (B3), le pagine per entropia con il tag diretto della
+  categoria entrano come punti di partenza in più, come quelle della memoria (`extra`), e portano i loro link. Il fatto
+  aggregato della categoria resta. Una domanda che non nomina una categoria con panoramica ha lo stesso recall di prima.
+- **Lint**: il passo 5 dice di mettere il tag della categoria sulle panoramiche.
+
+Si tiene solo se il banco non peggiora sulle domande locali (regola di B3).
 
 ## Fase C — semantica letta dall'ontologia (ripresa e implementata dal [piano 17](17-concetti-grafo-aziendale.md), fase 2)
 
