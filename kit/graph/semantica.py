@@ -1,10 +1,10 @@
 """La semantica delle relazioni letta dal grafo (doc/17, fase 2): ruoli, inverse, vincoli e il blocco di schema del recall.
 
 Wiki reference.md dichiara, in sezioni facoltative, il ruolo di una relazione («dipendenza», «responsabile»,
-«composizione», «causale», «sequenza»), il nome della sua inversa e le proprietà transitiva e simmetrica («Semantica
-delle relazioni»), e i vincoli di cardinalità per tipo («Vincoli»). Il builder le copia in onto_relazioni
-(ruolo, inversa, transitiva, simmetrica) e onto_cardinalita; questo modulo le legge per sintesi.py, domande.py, recall.py
-e la dashboard. Sola lettura, nessun LLM.
+«composizione», «causale», «sequenza»), il nome della sua inversa e le proprietà transitiva, simmetrica e aciclica
+(«Semantica delle relazioni»), e i vincoli di cardinalità per tipo («Vincoli»). Il builder le copia in onto_relazioni
+(ruolo, inversa, transitiva, simmetrica, aciclica) e onto_cardinalita; questo modulo le legge per sintesi.py, domande.py,
+recall.py e la dashboard. Sola lettura, nessun LLM. L'inversa è solo un nome di lettura: non è mai un arco.
 
 I default sono quelli che il codice usava prima della fase 2 (RUOLI_DEFAULT) e non si scrivono mai nelle tabelle: una
 relazione senza ruolo dichiarato ha il ruolo di default, una dichiarata lo sostituisce, e una sezione che dichiara solo
@@ -63,6 +63,15 @@ def relazioni_con_ruolo(db, *cercati):
 def inverse(db):
     """{relazione: nome dell'inversa} dichiarati; è un'etichetta di lettura, non un arco."""
     return {nome: inversa for nome, (_, inversa) in _dichiarati(db).items() if inversa}
+
+
+def aciclice(db):
+    """Le relazioni dichiarate `aciclica` (onto_relazioni.aciclica), in ordine di tabella: un giro di una di queste è una
+    domanda aperta (domande.py, segnale `ciclo`). Vuoto senza la proprietà e in una generazione precedente alla colonna."""
+    try:
+        return tuple(nome for (nome,) in db.execute("SELECT nome FROM onto_relazioni WHERE aciclica = 1 ORDER BY posizione"))
+    except sqlite3.OperationalError:
+        return ()
 
 
 def vincoli(db):

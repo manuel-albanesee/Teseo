@@ -25,7 +25,7 @@ HEADINGS = {'Tipi ammessi': 'types', 'Relazioni tipizzate': 'relations', 'Catego
             'Semantica delle relazioni': 'semantics', 'Vincoli': 'constraints',
             'Sinonimi': 'synonyms', 'Corrispondenze': 'matches', 'Attributi': 'attributes'}
 RUOLI = ('dipendenza', 'responsabile', 'composizione', 'causale', 'sequenza')  # insieme chiuso (doc/17, fase 2)
-PROPRIETA = ('transitiva', 'simmetrica')
+PROPRIETA = ('transitiva', 'simmetrica', 'aciclica')
 SE_MANCA = ('domanda', 'nulla')  # un vincolo violato diventa una domanda aperta per l'autore, oppure niente
 VALORI_ATTRIBUTO = ('testo', 'numero', 'data', 'importo', 'codice', 'sì/no')  # più `categoria:X` (doc/17, fase 4)
 IMPORTO = re.compile(r'\d+(?:\.\d+)?(?: [A-Z]{3})?')
@@ -183,6 +183,7 @@ class Ontology:
                   ('transitive_views', any('transitiva' in item.properties for item in semantics)),
                   ('symmetric_views', any('simmetrica' in item.properties for item in semantics)),
                   ('cardinality_questions', any(item.if_missing == 'domanda' for item in self.constraints or ())),
+                  ('cycle_questions', any('aciclica' in item.properties for item in semantics)),
                   ('synonym_seeds', bool(self.synonyms)))
         return tuple(nome for nome, attiva in attive if attiva)
 
@@ -346,6 +347,8 @@ def validate(types, relations, categories=None, semantics=None, constraints=None
                     issues.append(Issue('invalid_property', item.name + ': proprietà attesa fra ' + ', '.join(PROPRIETA)))
             if 'simmetrica' in item.properties and item.inverse:
                 issues.append(Issue('symmetric_with_inverse', item.name + ': una relazione simmetrica non ha un nome inverso'))
+            if 'simmetrica' in item.properties and 'aciclica' in item.properties:
+                issues.append(Issue('symmetric_acyclic', item.name + ': una relazione simmetrica forma sempre un giro A → B → A'))
     attribute_names = set()
     if attributes is not None:
         if not attributes or len(attributes) > MAX_ROWS:

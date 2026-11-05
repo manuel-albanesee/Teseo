@@ -5,6 +5,7 @@ import io
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -272,7 +273,9 @@ def esegui_script(vault, *argv):
 class IdenticoAlDefault(unittest.TestCase):
     """Soglia della fase 2: senza le sezioni, o con sezioni che dichiarano ciò che il codice già fa, nulla cambia."""
 
-    def vault(self, extra=''):
+    def vault(self, extra='', senza_semantica=False):
+        """Un vault d'esempio. Il modello del kit dichiara già `## Semantica delle relazioni` (ruoli di default e
+        `aciclica`, doc/17 decisione 10): la si toglie se il test la dichiara a modo suo o vuole il vault senza sezioni."""
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         vault = Path(temp.name)
@@ -282,6 +285,8 @@ class IdenticoAlDefault(unittest.TestCase):
         for nome in ('index.md', 'log.md'):
             shutil.copy(KIT / 'vault' / nome, vault / nome)
         schema = (KIT / 'vault/Wiki reference.md').read_text(encoding='utf-8')
+        if senza_semantica or '## Semantica delle relazioni' in extra:
+            schema = re.sub(r'^## Semantica delle relazioni\n.*?(?=^## )', '', schema, flags=re.M | re.S)
         (vault / 'Wiki reference.md').write_text(schema.rstrip('\n') + '\n\n' + extra, encoding='utf-8')
         subprocess.run([sys.executable, '.graph/build_graph.py'], cwd=vault, check=True, capture_output=True)
         return vault
@@ -302,6 +307,10 @@ class IdenticoAlDefault(unittest.TestCase):
                 self.assertEqual(json.loads(json.dumps(uscite[nome], sort_keys=True)), attesa)
 
     def test_senza_sezioni(self):
+        self.confronta(self.uscite(self.vault(senza_semantica=True)))
+
+    def test_con_la_semantica_del_modello_del_kit(self):
+        # ruoli di default e `aciclica` su parte_di, precede, sostituisce: nel vault d'esempio non c'è alcun giro
         self.confronta(self.uscite(self.vault()))
 
     def test_con_sole_inverse_e_proprieta(self):

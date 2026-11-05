@@ -148,11 +148,11 @@ serializer:
 
 | Sezione | Colonne | Che cosa fa |
 | --- | --- | --- |
-| `## Semantica delle relazioni` | `Relazione \| Ruolo \| Inversa \| Proprietà` | `Ruolo` in un insieme chiuso (`dipendenza`, `responsabile`, `composizione`, `causale`, `sequenza`); `Inversa` è un nome di lettura (C3: mai un arco, `verso` resta fisso); `Proprietà` è `transitiva` e/o `simmetrica` |
+| `## Semantica delle relazioni` | `Relazione \| Ruolo \| Inversa \| Proprietà` | `Ruolo` in un insieme chiuso (`dipendenza`, `responsabile`, `composizione`, `causale`, `sequenza`); `Inversa` è un nome di lettura (C3: mai un arco, `verso` resta fisso); `Proprietà` è `transitiva`, `simmetrica` e/o `aciclica` (dec. 8: un giro è una domanda aperta con segnale `ciclo`) |
 | `## Vincoli` | `Tipo \| Relazione o attributo \| Minimo \| Massimo \| Se manca` | un vincolo vale anche per i sottotipi; `Se manca` = `domanda` (default) o `nulla` |
 
 Errori del parser (`ontology.py`): `unknown_relation`, `invalid_role`, `invalid_property`, `duplicate_semantics`,
-`symmetric_with_inverse`, `unknown_type`, `invalid_cardinality`, `invalid_if_missing`, `duplicate_cardinality`. Rinominare
+`symmetric_with_inverse`, `symmetric_acyclic`, `unknown_type`, `invalid_cardinality`, `invalid_if_missing`, `duplicate_cardinality`. Rinominare
 o togliere dall'editor una relazione o un tipo citati nelle sezioni è rifiutato dalla preview con questi codici, non
 perde righe in silenzio.
 
@@ -323,9 +323,17 @@ degli attributi, esattezza, CURIE, fughe, padre dei tipi, nomi non dichiarati), 
 ## Decisioni (5 novembre 2026)
 
 Prese sul branch `ICM_Integration` dopo il [riesame del 5 novembre](#riesame-del-5-novembre-2026) (testa `27f2830`) e
-riportate qui nell'unione dei due branch. **Non sono ancora codice**: la fase 2 sopra è implementata come il 2 novembre
-(proprietà `transitiva` e `simmetrica`, vista `relazioni_dedotte` senza la colonna `via`, nessun segnale `ciclo`). Le
-decisioni 8–10 sono una revisione della fase 2 da implementare.
+riportate qui nell'unione dei due branch. **Sono nel codice dal 5 novembre 2026** (`BUILDER_VERSION` 10; prova:
+`tests/test_cicli.py`): proprietà `aciclica` e segnale `ciclo` (decisione 8), colonna `via` di `relazioni_dedotte` e
+«(dedotto, via B)» in `recall.formatta` (decisione 9), inverse come solo nome di lettura anche nei fatti a ritroso
+(decisione 7), semantica di default nel `Wiki reference.md` del kit (decisione 10).
+
+Due scelte di realizzazione che le decisioni non fissavano: il builder conserva l'arco di una pagina su sé stessa solo per
+le relazioni `aciclica` (altrimenti A → A non arriverebbe mai a `domande.py`, che legge `relations`); e `recall.py` non
+produce ancora fatti dedotti, quindi la marcatura «dedotto» di `formatta` è pronta ma nessun fatto la usa finché la
+vista non entra nel cammino del recall (non richiesto dalle decisioni: cambierebbe i token del contesto e va misurato
+con K1/K2). Il blocco «Schema pertinente» (decisione 10) diventa attivo in ogni vault nuovo: la soglia della fase 2 su
+K1/K2 non è ancora misurata, e `GRAFO_SENZA_SCHEMA=1` lo spegne.
 
 | # | Decisione | Esito |
 | --- | --- | --- |

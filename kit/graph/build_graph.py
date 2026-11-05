@@ -224,6 +224,9 @@ def parse_documents(documents):
     vocabolario = ontology.vocabulary
     antenati = ontology.ancestors
     categorie = {item.name for item in ontology.categories} if ontology.categories is not None else None
+    # Una pagina che si cita da sola in una relazione tipizzata non fa arco, tranne per le relazioni `aciclica`: A → A è
+    # un giro di una pagina e domande.py lo chiede all'autore (doc/17, decisione 8)
+    acicliche = {item.name for item in ontology.semantics or () if "aciclica" in item.properties}
 
     files = sorted(Path(path) for path in documents if path.startswith("wiki/") and path.count("/") == 1 and path.endswith(".md"))
     if len({p.stem.casefold() for p in files}) != len(files):
@@ -309,7 +312,7 @@ def parse_documents(documents):
                         f'wiki/{nome}.md', str(prop), 'property_without_link')
             for l in links:
                 t = risolvi(nome, l, f"proprietà {prop}")
-                if t and t != nome:
+                if t and (t != nome or prop in acicliche):
                     relazioni.add((nome, t, prop))
         dettagli = fm.get("relazioni_dettaglio")
         if dettagli is not None and not isinstance(dettagli, dict):
@@ -405,8 +408,9 @@ def righe_ontologia(snapshot):
     posizione)], "vincoli": [(relazione, lato, tipo, posizione)], "categorie": [(nome, padre, descrizione, posizione)],
     "metadati": [(chiave, valore)]}"""
     ontology = snapshot["ontology"]
-    # ruolo, inversa, transitiva, simmetrica solo se dichiarati: i ruoli di default stanno nel codice di lettura (semantica.py)
-    semantica = {s.name: (s.role or None, s.inverse or None, int("transitiva" in s.properties), int("simmetrica" in s.properties))
+    # ruolo, inversa, transitiva, simmetrica, aciclica solo se dichiarati: i ruoli di default stanno nel codice di lettura (semantica.py)
+    semantica = {s.name: (s.role or None, s.inverse or None, int("transitiva" in s.properties),
+                          int("simmetrica" in s.properties), int("aciclica" in s.properties))
                  for s in ontology.semantics or ()}
     if ontology.types is not None:
         tipi = [(t.name, t.description, 1, i, t.parent or None) for i, t in enumerate(ontology.types)]
@@ -416,7 +420,7 @@ def righe_ontologia(snapshot):
         tipi = [(n, "", 0, i, None) for i, n in enumerate(sorted(osservati - _ontologia().WILDCARDS))]
     return {"tipi": tipi,
             "categorie": [(c.name, c.broader or None, c.description, i) for i, c in enumerate(ontology.categories or ())],
-            "relazioni": [(r.name, r.meaning, r.example, r.direction, i, *semantica.get(r.name, (None, None, 0, 0)))
+            "relazioni": [(r.name, r.meaning, r.example, r.direction, i, *semantica.get(r.name, (None, None, 0, 0, 0)))
                           for i, r in enumerate(ontology.relations)],
             "cardinalita": [(c.type, c.relation, c.minimum, c.maximum, c.if_missing, i)
                             for i, c in enumerate(ontology.constraints or ())],
@@ -476,7 +480,8 @@ def build_candidate(snapshot, out):
                                 posizione INTEGER NOT NULL, padre TEXT);
         CREATE TABLE onto_relazioni (nome TEXT PRIMARY KEY, significato TEXT NOT NULL, esempio TEXT NOT NULL,
                                      verso TEXT NOT NULL, posizione INTEGER NOT NULL, ruolo TEXT, inversa TEXT,
-                                     transitiva INTEGER NOT NULL DEFAULT 0, simmetrica INTEGER NOT NULL DEFAULT 0);
+                                     transitiva INTEGER NOT NULL DEFAULT 0, simmetrica INTEGER NOT NULL DEFAULT 0,
+                                     aciclica INTEGER NOT NULL DEFAULT 0);
         CREATE TABLE onto_cardinalita (tipo TEXT NOT NULL, relazione TEXT NOT NULL, minimo INTEGER NOT NULL, massimo INTEGER,
                                        se_manca TEXT NOT NULL, posizione INTEGER NOT NULL, PRIMARY KEY (tipo, relazione));
         CREATE TABLE onto_vincoli (relazione TEXT NOT NULL, lato TEXT NOT NULL CHECK (lato IN ('da', 'a')),
@@ -495,19 +500,25 @@ def build_candidate(snapshot, out):
         CREATE INDEX entity_tags_tag ON entity_tags (tag);
         -- Deduzioni dichiarate (doc/17): chiusura delle relazioni transitive fino a 3 passi e speculari delle simmetriche.
         -- Mai ciò che una pagina già dichiara, mai scritto nelle pagine: una vista ricalcolata a ogni build.
+        -- `via`: le pagine intermedie in ordine, separate da « → » (vuota per una speculare); se un fatto si deduce in più
+        -- modi vale il percorso più corto e, a parità, il primo in ordine alfabetico: una riga per fatto.
         CREATE VIEW relazioni_dedotte AS
-        WITH RECURSIVE transitive(source_id, target_id, type, passo) AS (
-            SELECT r.source_id, r.target_id, r.type, 1 FROM relations r
+        WITH RECURSIVE transitive(source_id, target_id, type, passo, via) AS (
+            SELECT r.source_id, r.target_id, r.type, 1, '' FROM relations r
             JOIN onto_relazioni o ON o.nome = r.type WHERE o.transitiva = 1
             UNION
-            SELECT t.source_id, r.target_id, t.type, t.passo + 1 FROM transitive t
+            SELECT t.source_id, r.target_id, t.type, t.passo + 1,
+                   CASE WHEN t.via = '' THEN t.target_id ELSE t.via || ' → ' || t.target_id END FROM transitive t
             JOIN relations r ON r.source_id = t.target_id AND r.type = t.type
             WHERE t.passo < 3 AND r.target_id <> t.source_id)
-        SELECT DISTINCT t.source_id, t.target_id, t.type, 'dedotto' AS origine FROM transitive t
+        SELECT t.source_id, t.target_id, t.type,
+               (SELECT u.via FROM transitive u WHERE u.source_id = t.source_id AND u.target_id = t.target_id
+                    AND u.type = t.type ORDER BY u.passo, u.via LIMIT 1) AS via, 'dedotto' AS origine FROM transitive t
         WHERE t.passo > 1 AND NOT EXISTS (SELECT 1 FROM relations x
             WHERE x.source_id = t.source_id AND x.target_id = t.target_id AND x.type = t.type)
+        GROUP BY t.source_id, t.target_id, t.type
         UNION
-        SELECT r.target_id, r.source_id, r.type, 'dedotto' FROM relations r
+        SELECT r.target_id, r.source_id, r.type, '', 'dedotto' FROM relations r
         JOIN onto_relazioni o ON o.nome = r.type
         WHERE o.simmetrica = 1 AND NOT EXISTS (SELECT 1 FROM relations x
             WHERE x.source_id = r.target_id AND x.target_id = r.source_id AND x.type = r.type);
@@ -526,7 +537,7 @@ def build_candidate(snapshot, out):
         db.executemany("INSERT INTO onto_tipi VALUES (?,?,?,?,?)", onto["tipi"])
         db.executemany("INSERT INTO categorie VALUES (?,?,?,?)", onto["categorie"])
         db.executemany("INSERT INTO entity_tags VALUES (?,?)", snapshot.get("etichette", ()))
-        db.executemany("INSERT INTO onto_relazioni VALUES (?,?,?,?,?,?,?,?,?)", onto["relazioni"])
+        db.executemany("INSERT INTO onto_relazioni VALUES (?,?,?,?,?,?,?,?,?,?)", onto["relazioni"])
         db.executemany("INSERT INTO onto_cardinalita VALUES (?,?,?,?,?,?)", onto["cardinalita"])
         db.executemany("INSERT INTO onto_vincoli VALUES (?,?,?,?)", onto["vincoli"])
         db.executemany("INSERT INTO onto_sinonimi VALUES (?,?,?)", onto["sinonimi"])

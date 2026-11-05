@@ -116,10 +116,10 @@ class Generazioni(unittest.TestCase):
     setUp = fixture.Queries.setUp
 
     def test_la_generazione_ha_le_tabelle_e_la_nuova_versione(self):
-        self.assertEqual(BUILDER_VERSION, 9)
+        self.assertEqual(BUILDER_VERSION, 10)
         db = sqlite3.connect(self.reference.path)
         try:
-            self.assertEqual(dict(db.execute('SELECT key, value FROM graph_metadata'))['builder_version'], '9')
+            self.assertEqual(dict(db.execute('SELECT key, value FROM graph_metadata'))['builder_version'], '10')
             self.assertEqual([n for (n,) in db.execute('SELECT nome FROM onto_relazioni')], ['usa'])
         finally:
             db.close()

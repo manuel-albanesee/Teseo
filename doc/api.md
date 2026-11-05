@@ -474,6 +474,7 @@ Uso:
 | `punti_aperti(vault)` | — |
 | `archi_con_ruolo(db, *ruoli)` | [(sorgente, destinazione)] delle relazioni che hanno uno di questi ruoli (semantica.py): di default usa/richiede/ |
 | `vincoli_violati(db, pagine, area)` | [(pagina, segnale, testo, parte)] dei vincoli dichiarati in «Vincoli» che le pagine non rispettano (se_manca = |
+| `cicli(archi, massimo=None)` | I giri elementari di un grafo orientato [(sorgente, destinazione)]: [(p1, p2, …)], uno per giro, a partire dalla |
 | `pagine_fonte(vault)` | Le pagine di wiki/ tranne quelle generate per entropia, che non sono fonte di domande. |
 | `termini(db, vault)` | Identificatori senza pagina né alias, citati in 3+ pagine di 3+ aree: [(termini, pagine)]. |
 | `apri(path=QUI / 'domande.sqlite')` | — |
@@ -1064,10 +1065,10 @@ Opzioni comuni: --vault, --json ({testo, token, avvisi}), --tetto N. Exit 0; 2 s
 La semantica delle relazioni letta dal grafo (doc/17, fase 2): ruoli, inverse, vincoli e il blocco di schema del recall.
 
 Wiki reference.md dichiara, in sezioni facoltative, il ruolo di una relazione («dipendenza», «responsabile»,
-«composizione», «causale», «sequenza»), il nome della sua inversa e le proprietà transitiva e simmetrica («Semantica
-delle relazioni»), e i vincoli di cardinalità per tipo («Vincoli»). Il builder le copia in onto_relazioni
-(ruolo, inversa, transitiva, simmetrica) e onto_cardinalita; questo modulo le legge per sintesi.py, domande.py, recall.py
-e la dashboard. Sola lettura, nessun LLM.
+«composizione», «causale», «sequenza»), il nome della sua inversa e le proprietà transitiva, simmetrica e aciclica
+(«Semantica delle relazioni»), e i vincoli di cardinalità per tipo («Vincoli»). Il builder le copia in onto_relazioni
+(ruolo, inversa, transitiva, simmetrica, aciclica) e onto_cardinalita; questo modulo le legge per sintesi.py, domande.py,
+recall.py e la dashboard. Sola lettura, nessun LLM. L'inversa è solo un nome di lettura: non è mai un arco.
 
 I default sono quelli che il codice usava prima della fase 2 (RUOLI_DEFAULT) e non si scrivono mai nelle tabelle: una
 relazione senza ruolo dichiarato ha il ruolo di default, una dichiarata lo sostituisce, e una sezione che dichiara solo
@@ -1081,6 +1082,7 @@ default sul referente (vincoli() restituisce None quando manca).
 | `ruoli(db)` | {relazione: ruolo}: i default di oggi, sostituiti dai ruoli dichiarati in Wiki reference.md. |
 | `relazioni_con_ruolo(db, *cercati)` | Le relazioni che hanno uno dei ruoli `cercati`: prima i default nel loro ordine, poi le aggiunte dichiarate. |
 | `inverse(db)` | {relazione: nome dell'inversa} dichiarati; è un'etichetta di lettura, non un arco. |
+| `aciclice(db)` | Le relazioni dichiarate `aciclica` (onto_relazioni.aciclica), in ordine di tabella: un giro di una di queste è una |
 | `vincoli(db)` | I vincoli dichiarati [{tipo, relazione, minimo, massimo, se_manca}] in ordine di tabella; None senza la sezione. |
 | `nomi_attributi(db)` | I nomi degli attributi dichiarati in «Attributi» (onto_attributi); vuoto senza la sezione o in una generazione |
 | `tipi_sotto(db, tipo)` | Il tipo e tutti i suoi sottotipi (onto_tipi.padre): un vincolo su un tipo vale anche per loro. |

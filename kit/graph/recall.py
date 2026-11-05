@@ -709,12 +709,22 @@ def formatta(semi, fatti, info, omessi=None, db=None):
         if attributi.get(id_):
             righe.append("  · " + "; ".join(f"{k}: {v}" for k, v in attributi[id_]))
     nome = lambda n: f"{len(n)} pagine ({', '.join(n)})" if isinstance(n, list) else n
+    # Il nome dell'inversa è solo un'etichetta di lettura (doc/17, decisione 7): un fatto percorso a ritroso si legge dalla
+    # pagina da cui si è partiti, «B ← usa (è usato da) ← A». Senza la sezione dichiarata la freccia è quella di sempre.
+    inversa_di = semantica.inverse(db) if db is not None and semantica.dichiarata(db) else {}
     for f in fatti:
-        freccia = "↔ menziona ↔" if f["reciproco"] else f"→ {f['tipo']} →"
+        if f["reciproco"]:
+            fatto = f"{nome(f['s'])} ↔ menziona ↔ {nome(f['t'])}"
+        elif f["verso"] == "indietro" and f["tipo"] in inversa_di:
+            fatto = f"{nome(f['t'])} ← {f['tipo']} ({inversa_di[f['tipo']]}) ← {nome(f['s'])}"
+        else:
+            fatto = f"{nome(f['s'])} → {f['tipo']} → {nome(f['t'])}"
+        if f.get("dedotto"):  # un fatto dedotto (relazioni_dedotte) dice da dove viene: le pagine intermedie, se ci sono
+            fatto += f" (dedotto, via {f['via']})" if f.get("via") else " (dedotto)"
         nuovo = f["t"] if f["verso"] == "avanti" else f["s"]
         dettaglio = "" if isinstance(nuovo, list) or nuovo in ids else f"  ({nuovo} [{info[nuovo][0]}]: {info[nuovo][1]})"
         altre = f" · {f['omesse']} altre omesse" if f.get("omesse") else ""
-        righe.append(f"- {nome(f['s'])} {freccia} {nome(f['t'])}{dettaglio}{altre}")
+        righe.append(f"- {fatto}{dettaglio}{altre}")
     parti = [f"{omessi[k]} {testo}" for k, testo in (("tipizzate", "relazioni tipizzate omesse"),
                                                     ("menziona", "link generici omessi")) if omessi and omessi[k]]
     if parti:

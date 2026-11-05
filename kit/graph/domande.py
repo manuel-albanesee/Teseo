@@ -53,7 +53,9 @@ PAROLE_CHIAVE = 6   # parole iniziali del testo che identificano una domanda anc
 PER_DOMANDA = {"punto", "scartata"}  # una voce dell'indice o una domanda scartata: una sola, anche se linka più pagine
 MIN_PAGINE = 3
 MIN_AREE = 3
-ORDINE = ("scartata", "punto", "verifica", "referente", "vincolo")
+ORDINE = ("scartata", "punto", "verifica", "referente", "vincolo", "ciclo")
+MAX_CICLI = 50      # al più tante domande `ciclo` per relazione: un grafo molto intrecciato ha molti più giri
+MAX_VISITE = 100_000  # tetto ai passi della ricerca dei giri per relazione: oltre, si smette senza errore
 # Il vincolo di default: questi tipi hanno un referente (ruolo «responsabile»), salvo le parti di un tutto (ruolo
 # «composizione»). Con la sezione «Vincoli» in Wiki reference.md valgono invece i vincoli dichiarati (doc/17).
 CON_REFERENTE = {"sistema", "processo", "progetto"}
@@ -133,6 +135,54 @@ def vincoli_violati(db, pagine, area):
     return risultato
 
 
+def cicli(archi, massimo=None):
+    """I giri elementari di un grafo orientato [(sorgente, destinazione)]: [(p1, p2, …)], uno per giro, a partire dalla
+    pagina minore (il giro p1 → p2 → … → p1), in ordine di pagina. Un arco di una pagina su sé stessa è un giro di una pagina.
+
+    Visita completa dei soli archi dati (la vista `relazioni_dedotte` ha un limite di 3 passi e non segnala i giri). Per ogni
+    pagina di partenza si cammina solo fra le pagine non minori di lei che possono tornarle: niente giri contati due volte
+    e niente strade senza uscita. Si ferma a `massimo` giri (MAX_CICLI) o a MAX_VISITE passi, nell'ordine deterministico."""
+    massimo = MAX_CICLI if massimo is None else massimo
+    vicini = defaultdict(set)
+    for sorgente, destinazione in archi:
+        vicini[sorgente].add(destinazione)
+    nodi = sorted(set(vicini) | {t for destinazioni in vicini.values() for t in destinazioni})
+    trovati, visite = [], 0
+    for inizio in nodi:
+        ammessi = {n for n in nodi if n >= inizio}
+        indietro = defaultdict(set)
+        for sorgente in ammessi:
+            for destinazione in vicini.get(sorgente, ()):
+                if destinazione in ammessi:
+                    indietro[destinazione].add(sorgente)
+        tornano, fronte = {inizio}, [inizio]  # le pagine che raggiungono `inizio` senza uscire dagli ammessi
+        while fronte:
+            for precedente in indietro[fronte.pop()]:
+                if precedente not in tornano:
+                    tornano.add(precedente)
+                    fronte.append(precedente)
+        percorso, nel_percorso = [inizio], {inizio}
+        pila = [iter(sorted(vicini.get(inizio, ())))]
+        while pila:
+            visite += 1
+            if visite > MAX_VISITE:
+                return trovati
+            for prossima in pila[-1]:
+                if prossima == inizio:
+                    trovati.append(tuple(percorso))
+                    if len(trovati) >= massimo:
+                        return trovati
+                elif prossima in tornano and prossima not in nel_percorso:
+                    percorso.append(prossima)
+                    nel_percorso.add(prossima)
+                    pila.append(iter(sorted(vicini.get(prossima, ()))))
+                    break
+            else:
+                pila.pop()
+                nel_percorso.discard(percorso.pop())
+    return trovati
+
+
 def pagine_fonte(vault):
     """Le pagine di wiki/ tranne quelle generate per entropia, che non sono fonte di domande."""
     pagine = {p.stem: leggi(p) for p in sorted((vault / "wiki").glob("*.md"))}
@@ -191,8 +241,8 @@ def rileva(db, vault):
     domande = defaultdict(list)
     viste = {}  # chiave → testo
 
-    def aggiungi(pagina, segnale, testo, parte):
-        base = f"{segnale}|{'' if segnale in PER_DOMANDA else pagina}|{parte}"
+    def aggiungi(pagina, segnale, testo, parte, base=None):
+        base = base or f"{segnale}|{'' if segnale in PER_DOMANDA else pagina}|{parte}"
         chiave, n = base, 2
         while viste.get(chiave, testo) != testo:  # due righe diverse con le stesse prime parole
             chiave = f"{base}#{n}"
@@ -232,6 +282,17 @@ def rileva(db, vault):
     else:
         for nome, segnale, testo, parte in vincoli_violati(db, pagine, area):
             aggiungi(nome, segnale, testo, parte)
+
+    # Un giro di una relazione `aciclica` è una domanda sola, su ogni pagina del giro: la chiave è la relazione e il giro
+    # a partire dalla pagina minore, quindi non dipende da dove lo si trova per primo
+    for relazione in semantica.aciclice(db):
+        archi = db.execute("SELECT DISTINCT source_id, target_id FROM relations WHERE type = ?", (relazione,)).fetchall()
+        for giro in cicli(archi):
+            percorso = " → ".join(giro)
+            testo = f"Ciclo su `{relazione}`: {percorso} → {giro[0]}. Quale ordine è giusto?"
+            for nome in giro:
+                if nome in pagine:
+                    aggiungi(nome, "ciclo", testo, "", base=f"ciclo|{relazione}|{percorso}")
 
     for nome in domande:
         domande[nome].sort(key=lambda d: ORDINE.index(d[0]))

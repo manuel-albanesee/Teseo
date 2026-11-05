@@ -84,7 +84,7 @@ I wikilink nel testo dicono solo che due pagine sono collegate. Le relazioni che
 
 Sezioni facoltative, solo se servono (senza di esse nulla cambia):
 
-- `## Semantica delle relazioni` — tabella `Relazione | Ruolo | Inversa | Proprietà`. `Ruolo` è uno di `dipendenza` (cosa serve: `usa`, `richiede`), `responsabile` (a chi rivolgersi: `referente`), `composizione` (`parte_di`), `causale` (`causa`), `sequenza` (`precede`): le catene delle pagine per entropia, le domande sul referente e `/causal` leggono i ruoli e non i nomi. `Inversa` è il nome con cui si legge la relazione al contrario («è usato da»): è un'etichetta, **mai un arco**, e non si scrive nelle pagine. `Proprietà` è `transitiva` e/o `simmetrica`: il grafo ne ricava la vista SQL `relazioni_dedotte`, marcata «dedotto», che non entra mai nelle pagine. Una riga senza ruolo lascia il ruolo di default; per rinominare o togliere una relazione citata qui si corregge prima la tabella.
+- `## Semantica delle relazioni` — tabella `Relazione | Ruolo | Inversa | Proprietà`. `Ruolo` è uno di `dipendenza` (cosa serve: `usa`, `richiede`), `responsabile` (a chi rivolgersi: `referente`), `composizione` (`parte_di`), `causale` (`causa`), `sequenza` (`precede`): le catene delle pagine per entropia, le domande sul referente e `/causal` leggono i ruoli e non i nomi. `Inversa` è il nome con cui si legge la relazione al contrario («è usato da»): è un'etichetta, **mai un arco**, e non si scrive nelle pagine. `Proprietà` è `transitiva`, `simmetrica` e/o `aciclica`: le prime due danno la vista SQL `relazioni_dedotte`, marcata «dedotto», con la colonna `via` (le pagine intermedie), che non entra mai nelle pagine; `aciclica` (mai insieme a `simmetrica`) fa di ogni giro della relazione, anche A → A, una domanda aperta con segnale `ciclo`, mai un errore del `--check`. Una riga senza ruolo lascia il ruolo di default; per rinominare o togliere una relazione citata qui si corregge prima la tabella. Questo modello la dichiara già (sezione qui sotto) con i ruoli di default e `aciclica` su `parte_di`, `precede` e `sostituisce`: si cambia o si toglie se non serve.
 - `## Vincoli` — tabella `Tipo | Relazione o attributo | Minimo | Massimo | Se manca`. Un vincolo vale anche per i sottotipi. `Se manca` è `domanda` (default: il vincolo violato diventa una domanda aperta per l'autore, mai un errore del `--check`) oppure `nulla`. Se la sezione c'è, sostituisce il vincolo di default (sistemi, processi e progetti hanno un `referente`, salvo le parti di un tutto): va riscritto se lo si vuole.
 - `## Sinonimi` — tabella `Nome | Sinonimi` (separati da `;`): altri modi di nominare un tipo o una categoria dichiarati. Una domanda che usa un sinonimo porta lo stesso seme del nome. Un sinonimo uguale a un altro nome è un errore; uguale al nome o all'alias di una pagina non conta (la pagina vince) e il build lo segnala.
 - `## Corrispondenze` — tabella `Nome | Corrispondenza | Vocabolario | Esattezza`: IRI o CURIE di un vocabolario esterno (chiave censita in «Chiavi delle fonti»), `esatta` o `vicina`. Per ora è solo dichiarata.
@@ -103,6 +103,18 @@ Gli script in `.graph/` lavorano così:
 - `misura.py` misura il recall sulle domande di prova (`DOMANDE`), poi controlla i semi spuri (casi negativi), il ripiego sul testo, la memoria e i difetti noti (`ATTESI_FALLITI`, che non fanno fallire). `--routing` controlla le scelte di `modello_hook.py`; `--modello` confronta le risposte di un modello con e senza grafo.
 - `schema.py` stampa questo schema a fette: `--livello 1` (regole, convenzioni, indice dei nomi di tipi, relazioni e categorie), `--per-pagine "A,B"` o `--per-tipi x,y` (le righe complete dei tipi con gli antenati e le relazioni che possono partire da quei tipi o arrivarci) e `--fonti` (le chiavi citate). Lo usano ingest e lint al posto della lettura intera; se hai un dubbio, leggi questo file per intero: prevale sempre.
 - Facoltativi, per misurare e migliorare il grafo: `banco.py` prepara (`--semi`) e controlla (`--verifica`) il banco `.graph/banco.json`, domande scritte senza le parole dei titoli che `misura.py` misura in una sezione informativa; `candidati.py` propone, in sola lettura, alias, termini e relazioni che mancano (`.graph/candidati.md`); `esporta_rdf.py` scrive lo schema in Turtle (`--base`, `--out`). Non servono al funzionamento.
+
+## Semantica delle relazioni
+
+| Relazione | Ruolo | Inversa | Proprietà |
+| --- | --- | --- | --- |
+| `usa` | dipendenza | | |
+| `richiede` | dipendenza | | |
+| `referente` | responsabile | | |
+| `parte_di` | composizione | | aciclica |
+| `causa` | causale | | |
+| `precede` | | | aciclica |
+| `sostituisce` | | | aciclica |
 
 ## Chiavi delle fonti
 

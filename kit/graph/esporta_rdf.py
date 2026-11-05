@@ -115,9 +115,10 @@ def esporta(db, base=BASE_DEFAULT):
     lati = {}
     for relazione, lato, tipo in leggi(db, "SELECT relazione, lato, tipo FROM onto_vincoli"):
         lati.setdefault((relazione, lato), []).append(tipo)
-    relazioni = leggi(db, "SELECT nome, significato, transitiva, simmetrica FROM onto_relazioni",
-                      "SELECT nome, significato, 0, 0 FROM onto_relazioni")
-    for nome, significato, transitiva, simmetrica in relazioni:
+    relazioni = leggi(db, "SELECT nome, significato, transitiva, simmetrica, aciclica FROM onto_relazioni",
+                      "SELECT nome, significato, transitiva, simmetrica, 0 FROM onto_relazioni",
+                      "SELECT nome, significato, 0, 0, 0 FROM onto_relazioni")
+    for nome, significato, transitiva, simmetrica, aciclica in relazioni:
         soggetto = iri(base, "relazione", nome)
         aggiungi(soggetto, "rdf:type", "owl:ObjectProperty")
         aggiungi(soggetto, "rdfs:label", letterale(nome))
@@ -131,6 +132,8 @@ def esporta(db, base=BASE_DEFAULT):
             aggiungi(soggetto, "rdf:type", "owl:TransitiveProperty")
         if simmetrica:
             aggiungi(soggetto, "rdf:type", "owl:SymmetricProperty")
+        if aciclica:  # senza giri di nessuna lunghezza, quindi anche senza A → B → A e senza A → A: asimmetrica
+            aggiungi(soggetto, "rdf:type", "owl:AsymmetricProperty")
 
     per_attributo = {}
     for nome, tipo, valore, descrizione in leggi(db, "SELECT nome, tipo, valore, descrizione FROM onto_attributi"):

@@ -15,7 +15,7 @@ separata di `/ecc:prp-implement`: la fase N+1 parte solo se la fase N ha superat
 
 | Fase | Stato | Esecuzione |
 | --- | --- | --- |
-| 0 — Misurare | **in corso** | questa: task 0.1–0.4 |
+| 0 — Misurare | **in corso** | task 0.1–0.4a fatti (5 novembre, `a8bd949`); 0.4b e K1/K2 in attesa del vault ISP e del via |
 | 1 — Schema mirato | implementata | dopo la soglia della 0 |
 | 2 — Semantica dichiarata | implementata | — |
 | P — B3 di doc/16 | implementata (feat/concetti-grafo-aziendale) | in parallelo alla 2 |
@@ -484,9 +484,11 @@ fase 0 sul vault d'esempio`.
 - **AZIONE**: UPDATE `ontology.py`: `HEADINGS['Semantica delle relazioni'] = 'semantics'`, dataclass
   `RelationSemantics(name, role, inverse, properties)`, tabella `Relazione | Ruolo | Inversa | Proprietà`.
 - **IMPLEMENTARE**: `Ruolo` in un insieme chiuso `RUOLI = ('dipendenza', 'responsabile', 'composizione',
-  'causale', 'sequenza')` o vuoto; `Inversa` è un nome leggibile («è usato da»), testo libero ma `_text`; `Proprietà`
-  è un sottoinsieme di `transitiva, simmetrica`. Errori: `unknown_relation` (relazione non nella tabella relazioni),
-  `invalid_role`, `invalid_property`, `duplicate_semantics`, `symmetric_with_inverse`.
+  'causale', 'sequenza')` o vuoto; `Inversa` è un nome leggibile («è usato da»), testo libero ma `_text`: solo un nome di
+  lettura, mai un arco (decisione 7 di doc/17); `Proprietà`
+  è un sottoinsieme di `transitiva, simmetrica, aciclica`. Errori: `unknown_relation` (relazione non nella tabella relazioni),
+  `invalid_role`, `invalid_property`, `duplicate_semantics`, `symmetric_with_inverse`,
+  `symmetric_acyclic` (una relazione simmetrica forma sempre un giro A → B → A).
 - **GOTCHA**: C3 e C4. Il serializer non tocca questa sezione: estendere `source_spans` e `opaque_bytes` come per le
   categorie. Una rinomina dall'editor che lascia un nome vecchio nella sezione deve far fallire la preview
   (`unknown_relation`), non perdere righe in silenzio: test esplicito.
@@ -495,8 +497,10 @@ fase 0 sul vault d'esempio`.
 
 #### Task 2.2: tabelle e viste (`BUILDER_VERSION` 7)
 - **AZIONE**: UPDATE `build_graph.py`: colonne `ruolo`, `inversa`, `transitiva`, `simmetrica` in `onto_relazioni`
-  (NULL/0 senza sezione); vista `relazioni_dedotte(source_id, target_id, type, origine)`: chiusura transitiva con CTE
-  ricorsiva limitata in profondità (3), simmetriche speculari, `origine = 'dedotto'`; metadato `semantica` =
+  (NULL/0 senza sezione); vista `relazioni_dedotte(source_id, target_id, type, via, origine)`: chiusura transitiva con CTE
+  ricorsiva limitata in profondità (3), simmetriche speculari, `origine = 'dedotto'`; `via` = le pagine intermedie in ordine, separate da ` → `, accumulate nella CTE
+  (servono già a fermare la profondità), vuota per un fatto a un passo; i percorsi che tornano sul nodo di partenza
+  non producono fatti (niente «A precede A»); metadato `semantica` =
   `presente/assente`. UPDATE `graph_service.py:21` → 7 e `read_api.py:89` (+ `"7"`).
 - **IMITARE**: CTE ricorsiva delle sottocategorie di B1 (`GET /graph?category=`).
 - **GOTCHA**: i ruoli di default (`usa`, `richiede` → dipendenza; `referente` → responsabile; `parte_di` →
@@ -510,7 +514,8 @@ fase 0 sul vault d'esempio`.
 - **AZIONE**: funzione condivisa `ruoli(db)` → `{relazione: ruolo}`: dalle tabelle se `semantica = presente`,
   altrimenti `RUOLI_DEFAULT`. `CATENA` = relazioni con ruolo dipendenza o responsabile; `"referente"` →
   responsabile in `sintesi.py:95,110`; `parte_di` in `domande.py:100,173` → composizione; `read_api.py:334` →
-  causale. `formatta` aggiunge l'inversa per i fatti a ritroso: «B ← usa (è usato da) ← A».
+  causale. `formatta` aggiunge l'inversa per i fatti a ritroso: «B ← usa (è usato da) ← A»; un fatto
+  dedotto si scrive «A dipende da C (dedotto, via B)».
 - **GOTCHA**: la funzione va in un modulo che non importa `recall` (catena di import `recall → domande →
   build_graph`, vedi il commento a `build_graph.py:58-59`): metterla in `build_graph.py` o in un `semantica.py` leggero
   importato in modo lazy. `precede` resta fuori da `CATENA` per default (commento a `sintesi.py:49`).
@@ -523,7 +528,11 @@ fase 0 sul vault d'esempio`.
 - **IMPLEMENTARE**: senza sezione vale il vincolo di default `sistema|processo|progetto · referente · 1 · · domanda`,
   con l'eccezione di oggi «una parte ha il referente del tutto» (`domande.py:172-178`).
 - **GOTCHA**: C7, segnale `referente` e chiave `referente|<pagina>|` per il vincolo sul referente, anche se
-  dichiarato; segnale `vincolo` per gli altri, aggiunto in `ORDINE` (`domande.py:55`) dopo `referente`. Massimo
+  dichiarato; segnale `vincolo` per gli altri, aggiunto in `ORDINE` (`domande.py:55`) dopo `referente`; segnale
+  `ciclo` per le relazioni `aciclica` (decisione 8), subito dopo `vincolo`: visita completa delle relazioni tipizzate di
+  quella relazione (non la vista, limitata a 3 passi), una domanda per ciclo con chiave `ciclo|<relazione>|<pagine del
+  ciclo ruotate a partire dalla minore>`, testo «Ciclo su `precede`: A → B → A. Quale ordine è giusto?» e le fonti
+  delle pagine. Massimo
   superato → domanda, mai errore di build (decisione 2).
 - **VALIDARE**: `tests/test_vincoli.py`; un `domande.sqlite` con un rinvio sul referente mantiene il rinvio dopo
   l'aggiornamento.
@@ -679,7 +688,8 @@ si passa alla fase 4 e la 3b resta proposta in doc/17.
 | rinomina vs semantica | `rename_relation` | preview `invalid_schema` | — |
 | default identico | vault d'esempio senza sezioni | `domande --json`, `sintesi --json` byte per byte | — |
 | vincolo referente | rinvio esistente | rinvio conservato | parte di un tutto |
-| vista dedotta | catena transitiva lunga | profondità ≤ 3 | ciclo |
+| vista dedotta | catena transitiva lunga | profondità ≤ 3, `via` con le pagine intermedie | ciclo: nessun «A → A» |
+| ciclo `aciclica` | `precede` A → B → A; giro di 5 pagine; A → A | una domanda per ciclo, segnale `ciclo`, chiave stabile | `aciclica` con `simmetrica` → `symmetric_acyclic` |
 | sinonimo vs pagina | sinonimo = alias | la pagina vince, avviso | maiuscole/accenti |
 | TSV | 20.001 righe | errore con nome file | BOM, CRLF |
 | piano con concetti | IRI deprecato | `concetto_deprecato` | input ostile lungo |
