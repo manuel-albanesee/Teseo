@@ -15,7 +15,7 @@ separata di `/ecc:prp-implement`: la fase N+1 parte solo se la fase N ha superat
 
 | Fase | Stato | Esecuzione |
 | --- | --- | --- |
-| 0 — Misurare | **in corso** | questa: task 0.1–0.4 |
+| 0 — Misurare | **in corso** | task 0.1–0.4a fatti (5 novembre, `a8bd949`); 0.4b e K1/K2 in attesa del vault ISP e del via |
 | 1 — Schema mirato | da fare | dopo la soglia della 0 |
 | 2 — Semantica dichiarata | da fare | — |
 | P — B3 di doc/16 | da fare | in parallelo alla 2 |

@@ -93,9 +93,19 @@ I KPI sono definiti in [kpi-coerenza.md](kpi-coerenza.md). Strumenti:
   CI), `--banco-salva` la registra e `--banco-confronta` ne dà la variazione; `banco.py --verifica` controlla il campo.
 - Peso dello schema: `contratti.py --peso` sulle quattro skill e il token medio del banco.
 
-Basi: vault d'esempio in [evidence/concetti-0](evidence/concetti-0/); vault ISP (213 pagine, banco di 106 domande)
-da misurare quando il vault è disponibile su questo computer, con solo numeri aggregati nel repository. Le misure con
-un modello si lanciano solo con il via esplicito dell'autore: costano.
+Basi del vault d'esempio (5 novembre 2026, commit `a8bd949`, file in [evidence/concetti-0](evidence/concetti-0/)):
+
+| KPI | Base | File |
+| --- | --- | --- |
+| Recall del banco | pagine attese portate 1/11 (9%), domande complete 0/5, rumore medio 0.6, 5 domande senza semi dal grafo (1 con il ripiego T) | `banco-esempio-base.txt` |
+| K3 stabilità fra parafrasi | 2 voci, 2 parafrasi · stabilità media 0.50 · stesso seme 1/2 | `banco-esempio-base.txt`, `.json` |
+| K4 peso dello schema | livello 3: ingest ~4555, lint ~4555, query ~3234, lacune ~3234 token; token medio del banco 20 | `peso-skill.txt`, `banco-esempio-base.txt` |
+| K1, K2 | non misurati: servono `claude -p` e il via dell'autore | — |
+
+Il banco d'esempio è fatto per fallire (domande senza i nomi delle pagine): la base serve al confronto, non è un
+obiettivo. Vault ISP (213 pagine, banco di 106 domande, task 0.4b): da misurare quando il vault è disponibile su questo
+computer, con solo numeri aggregati nel repository. Le misure con un modello si lanciano solo con il via esplicito
+dell'autore: costano. Finché mancano le basi ISP e K1/K2 la soglia della fase 0 non è raggiunta e la fase 1 non parte.
 
 ## Decisioni (2 novembre 2026)
 

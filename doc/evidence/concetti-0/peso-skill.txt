@@ -1,0 +1,31 @@
+kit/skills/obsidian-wiki-fill-gaps/SKILL.md: avviso troppo_lungo: 163 righe (consigliate al più 80): le regole stabili vanno in un file di riferimento
+kit/skills/obsidian-wiki-fill-gaps/SKILL.md: ok
+  livello 3 · Wiki reference.md · «Regole non negoziabili», «Convenzioni delle pagine», «Chiavi delle fonti»: ~1115 token
+  livello 3 · Wiki reference.md · «Relazioni tipizzate»: ~2119 token
+  livello 4 · .graph/domande.py · tutto: non trovato
+  livello 4 · index.md · tutto: ~88 token
+  livello 4 · raw/ · tutto: non trovato
+  contesto caricato: livello 3 ~3234 token · livello 4 ~88 token
+kit/skills/obsidian-wiki-ingest/SKILL.md: avviso troppo_lungo: 111 righe (consigliate al più 80): le regole stabili vanno in un file di riferimento
+kit/skills/obsidian-wiki-ingest/SKILL.md: ok
+  livello 3 · Wiki reference.md · tutto: ~4555 token
+  livello 4 · raw/ · tutto: non trovato
+  livello 4 · index.md · tutto: ~88 token
+  livello 4 · log.md · tutto: ~92 token
+  contesto caricato: livello 3 ~4555 token · livello 4 ~180 token
+kit/skills/obsidian-wiki-lavorazioni/SKILL.md: avviso troppo_lungo: 86 righe (consigliate al più 80): le regole stabili vanno in un file di riferimento
+kit/skills/obsidian-wiki-lavorazioni/SKILL.md: ok
+  livello 3 · Wiki reference.md · «Regole non negoziabili»: ~72 token
+  contesto caricato: livello 3 ~72 token · livello 4 ~0 token
+kit/skills/obsidian-wiki-lint/SKILL.md: avviso troppo_lungo: 102 righe (consigliate al più 80): le regole stabili vanno in un file di riferimento
+kit/skills/obsidian-wiki-lint/SKILL.md: ok
+  livello 3 · Wiki reference.md · tutto: ~4555 token
+  livello 4 · index.md · tutto: ~88 token
+  livello 4 · .graph/graph.sqlite · tutto: non trovato
+  livello 4 · log.md · tutto: ~92 token
+  contesto caricato: livello 3 ~4555 token · livello 4 ~180 token
+kit/skills/obsidian-wiki-query/SKILL.md: ok
+  livello 3 · Wiki reference.md · «Regole non negoziabili», «Convenzioni delle pagine»: ~944 token
+  livello 3 · Wiki reference.md · «Relazioni tipizzate», «Chiavi delle fonti»: ~2290 token
+  livello 4 · index.md · tutto: ~88 token
+  contesto caricato: livello 3 ~3234 token · livello 4 ~88 token
