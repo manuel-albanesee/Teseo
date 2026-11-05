@@ -104,8 +104,14 @@ Basi sul vault d'esempio (2 novembre 2026, [evidence/concetti-0](evidence/concet
 
 Il `Wiki reference.md` del kit pesa ~4515 token e ingest e lint lo caricano per intero: sul vault d'esempio il
 guadagno della fase 1 è piccolo, per questo le basi che contano sono quelle del vault ISP (213 pagine, banco di 106
-domande). Il vault ISP non è su questo computer: quando c'è, si misurano le stesse cose e nel repository entrano solo
-numeri aggregati. Le misure con un modello (K1 e K2) si lanciano solo con il via esplicito dell'autore: costano.
+domande).
+
+Basi sul vault ISP (5 novembre 2026, codice di `bd5eaaa`, cioè prima della fase 1; solo
+[numeri aggregati](evidence/concetti-0/isp-aggregati.md)): 217 pagine; recall sulle 17 domande del vault 41/41; il banco
+di 106 domande del 27 ottobre non è più nel vault, la bozza nuova (69 voci, da rileggere dall'autore) porta 62/110 pagine
+attese (56%); K3 stabilità fra parafrasi 0,07 (7 parafrasi su 9 non portano pagine); K4 livello 3 ~8275 token per ingest
+e lint, ~7022 per query e lacune. Le misure con un modello (K1 e K2) si lanciano solo con il via esplicito dell'autore:
+costano.
 
 ### Fase 1 — schema mirato (implementata)
 
