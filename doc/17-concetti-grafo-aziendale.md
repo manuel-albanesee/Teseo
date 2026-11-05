@@ -318,7 +318,39 @@ degli attributi, esattezza, CURIE, fughe, padre dei tipi, nomi non dichiarati), 
 | 3 | Export delle pagine come individui | no: solo lo schema; l'identità stabile delle pagine si decide dopo la fase 4 |
 | 4 | Ingresso del riduttore | solo CSV (FIBO Data Dictionary, ESCO); nessuna dipendenza nuova |
 | 5 | Vault reale per le basi | vault ISP |
-| 6 | Branch | `ICM_Integration` |
+| 6 | Branch | `ICM_Integration` (dal 5 novembre assorbito in `feat/concetti-grafo-aziendale`, che resta il solo branch di lavoro) |
+
+## Decisioni (5 novembre 2026)
+
+Prese sul branch `ICM_Integration` dopo il [riesame del 5 novembre](#riesame-del-5-novembre-2026) (testa `27f2830`) e
+riportate qui nell'unione dei due branch. **Non sono ancora codice**: la fase 2 sopra è implementata come il 2 novembre
+(proprietà `transitiva` e `simmetrica`, vista `relazioni_dedotte` senza la colonna `via`, nessun segnale `ciclo`). Le
+decisioni 8–10 sono una revisione della fase 2 da implementare.
+
+| # | Decisione | Esito |
+| --- | --- | --- |
+| 7 | Relazioni inverse | solo **nome di lettura** (C3): né scritte nelle pagine né archi in più nel grafo; il recall le percorre già a ritroso (`PASSI` di `recall.py`) e `formatta` usa il nome dell'inversa |
+| 8 | Cicli | proprietà `aciclica` in `## Semantica delle relazioni`; un ciclo di qualunque lunghezza (anche A → A) è una domanda aperta con segnale `ciclo`, una sola volta per ciclo; `aciclica` con `simmetrica` è un errore dello schema (`symmetric_acyclic`) |
+| 9 | Provenienza dei fatti dedotti | colonna `via` in `relazioni_dedotte`: le pagine intermedie in ordine, separate da ` → `, vuota per un fatto a un passo; `formatta` scrive «A dipende da C (dedotto, via B)» |
+| 10 | Modello del kit | la sezione `## Semantica delle relazioni` entra nel `Wiki reference.md` del kit solo con la fase 2, con i ruoli di default e `aciclica` su `parte_di`, `precede`, `sostituisce` |
+| 11 | Ordine | invariato: 0 → 1 → 2; questi punti sono codice della fase 2 |
+
+Nella tabella dei concetti, a queste decisioni corrisponde una riga in più: **relazioni acicliche** (ordine parziale,
+`owl:AsymmetricProperty` / `IrreflexiveProperty` estesi ai giri lunghi), con la proprietà `aciclica` nella stessa
+sezione; un ciclo è una domanda aperta (segnale `ciclo`), mai un errore di build.
+
+### Riesame del 5 novembre 2026
+
+Prova sul vault d'esempio installato da quel branch, con due processi che si precedono a vicenda
+(Censimento profili ⇄ Caricamento notturno): `build_graph.py --check` stampa «nessun problema» e `domande.py` non ha
+voci per il ciclo. La vista transitiva prevista non lo farebbe emergere: il limite di profondità evita il giro
+infinito ma non segnala il ciclo, e produrrebbe fatti come «Censimento profili precede Censimento profili». Per
+questo la ricerca dei cicli non usa la vista: è una visita completa delle relazioni acicliche.
+
+I dettagli di specifica di queste decisioni (errori, colonna `via`, chiave delle domande `ciclo|<relazione>|<pagine del
+ciclo ruotate a partire dalla minore>`, casi di test) sono nelle modifiche al piano
+(`.claude/PRPs/plans/concetti-grafo-aziendale.plan.md`) dei commit `0205212`..`bd5eaaa` di `ICM_Integration`, che
+restano nella storia dell'unione.
 
 ## Fuori perimetro
 

@@ -170,7 +170,9 @@ di default identica alle costanti di oggi. Pesi per relazione nel recall e nome 
 ## Fase D — deduzione dichiarata (ripresa e implementata dal [piano 17](17-concetti-grafo-aziendale.md), fase 2)
 
 Flag `transitiva` e nome `inversa` per relazione; le deduzioni sono viste SQL (`relazioni_dedotte`) ricalcolate a ogni
-build, marcate come dedotte nel recall e nelle API, mai scritte nelle note.
+build, marcate come dedotte nel recall e nelle API, con le pagine intermedie (`via`), mai scritte nelle note. Flag
+`aciclica`: un ciclo diventa una domanda aperta. Il piano esecutivo è la fase 2 di [doc/17](17-concetti-grafo-aziendale.md)
+(decisioni 7–11).
 
 ## Fase E — interoperabilità (facoltativa)
 

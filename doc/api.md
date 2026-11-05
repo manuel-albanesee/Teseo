@@ -86,10 +86,12 @@ Backup consistente dei DB personali di un vault con manifest compatibile.
 
 Materiale e controllo del banco di misura del recall: le domande che il vault deve saper trovare.
 
-Il banco (.graph/banco.json) è una lista di {"domanda", "attese", "origine", "note", "tipo"}: la domanda, le pagine che
-il recall deve portare, da dove viene (sintesi, hub, isolata, atteso_ko, manuale), perché e, facoltativo, il tipo di
-domanda: «locale» (un'entità, predefinito) o «globale» (un insieme di pagine), che misura.py riepiloga a parte. misura.py lo misura nella
-sezione BANCO, che è informativa e non fa uscire con 1. Le domande le scrive chi usa il banco: questo script non ne crea.
+Il banco (.graph/banco.json) è una lista di {"domanda", "attese", "origine", "note", "tipo", "parafrasi"}: la domanda, le
+pagine che il recall deve portare, da dove viene (sintesi, hub, isolata, atteso_ko, manuale), perché e, facoltativi, il tipo
+di domanda: «locale» (un'entità, predefinito) o «globale» (un insieme di pagine), che misura.py riepiloga a parte, e le
+parafrasi: altre domande con la stessa risposta, per la stabilità fra parafrasi (doc/kpi-coerenza.md). misura.py lo
+misura nella sezione BANCO, che è informativa e non fa uscire con 1. Le domande le scrive chi usa il banco: questo
+script non ne crea.
   --semi      scrive .graph/banco_semi.json, il materiale da cui scrivere le domande:
               (a) le domande di sintesi.py --tutte con le pagine della risposta: dall'uscita JSON di sintesi.py,
                   o, se non si ottiene, importando la sua candidate();
@@ -97,9 +99,10 @@ sezione BANCO, che è informativa e non fa uscire con 1. Le domande le scrive ch
               (c) le pagine isolate nel grafo tipizzato: nessuna relazione tipizzata in entrata né in uscita.
               Per ogni pagina: id, tipo, descrizione, alias, i 10 vicini più collegati e il percorso del file.
   --verifica  controlla banco.json. ERRORE (exit 1): pagina attesa inesistente, domanda doppia, voce malformata,
-              tipo diverso da locale e globale.
-              AVVISO (exit 0): la domanda usa metà delle parole del titolo di una pagina attesa, e il test sarebbe
-              banale. Conta solo il titolo, cioè il nome della pagina, non gli alias; non vale per atteso_ko.
+              tipo diverso da locale e globale, parafrasi che non sono una lista di testi, uguali a una domanda del
+              banco o ripetute.
+              AVVISO (exit 0): la domanda (o una parafrasi) usa metà delle parole del titolo di una pagina attesa, e il
+              test sarebbe banale. Conta solo il titolo, cioè il nome della pagina, non gli alias; non vale per atteso_ko.
 
 Uso:
   python .graph/banco.py --semi
@@ -170,6 +173,7 @@ Una pagina con frontmatter YAML non valido non si salta: il build si ferma con u
 
 | Funzione | Descrizione |
 | --- | --- |
+| `parse_ontology(*args, **kwargs)` | ontology.parse, importato al primo uso (lo importano anche candidati.py e piano.py). |
 | `norm(s)` | — |
 | `ridotto(testo)` | Il testo normalizzato (norm) con ogni parola ridotta alla radice (stemmer.stem): «rilasciare il rilascio» → |
 | `varianti_nomi(nomi)` | [(id pagina, variante)] dai nomi di pagina e dagli alias `nomi` = [(id, nome)]: forma spezzata e attaccata. |
@@ -284,6 +288,40 @@ deduzione di file letti dai comandi della shell: per quelli usare leggi.py.
 | `gestisci(evento)` | — |
 | `salva_sessione(evento)` | — |
 | `main()` | — |
+
+## `kit/graph/coerenza.py`
+
+KPI di coerenza delle risposte (doc/kpi-coerenza.md): coerenza dei nomi e stabilità fra giri. Deterministico: nessun LLM.
+
+Legge le risposte che `misura.py --modello --giri N --out DIR` salva una per file (`NN-<condizione>-G.json`, con
+condizione `ricerca`, `grafo` o `hook`) e conta, per condizione:
+  coerenza dei nomi    menzioni di pagine fatte con il nome della pagina, su tutte le menzioni (nome, alias o
+                       variante grafica della tabella `varianti`)
+  stabilità fra giri   per ogni domanda con almeno 2 giri, la media della somiglianza di Jaccard a coppie fra le pagine
+                       menzionate nei giri; poi la media sulle domande. In più quante domande hanno lo stesso esito
+                       (campo `corretta`, o tutte le `regex` per le risposte di --hook) in tutti i giri
+Una menzione è un nome, un alias o una variante trovato nella risposta come sequenza di parole intere dopo norm (senza
+maiuscole né accenti), la forma più lunga per prima e senza sovrapposizioni; una forma che appartiene a più pagine non
+conta; i nomi che sono anche parole comuni (recall.PAROLE_COMUNI) contano solo con l'iniziale maiuscola, come nel
+recall. La Jaccard di due insiemi vuoti vale 1: due risposte che non nominano pagine sono d'accordo.
+I file illeggibili, senza risposta o con un errore del client si scartano e si contano a parte.
+La stabilità fra parafrasi del banco la misura misura.py (sezione BANCO), che usa jaccard() di questo modulo.
+
+Uso:
+  python .graph/coerenza.py --risposte <cartella di misura.py --out> [--db .graph/graph.sqlite] [--json]
+Exit 0; 2 se la cartella non ha risposte da contare.
+
+| Funzione | Descrizione |
+| --- | --- |
+| `jaccard(a, b)` | Somiglianza di Jaccard fra due insiemi: |a∩b| / |a∪b|, 1.0 se sono entrambi vuoti. |
+| `nomi_del_grafo(db)` | Le forme con cui una pagina può essere nominata: {norm(forma): (pagina, canonica)}. |
+| `menzioni(testo, nomi)` | Le pagine nominate nel testo, nell'ordine: [(pagina, canonica)]; `nomi` come da nomi_del_grafo. |
+| `leggi_risposte(cartella)` | Le risposte salvate da misura.py: ({(domanda, condizione): [giri in ordine]}, [(file scartato, motivo)]). |
+| `coerenza_nomi(testi, nomi)` | Coerenza dei nomi su un insieme di risposte: {"menzioni", "canoniche", "quota"} (quota None senza menzioni). |
+| `stabilita_giri(risposte, nomi)` | Per condizione: {"domande", "jaccard_medio", "esito_stabile"} sulle domande con almeno 2 giri. |
+| `riepilogo(risposte, nomi)` | Coerenza dei nomi e stabilità fra giri per condizione, in ordine di nome: {condizione: {...}}. |
+| `riga(condizione, r)` | La riga di testo di una condizione del riepilogo. |
+| `main(argv=None)` | — |
 
 ## `kit/graph/contratti.py`
 
@@ -434,6 +472,8 @@ Uso:
 | --- | --- |
 | `pulisci(testo, lunghezza=170)` | — |
 | `punti_aperti(vault)` | — |
+| `archi_con_ruolo(db, *ruoli)` | [(sorgente, destinazione)] delle relazioni che hanno uno di questi ruoli (semantica.py): di default usa/richiede/ |
+| `vincoli_violati(db, pagine, area)` | [(pagina, segnale, testo, parte)] dei vincoli dichiarati in «Vincoli» che le pagine non rispettano (se_manca = |
 | `pagine_fonte(vault)` | Le pagine di wiki/ tranne quelle generate per entropia, che non sono fonte di domande. |
 | `termini(db, vault)` | Identificatori senza pagina né alias, citati in 3+ pagine di 3+ aree: [(termini, pagine)]. |
 | `apri(path=QUI / 'domande.sqlite')` | — |
@@ -452,6 +492,44 @@ Uso:
 | `da_decidere(archivio)` | Le domande non chiuse già rinviate MAX_RINVII volte: il lint le porta all'autore, perché il recall |
 | `main()` | — |
 
+## `kit/graph/esporta_rdf.py`
+
+Export Turtle dello schema (doc/17, fase 5): tipi, categorie, relazioni, attributi, sinonimi e corrispondenze.
+
+Dal grafo corrente (tabelle `onto_*` e `categorie`, costruite dal builder da Wiki reference.md) a un file Turtle, per
+aprire lo schema in uno strumento di ontologie o confrontarlo con un vocabolario esterno. Solo lo schema, non le pagine.
+Sola lettura, solo libreria standard, nessun rdflib.
+
+    owl:Class + rdfs:subClassOf                     i tipi, col padre dei sottotipi
+    skos:Concept + skos:broader                     le categorie, con la più ampia
+    owl:ObjectProperty + rdfs:domain / rdfs:range   le relazioni, solo se il lato ammette un tipo solo
+    owl:TransitiveProperty / owl:SymmetricProperty  le proprietà dichiarate in «Semantica delle relazioni»
+    owl:DatatypeProperty                            gli attributi di pagina
+    skos:altLabel "…"@it                            i sinonimi
+    skos:exactMatch / skos:closeMatch               le corrispondenze con un vocabolario esterno
+    prov:wasDerivedFrom                             la fonte di quel vocabolario
+
+Mai `owl:inverseOf`: l'inversa dichiarata è un nome di lettura («è usato da»), non una relazione con un IRI. I CURIE delle
+corrispondenze non hanno una mappa di prefissi nel vault: escono come `urn:curie:<curie>`. Gli IRI dei termini sono
+`<base>tipo/<nome>`, `categoria/`, `relazione/`, `attributo/` e `fonte/`, con i nomi codificati in percentuale.
+
+L'ordine è totale e il file non contiene date: ogni tripla è una riga `soggetto predicato oggetto .`, ordinata per soggetto,
+predicato, oggetto; due esecuzioni sullo stesso grafo producono byte identici, con fine riga LF. Le tabelle che una
+generazione più vecchia non ha si saltano.
+
+Uso: python .graph/esporta_rdf.py [--db .graph/graph.sqlite] [--base https://example.org/teseo/] [--out schema.ttl]
+Esce con 0, o con 2 se la base non è valida o il grafo manca.
+
+| Funzione | Descrizione |
+| --- | --- |
+| `controlla_base(base)` | — |
+| `iri(base, genere, nome)` | L'IRI di un termine dello schema: `<base>genere/nome`, il nome codificato in percentuale. |
+| `iri_esterno(valore)` | L'IRI di una corrispondenza: assoluto com'è (`scheme://…`, `urn:…`), un CURIE come `urn:curie:<curie>`. |
+| `letterale(testo, lingua=None)` | Una stringa Turtle con le fughe di `\`, `"`, a capo, ritorno e tabulazione, e `\uXXXX` per gli altri controlli. |
+| `leggi(db, interrogazione, *alternative)` | Le righe di una query; la prima che la generazione sa eseguire (le colonne di una versione più vecchia mancano). |
+| `esporta(db, base=BASE_DEFAULT)` | Il Turtle dello schema del grafo `db` (una connessione sqlite3) come testo, con righe terminate da LF. |
+| `main(argv=None)` | — |
+
 ## `kit/graph/graph_db.py`
 
 Apertura readonly e revisione fissata per connessione, anche nel kit installato.
@@ -459,7 +537,6 @@ Apertura readonly e revisione fissata per connessione, anche nel kit installato.
 | Classe | Descrizione |
 | --- | --- |
 | `GraphDatabaseError` | — |
-| `GraphReference` | — |
 | `GraphConnection` | Attributi content_revision e graph_generation fissati all'apertura. |
 
 | Funzione | Descrizione |
@@ -627,9 +704,14 @@ Una riga per domanda e il riepilogo: pagine attese portate, domande complete, to
 stesso riepilogo per tipo di domanda (campo «tipo» del banco: «locale», su un'entità, predefinito; «globale», su un
 insieme di pagine, doc/16 B2), perché una modifica che aiuta le globali non nasconda un calo delle locali.
 È informativo: non fa uscire con 1. Senza banco.json la sezione non si stampa.
+Le voci con il campo facoltativo «parafrasi» (altre domande con la stessa risposta) danno la stabilità fra parafrasi
+(doc/kpi-coerenza.md, K3): per voce la media della somiglianza di Jaccard (coerenza.jaccard) fra le pagine portate dalla
+domanda e da ogni parafrasi, e quante parafrasi hanno gli stessi semi; una riga «parafrasi: …» dopo il riepilogo.
+Le parafrasi non entrano nelle righe per domanda né nel riepilogo del recall.
 --banco-salva FILE scrive i risultati per domanda; --banco-confronta FILE li confronta con quel salvataggio: per
 domanda MIGLIORATA o PEGGIORATA (pagine attese, e rumore, cioè pagine portate ma non attese), con la variazione dei
-token, poi il saldo, anche per tipo di domanda; --solo-banco stampa solo il banco.
+token, poi il saldo, anche per tipo di domanda, e la variazione della stabilità fra parafrasi se entrambi la hanno;
+--solo-banco stampa solo il banco.
 Con --routing non si chiama nessun modello: per ogni domanda di DOMANDE (destinazione in ATTESE) e di ROUTING
 si confronta la destinazione attesa con quella di modello_hook.instradamento, con una sessione Opus simulata.
 La correttezza automatica è solo un'approssimazione (regex sulla risposta): le risposte, salvate in --out, vanno rilette.
@@ -650,6 +732,7 @@ Uso:
 | `esito_banco(db, info, domanda)` | Le pagine che il recall porta per una domanda del banco, come misura_recall. Senza semi per nome, il ripiego |
 | `carica_banco(percorso)` | Le voci di banco.json. None se il file non c'è (la sezione non si stampa) o non è un banco valido. |
 | `misura_banco(db, percorso)` | Il banco: per domanda le pagine attese che il recall porta, token e tempo, poi il riepilogo. Informativo: non |
+| `riepilogo_parafrasi(esiti)` | La riga della stabilità fra parafrasi (doc/kpi-coerenza.md, K3) sulle voci del banco che hanno parafrasi. |
 | `riepilogo_banco(esiti, etichetta)` | La riga di riepilogo di un gruppo di esiti del banco (tutti, o quelli di un tipo di domanda). |
 | `carica_salvataggio(percorso)` | I risultati di un --banco-salva. None se il file non si legge o non è un salvataggio del banco. |
 | `confronta_banco(esiti, prima)` | Per domanda rispetto a un salvataggio di --banco-salva. MIGLIORATA: più pagine attese portate, o a parità meno |
@@ -743,8 +826,13 @@ Ontologia Markdown lossless: parser e proposte pure, nessun accesso al filesyste
 
 Grammatica volutamente limitata: sezioni ATX h2, una tabella contigua per sezione,
 2/3 colonne per i tipi (la terza è «Sottotipo di»), 3/5 per le relazioni, 3 per le categorie
-(«Categoria | Più ampia | Descrizione», doc/16). Contenuto ambiguo resta manuale.
-Gli offset sono byte UTF-8; il serializer sostituisce solo tabelle riconosciute: le categorie si conservano byte per byte.
+(«Categoria | Più ampia | Descrizione», doc/16), 4 per la semantica delle relazioni («Relazione | Ruolo | Inversa |
+Proprietà», doc/17) e 5 per i vincoli («Tipo | Relazione o attributo | Minimo | Massimo | Se manca»), 2 per i sinonimi («Nome | Sinonimi»,
+separati da `;`), 4 per le corrispondenze («Nome | Corrispondenza | Vocabolario | Esattezza») e 4 per gli attributi («Attributo |
+Di (tipo) | Valore | Descrizione»). Contenuto ambiguo
+resta manuale. Gli offset sono byte UTF-8; il serializer sostituisce solo tabelle riconosciute: categorie, semantica,
+vincoli, sinonimi, corrispondenze e attributi si conservano byte per byte (e il serializer rifiuta una modifica che li lascerebbe
+con nomi non più dichiarati).
 
 | Classe | Descrizione |
 | --- | --- |
@@ -753,13 +841,20 @@ Gli offset sono byte UTF-8; il serializer sostituisce solo tabelle riconosciute:
 | `Issue` | — |
 | `TypeDef` | — |
 | `Category` | — |
+| `RelationSemantics` | — |
+| `Constraint` | — |
+| `Synonyms` | — |
+| `Correspondence` | — |
+| `AttributeDef` | — |
+| `AttributeValueError` | Il valore di un attributo non è accettabile: `code` è `attribute_type` (tipo sbagliato) o `attribute_value`. |
 | `Relation` | — |
 | `Ontology` | — |
 | `CatalogProposal` | — |
 
 | Funzione | Descrizione |
 | --- | --- |
-| `validate(types, relations, categories=None)` | Validazione del modello; impatto sulle pagine demandato al builder/preview. |
+| `validate(types, relations, categories=None, semantics=None, constraints=None, synonyms=None, matches=None, attributes=None)` | Validazione del modello; impatto sulle pagine demandato al builder/preview. |
+| `normalize_attribute(value_type, value, tree=frozenset())` | Il valore di un attributo come testo normalizzato, o AttributeValueError. |
 | `parse(source)` | — |
 | `serialize(document, *, types=None, relations=None)` | — |
 | `propose_type_catalog(document, observed_types=())` | — |
@@ -864,9 +959,23 @@ Uso: python .graph/recall.py "il file delle fatture non arriva, a chi scrivo?" [
 | `per_testo(db, domanda, n=MAX_TESTO, tolte=(), finestra=None, soglia_frequente=None)` | Ripiego quando il grafo non riconosce nulla: [pagine] trovate nel corpo (FTS5 `testo`), al più n. |
 | `per_testo_a_cascata(db, domanda, tolte=())` | Il ripiego sul testo in due giri: per_testo; se non trova nulla, un secondo giro con FINESTRA_TESTO_LARGA e |
 | `archi(db, nodi, solo_tipizzate, colonne=('source_id', 'target_id'))` | — |
-| `richiama(db, domanda, max_tipizzate=MAX_TIPIZZATE, max_menziona=MAX_MENZIONA, extra=())` | (semi, fatti, omessi): omessi = {"tipizzate": n, "menziona": n} sono i fatti fuori dai limiti. |
+| `nomi_di_pagina(db)` | Le forme normalizzate (norm) con cui una pagina si nomina: nome, alias e varianti grafiche. Chi le usa vince sul |
+| `sinonimi_per_nome(db, domanda, escludi=())` | {nome: [sinonimo, …]} dei sinonimi dichiarati (onto_sinonimi) che la domanda nomina: la frase del sinonimo, con le |
+| `categorie_nominate(db, domanda, escludi=())` | [(nome, padre, descrizione)] delle categorie di Wiki reference che la domanda nomina (B3 di doc/16): per nome |
+| `tipi_nominati(db, domanda, escludi=())` | [(nome, padre, descrizione)] dei tipi che la domanda nomina con un loro sinonimo (doc/17, fase 3a): il nome di un |
+| `pagine_di_categoria(db)` | Le pagine del vault che contano per le categorie: né fonti né pagine per entropia (riassumono altre pagine). |
+| `pagine_per_categoria(db, nome)` | {pagina: profondità}: 0 per i tag diretti, 1 per le sottocategorie e così via (la minima se più tag). |
+| `pagine_per_tipo(db, nome)` | {pagina: profondità}: 0 per le pagine del tipo, 1 per quelle dei suoi sottotipi e così via. |
+| `scegli_pagine(db, da_scegliere, massimo=None)` | (pagine, omesse): al più `massimo` (MAX_CATEGORIA) pagine fra `da_scegliere` ({pagina: profondità}, di una |
+| `seme_categoria(categoria)` | — |
+| `fatto_categoria(db, categoria)` | — |
+| `seme_tipo(tipo)` | — |
+| `fatto_tipo(db, tipo)` | — |
+| `richiama(db, domanda, max_tipizzate=MAX_TIPIZZATE, max_menziona=MAX_MENZIONA, extra=())` | (semi, fatti, omessi) come richiama_pagine, più le categorie nominate (B3 di doc/16) e i tipi nominati con un |
+| `richiama_pagine(db, domanda, max_tipizzate=MAX_TIPIZZATE, max_menziona=MAX_MENZIONA, extra=())` | (semi, fatti, omessi): omessi = {"tipizzate": n, "menziona": n} sono i fatti fuori dai limiti. |
+| `attributi_delle_pagine(db, pagine)` | {pagina: [(attributo, valore)]}: gli attributi di pagina (entity_attributi) nell'ordine della sezione «Attributi», |
 | `nodi(fatto)` | — |
-| `formatta(semi, fatti, info, omessi=None)` | — |
+| `formatta(semi, fatti, info, omessi=None, db=None)` | Il contesto «Dal grafo della wiki…». Con `db` aggiunge in coda il blocco «Schema pertinente» (semantica.py): il |
 | `main()` | — |
 
 ## `kit/graph/recall_hook.py`
@@ -920,6 +1029,62 @@ si prova a mano con:
 | `breve(e)` | Errore su una riga, al più MAX_ERRORE caratteri. |
 | `recall()` | — |
 | `main()` | — |
+
+## `kit/graph/schema.py`
+
+Lo schema del vault a fette (doc/17, fase 1): al modello arriva solo la parte di Wiki reference.md che gli serve.
+
+Wiki reference.md resta l'autorità; questo script lo legge e ne stampa fette, in sola lettura e senza LLM. Tre livelli:
+  1  sempre        Regole non negoziabili, Convenzioni delle pagine (senza le pagine generate per entropia), il formato
+                   delle Chiavi delle fonti e l'indice dei nomi di tipi, relazioni e categorie, uno per voce e senza
+                   descrizioni. Tetto TETTO_LIVELLO_1 token.
+  2  mirato        le righe complete dei tipi indicati e dei loro antenati (Sottotipo di), le relazioni che possono partire
+                   da quei tipi o arrivarci (come tipo_ammesso: antenati e «qualsiasi» compresi), le righe delle chiavi
+                   delle fonti citate. Tetto TETTO_LIVELLO_2 token.
+  3  su richiesta  tutto il file: se hai un dubbio, leggi Wiki reference.md per intero (prevale sempre).
+Le fette sono tabelle e paragrafi di regola, non sezioni h2 intere: sotto «Relazioni tipizzate» sta anche la descrizione
+degli script, che non è schema. I tetti sono avvisi, non errori. Senza il catalogo «Tipi ammessi» il livello 2 stampa tutte
+le relazioni; con errori di schema avvisa di leggere il file per intero. Token = caratteri/4, come contratti.py --peso.
+
+Uso:
+  python .graph/schema.py --livello 1 [--entropia] [--sezione "Manutenzione del vault"]
+  python .graph/schema.py --per-tipi portale,persona [--fonti call-a,call-b]
+  python .graph/schema.py --per-pagine "Modulo fatture,Anna Rossi"      i tipi li legge dal grafo
+Opzioni comuni: --vault, --json ({testo, token, avvisi}), --tetto N. Exit 0; 2 se manca lo schema o il grafo.
+
+| Funzione | Descrizione |
+| --- | --- |
+| `stima_token(testo)` | Stima dei token di un testo: caratteri/4, la stessa di contratti.py --peso. |
+| `fette(testo, livello=1, tipi=(), fonti=(), entropia=False, sezioni=(), tetto=None)` | Una fetta di Wiki reference.md: {"testo", "token", "avvisi"}. |
+| `tipi_delle_pagine(db, pagine)` | (tipi in ordine alfabetico, pagine ignote al grafo) delle pagine indicate per nome (wiki/ del grafo). |
+| `main(argv=None)` | — |
+
+## `kit/graph/semantica.py`
+
+La semantica delle relazioni letta dal grafo (doc/17, fase 2): ruoli, inverse, vincoli e il blocco di schema del recall.
+
+Wiki reference.md dichiara, in sezioni facoltative, il ruolo di una relazione («dipendenza», «responsabile»,
+«composizione», «causale», «sequenza»), il nome della sua inversa e le proprietà transitiva e simmetrica («Semantica
+delle relazioni»), e i vincoli di cardinalità per tipo («Vincoli»). Il builder le copia in onto_relazioni
+(ruolo, inversa, transitiva, simmetrica) e onto_cardinalita; questo modulo le legge per sintesi.py, domande.py, recall.py
+e la dashboard. Sola lettura, nessun LLM.
+
+I default sono quelli che il codice usava prima della fase 2 (RUOLI_DEFAULT) e non si scrivono mai nelle tabelle: una
+relazione senza ruolo dichiarato ha il ruolo di default, una dichiarata lo sostituisce, e una sezione che dichiara solo
+inverse non toglie a «causa» il suo ruolo causale. Senza le sezioni nulla cambia, byte per byte. Le generazioni del grafo
+precedenti alla fase 2 (senza le colonne) usano i default. La sezione «Vincoli», se c'è, sostituisce il vincolo di
+default sul referente (vincoli() restituisce None quando manca).
+
+| Funzione | Descrizione |
+| --- | --- |
+| `dichiarata(db)` | True se Wiki reference.md ha la sezione «Semantica delle relazioni» (metadato `semantica` del grafo). |
+| `ruoli(db)` | {relazione: ruolo}: i default di oggi, sostituiti dai ruoli dichiarati in Wiki reference.md. |
+| `relazioni_con_ruolo(db, *cercati)` | Le relazioni che hanno uno dei ruoli `cercati`: prima i default nel loro ordine, poi le aggiunte dichiarate. |
+| `inverse(db)` | {relazione: nome dell'inversa} dichiarati; è un'etichetta di lettura, non un arco. |
+| `vincoli(db)` | I vincoli dichiarati [{tipo, relazione, minimo, massimo, se_manca}] in ordine di tabella; None senza la sezione. |
+| `nomi_attributi(db)` | I nomi degli attributi dichiarati in «Attributi» (onto_attributi); vuoto senza la sezione o in una generazione |
+| `tipi_sotto(db, tipo)` | Il tipo e tutti i suoi sottotipi (onto_tipi.padre): un vincolo su un tipo vale anche per loro. |
+| `schema_pertinente(db, fatti, massimo=MAX_SCHEMA_TOKEN)` | Il blocco «Schema pertinente» del recall: il significato delle sole relazioni presenti nei `fatti`. |
 
 ## `kit/graph/sintesi.py`
 
