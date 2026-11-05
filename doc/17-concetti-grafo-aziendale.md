@@ -25,7 +25,8 @@ lavorazione) e del vocabolario esterno arrivano al modello al più pochi candida
 | --- | --- | --- | --- |
 | Peso dello schema nel contesto | — | `schema.py`: livello 1 sempre, livello 2 mirato, livello 3 su richiesta | 1 |
 | Ruoli semantici | `subPropertyOf` in piccolo | sezione `## Semantica delle relazioni`, colonna Ruolo in un insieme chiuso; sostituisce `CATENA`, `CON_REFERENTE`, `'causa'` | 2 |
-| Inverse con nome, transitive, simmetriche | `owl:inverseOf`, `TransitiveProperty`, `SymmetricProperty` | stessa sezione; l'inversa è un nome di lettura; deduzioni in viste SQL marcate «dedotto», mai nelle pagine | 2 |
+| Inverse con nome, transitive, simmetriche | `owl:inverseOf`, `TransitiveProperty`, `SymmetricProperty` | stessa sezione; l'inversa è un nome di lettura; deduzioni in viste SQL marcate «dedotto», con le pagine intermedie (`via`), mai nelle pagine | 2 |
+| Relazioni acicliche | ordine parziale, `owl:AsymmetricProperty` / `IrreflexiveProperty` estesi ai giri lunghi | proprietà `aciclica` nella stessa sezione; un ciclo è una domanda aperta (segnale `ciclo`), mai un errore di build | 2 |
 | Vincoli e cardinalità | SHACL | sezione `## Vincoli`; un vincolo violato è una domanda aperta, non un errore | 2 |
 | Sinonimi | `skos:altLabel` | sezione `## Sinonimi` per tipi e categorie; un sinonimo nominato è un seme aggregato (B3) | 3a |
 | Identità condivisa | IRI, `skos:exactMatch`/`closeMatch` | sezione `## Corrispondenze` con chiave del vocabolario ed esattezza | 3a |
@@ -75,7 +76,7 @@ Ordine: 0 → 1 → 2 → B3 → 3a → go/no-go → 3b → 4 → 5. B3 si può 
 | --- | --- | --- | --- |
 | 0 — Misurare | [KPI di coerenza](kpi-coerenza.md): coerenza dei nomi, stabilità fra giri e fra parafrasi, peso dello schema; basi sul vault d'esempio e sul vault ISP | basi salvate | **in corso** |
 | 1 — Schema mirato | `schema.py`, tre livelli, contratti di ingest e lint, `contratti.py --peso` che conta `schema.py` | peso dello schema giù; recall e coerenza invariati | proposta |
-| 2 — Semantica dichiarata | ruoli, inverse, transitive e simmetriche (fasi C e D di doc/16), vincoli, blocco «Schema pertinente» nel recall; `BUILDER_VERSION` 7 | senza sezioni, domande e sintesi identiche sul vault d'esempio | proposta |
+| 2 — Semantica dichiarata | ruoli, inverse come nome di lettura, transitive, simmetriche e acicliche (fasi C e D di doc/16), colonna `via` dei fatti dedotti, cicli come domande aperte, vincoli, blocco «Schema pertinente» nel recall; `BUILDER_VERSION` 7 | senza sezioni, domande e sintesi identiche sul vault d'esempio | proposta |
 | B3 | categoria come seme aggregato, come in doc/16 | regola di doc/16 | proposta |
 | 3a — Sinonimi interni | `## Sinonimi`, `## Corrispondenze`; sinonimo come seme; `BUILDER_VERSION` 8 | coerenza dei nomi su; semi spuri invariati | proposta |
 | 3b — Vocabolari esterni | riduttore da CSV, TSV in `raw/vocabolari/`, `schema.py --per-testo`, sezione del piano, lint delle versioni | coerenza dei nomi su rispetto alla 3a | da decidere dopo la 3a |
@@ -106,6 +107,26 @@ un modello si lanciano solo con il via esplicito dell'autore: costano.
 | 4 | Ingresso del riduttore | solo CSV (FIBO Data Dictionary, ESCO); nessuna dipendenza nuova |
 | 5 | Vault reale per le basi | vault ISP |
 | 6 | Branch | `ICM_Integration` |
+
+## Decisioni (5 novembre 2026)
+
+Prese dopo il [riesame del 5 novembre](#riesame-del-5-novembre-2026) sul branch (testa `27f2830`).
+
+| # | Decisione | Esito |
+| --- | --- | --- |
+| 7 | Relazioni inverse | solo **nome di lettura** (C3): né scritte nelle pagine né archi in più nel grafo; il recall le percorre già a ritroso (`PASSI` di `recall.py`) e `formatta` usa il nome dell'inversa |
+| 8 | Cicli | proprietà `aciclica` in `## Semantica delle relazioni`; un ciclo di qualunque lunghezza (anche A → A) è una domanda aperta con segnale `ciclo`, una sola volta per ciclo; `aciclica` con `simmetrica` è un errore dello schema |
+| 9 | Provenienza dei fatti dedotti | colonna `via` in `relazioni_dedotte`: le pagine intermedie in ordine, separate da ` → `; vuota per un fatto a un passo |
+| 10 | Modello del kit | la sezione `## Semantica delle relazioni` entra nel `Wiki reference.md` del kit solo con la fase 2, con i ruoli di default e `aciclica` su `parte_di`, `precede`, `sostituisce` |
+| 11 | Ordine | invariato: 0 → 1 → 2; questi punti sono codice della fase 2 |
+
+### Riesame del 5 novembre 2026
+
+Prova sul vault d'esempio installato da questo branch, con due processi che si precedono a vicenda
+(Censimento profili ⇄ Caricamento notturno): `build_graph.py --check` stampa «nessun problema» e `domande.py` non ha
+voci per il ciclo. La vista transitiva prevista non lo farebbe emergere: il limite di profondità evita il giro
+infinito ma non segnala il ciclo, e produrrebbe fatti come «Censimento profili precede Censimento profili». Per
+questo la ricerca dei cicli non usa la vista: è una visita completa delle relazioni acicliche.
 
 ## Fuori perimetro
 
