@@ -88,7 +88,9 @@ Materiale e controllo del banco di misura del recall: le domande che il vault de
 
 Il banco (.graph/banco.json) è una lista di {"domanda", "attese", "origine", "note", "tipo"}: la domanda, le pagine che
 il recall deve portare, da dove viene (sintesi, hub, isolata, atteso_ko, manuale), perché e, facoltativo, il tipo di
-domanda: «locale» (un'entità, predefinito) o «globale» (un insieme di pagine), che misura.py riepiloga a parte. misura.py lo misura nella
+domanda: «locale» (un'entità, predefinito) o «globale» (un insieme di pagine), che misura.py riepiloga a parte.
+Facoltativo anche «parafrasi»: altre domande con la stessa risposta, scritte anche loro senza le parole dei titoli, per
+la stabilità fra parafrasi (K3 di doc/kpi-coerenza.md). misura.py lo misura nella
 sezione BANCO, che è informativa e non fa uscire con 1. Le domande le scrive chi usa il banco: questo script non ne crea.
   --semi      scrive .graph/banco_semi.json, il materiale da cui scrivere le domande:
               (a) le domande di sintesi.py --tutte con le pagine della risposta: dall'uscita JSON di sintesi.py,
@@ -97,9 +99,11 @@ sezione BANCO, che è informativa e non fa uscire con 1. Le domande le scrive ch
               (c) le pagine isolate nel grafo tipizzato: nessuna relazione tipizzata in entrata né in uscita.
               Per ogni pagina: id, tipo, descrizione, alias, i 10 vicini più collegati e il percorso del file.
   --verifica  controlla banco.json. ERRORE (exit 1): pagina attesa inesistente, domanda doppia, voce malformata,
-              tipo diverso da locale e globale.
-              AVVISO (exit 0): la domanda usa metà delle parole del titolo di una pagina attesa, e il test sarebbe
-              banale. Conta solo il titolo, cioè il nome della pagina, non gli alias; non vale per atteso_ko.
+              tipo diverso da locale e globale, «parafrasi» che non è una lista di domande, parafrasi uguale a una
+              domanda del banco o a un'altra parafrasi.
+              AVVISO (exit 0): la domanda o una parafrasi usa metà delle parole del titolo di una pagina attesa, e
+              il test sarebbe banale. Conta solo il titolo, cioè il nome della pagina, non gli alias; non vale per
+              atteso_ko.
 
 Uso:
   python .graph/banco.py --semi
@@ -117,6 +121,7 @@ Uso:
 | `scrivi_semi(db_path, db, out)` | Scrive banco_semi.json: le domande di sintesi, gli hub e le pagine isolate, con le pagine descritte. |
 | `eco_del_titolo(domanda, pagina)` | True se la domanda ha almeno metà delle radici del titolo della pagina (recall.radici). |
 | `verifica(db, percorso)` | Problemi di banco.json: [(livello, testo)], con livello ERRORE o AVVISO. |
+| `verifica_parafrasi(voce, i, dove, attese, pagine, domande, viste)` | Problemi del campo facoltativo «parafrasi» di una voce: [(livello, testo)], come verifica. |
 | `main()` | — |
 
 ## `kit/graph/build_graph.py`
@@ -284,6 +289,45 @@ deduzione di file letti dai comandi della shell: per quelli usare leggi.py.
 | `letture_esplicite(evento)` | Solo tool di lettura con percorso strutturato e risultato riuscito. |
 | `gestisci(evento)` | — |
 | `salva_sessione(evento)` | — |
+| `main()` | — |
+
+## `kit/graph/coerenza.py`
+
+KPI di coerenza delle risposte del modello (doc/kpi-coerenza.md): nomi canonici (K1) e stabilità fra giri (K2).
+
+Legge le risposte salvate da `misura.py --modello --out DIR` e `misura.py --hook --out DIR`: un file
+`NN-<condizione>-G.json` per domanda NN, condizione (ricerca, grafo, hook) e giro G, con il campo «risposta». Non
+chiama modelli: conta soltanto, sul grafo corrente.
+
+Menzione: un nome di pagina della wiki, un alias (tabella `aliases`) o una variante grafica (tabella `varianti`)
+trovato nella risposta come sequenza di parole intere, senza maiuscole e accenti (build_graph.norm). Vince la forma
+più lunga, senza sovrapposizioni. Una forma che appartiene a più pagine non conta: non si sa quale sia. Un nome che è
+anche parola comune (recall.PAROLE_COMUNI) conta solo scritto con la maiuscola, come nel recall. La menzione è
+canonica se la forma trovata è il nome della pagina.
+  K1  menzioni canoniche su tutte le menzioni, per condizione.
+  K2  per ogni domanda con almeno 2 giri: media della somiglianza di Jaccard, a coppie di giri, fra gli insiemi di
+      pagine nominate (due insiemi vuoti valgono 1); e se l'esito è lo stesso in tutti i giri. L'esito di un giro è
+      il campo «corretta» (misura.py --modello) o, per --hook, tutte le «regex» trovate.
+I file che non si leggono o senza «risposta» si elencano come illeggibili e non entrano nei numeri.
+
+Stampa una riga per condizione, per esempio
+  grafo: nomi canonici 41/50 (82%) · stabilità fra giri 0.74 · esito stabile 4/5 · 15 risposte
+--json stampa gli stessi numeri in JSON. Exit 0; exit 2 se nella cartella non c'è nessuna risposta.
+
+Uso:
+  python .graph/coerenza.py --risposte <cartella> [--db .graph/graph.sqlite] [--json]
+
+| Funzione | Descrizione |
+| --- | --- |
+| `jaccard(a, b)` | Somiglianza di Jaccard di due insiemi: |a ∩ b| / |a ∪ b|, 1.0 se sono entrambi vuoti. |
+| `nomi_del_grafo(db)` | {forma normalizzata: (pagina, canonica)} dei nomi, alias e varianti delle pagine della wiki. |
+| `parole(testo)` | Le parole del testo senza accenti, con le maiuscole originali: lowercase danno le parole di norm. |
+| `menzioni(testo, nomi)` | [(pagina, canonica)] delle menzioni di pagina nel testo, in ordine; nomi è il dizionario di nomi_del_grafo. |
+| `leggi_risposte(cartella)` | Le risposte di una cartella --out: ({(domanda, condizione): [giri in ordine]}, [file illeggibili]). |
+| `coerenza_nomi(risposte, nomi)` | K1 su una lista di risposte ({"risposta"}): {"menzioni", "canoniche", "quota"}; quota None senza menzioni. |
+| `stabilita_giri(risposte, nomi)` | K2 per condizione: {condizione: {"domande", "jaccard_medio", "esito_stabile"}}, sulle domande con 2+ giri. |
+| `misura(risposte, nomi)` | K1 e K2 per condizione: {condizione: {"coerenza", "stabilita", "risposte"}}, nell'ordine di CONDIZIONI. |
+| `riga(condizione, dati)` | La riga stampata per una condizione. |
 | `main()` | — |
 
 ## `kit/graph/contratti.py`
@@ -630,6 +674,10 @@ insieme di pagine, doc/16 B2), perché una modifica che aiuta le globali non nas
 --banco-salva FILE scrive i risultati per domanda; --banco-confronta FILE li confronta con quel salvataggio: per
 domanda MIGLIORATA o PEGGIORATA (pagine attese, e rumore, cioè pagine portate ma non attese), con la variazione dei
 token, poi il saldo, anche per tipo di domanda; --solo-banco stampa solo il banco.
+Le voci con «parafrasi» (altre domande con la stessa risposta) misurano anche la stabilità fra parafrasi (K3 di
+doc/kpi-coerenza.md): le parafrasi passano dallo stesso recall ma non entrano nelle righe del banco; dopo il riepilogo
+la riga «parafrasi: N voci, M parafrasi · stabilità media · stesso seme» e, nel confronto, la variazione della
+stabilità media sulle domande che l'hanno in entrambi i salvataggi.
 Con --routing non si chiama nessun modello: per ogni domanda di DOMANDE (destinazione in ATTESE) e di ROUTING
 si confronta la destinazione attesa con quella di modello_hook.instradamento, con una sessione Opus simulata.
 La correttezza automatica è solo un'approssimazione (regex sulla risposta): le risposte, salvate in --out, vanno rilette.
@@ -650,6 +698,7 @@ Uso:
 | `esito_banco(db, info, domanda)` | Le pagine che il recall porta per una domanda del banco, come misura_recall. Senza semi per nome, il ripiego |
 | `carica_banco(percorso)` | Le voci di banco.json. None se il file non c'è (la sezione non si stampa) o non è un banco valido. |
 | `misura_banco(db, percorso)` | Il banco: per domanda le pagine attese che il recall porta, token e tempo, poi il riepilogo. Informativo: non |
+| `aggiungi_parafrasi(db, info, esito, parafrasi)` | K3 di doc/kpi-coerenza.md su un esito del banco: le parafrasi passano dallo stesso recall (esito_banco). |
 | `riepilogo_banco(esiti, etichetta)` | La riga di riepilogo di un gruppo di esiti del banco (tutti, o quelli di un tipo di domanda). |
 | `carica_salvataggio(percorso)` | I risultati di un --banco-salva. None se il file non si legge o non è un salvataggio del banco. |
 | `confronta_banco(esiti, prima)` | Per domanda rispetto a un salvataggio di --banco-salva. MIGLIORATA: più pagine attese portate, o a parità meno |

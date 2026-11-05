@@ -1,7 +1,7 @@
 [
-  {"domanda": "a chi chiedo il ticket della settimana per poter rilasciare?", "attese": ["Incident settimanale", "Anna Rossi"], "origine": "manuale", "note": "esempio: catena senza i nomi delle pagine", "tipo": "locale"},
+  {"domanda": "a chi chiedo il ticket della settimana per poter rilasciare?", "attese": ["Incident settimanale", "Anna Rossi"], "origine": "manuale", "note": "esempio: catena senza i nomi delle pagine", "tipo": "locale", "parafrasi": ["chi genera il ticket che serve ogni settimana per rilasciare?"]},
   {"domanda": "dove si aprono le segnalazioni?", "attese": ["ServiceDesk"], "origine": "manuale", "note": "esempio: «segnalazioni» non è nel vault, probabilmente non trovata", "tipo": "locale"},
-  {"domanda": "quale sigla va nelle richieste?", "attese": ["Acronimo del progetto"], "origine": "manuale", "note": "esempio: sinonimo di acronimo", "tipo": "locale"},
-  {"domanda": "elenca i sistemi che abbiamo", "attese": ["Gestionale", "Modulo fatture", "Console di rilascio", "ServiceDesk"], "origine": "manuale", "tipo": "globale", "note": "esempio: domanda globale, tutte le pagine di un tipo"},
-  {"domanda": "quali attività servono per pubblicare una nuova versione?", "attese": ["Rilascio in produzione", "Incident settimanale", "Console di rilascio"], "origine": "manuale", "tipo": "globale", "note": "esempio: domanda globale, le pagine con il tag rilascio"}
+  {"domanda": "quale sigla va nelle richieste?", "attese": ["Acronimo del progetto"], "origine": "manuale", "note": "esempio: sinonimo di acronimo", "tipo": "locale", "parafrasi": ["che codice va scritto nei ticket?"]},
+  {"domanda": "elenca i sistemi che abbiamo", "attese": ["Gestionale", "Modulo fatture", "Console di rilascio", "ServiceDesk"], "origine": "manuale", "note": "esempio: domanda globale, tutte le pagine di un tipo", "tipo": "globale"},
+  {"domanda": "quali attività servono per pubblicare una nuova versione?", "attese": ["Rilascio in produzione", "Incident settimanale", "Console di rilascio"], "origine": "manuale", "note": "esempio: domanda globale, le pagine con il tag rilascio", "tipo": "globale"}
 ]

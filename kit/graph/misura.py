@@ -31,6 +31,10 @@ insieme di pagine, doc/16 B2), perché una modifica che aiuta le globali non nas
 --banco-salva FILE scrive i risultati per domanda; --banco-confronta FILE li confronta con quel salvataggio: per
 domanda MIGLIORATA o PEGGIORATA (pagine attese, e rumore, cioè pagine portate ma non attese), con la variazione dei
 token, poi il saldo, anche per tipo di domanda; --solo-banco stampa solo il banco.
+Le voci con «parafrasi» (altre domande con la stessa risposta) misurano anche la stabilità fra parafrasi (K3 di
+doc/kpi-coerenza.md): le parafrasi passano dallo stesso recall ma non entrano nelle righe del banco; dopo il riepilogo
+la riga «parafrasi: N voci, M parafrasi · stabilità media · stesso seme» e, nel confronto, la variazione della
+stabilità media sulle domande che l'hanno in entrambi i salvataggi.
 Con --routing non si chiama nessun modello: per ogni domanda di DOMANDE (destinazione in ATTESE) e di ROUTING
 si confronta la destinazione attesa con quella di modello_hook.instradamento, con una sessione Opus simulata.
 La correttezza automatica è solo un'approssimazione (regex sulla risposta): le risposte, salvate in --out, vanno rilette.
@@ -303,10 +307,11 @@ def carica_banco(percorso):
     valida = isinstance(voci, list) and all(
         isinstance(v, dict) and isinstance(v.get("domanda"), str) and isinstance(v.get("attese", []), list)
         and all(isinstance(p, str) for p in v.get("attese", [])) and v.get("tipo", "locale") in TIPI_DOMANDA
+        and isinstance(v.get("parafrasi", []), list) and all(isinstance(p, str) and p.strip() for p in v.get("parafrasi", []))
         for v in voci)
     if not valida:
         print(f"banco non valido ({percorso.name}): serve una lista di oggetti con «domanda» e «attese»"
-              f" (e «tipo» fra {', '.join(TIPI_DOMANDA)}, se c'è)")
+              f" (e «tipo» fra {', '.join(TIPI_DOMANDA)}, «parafrasi» lista di domande, se ci sono)")
         return None
     return voci
 
@@ -330,6 +335,8 @@ def misura_banco(db, percorso):
         esito["attese"] = attese
         esito["mancanti"] = [p for p in attese if p not in esito["portate"]]
         esito["rumore"] = len(set(esito["portate"]) - set(attese))
+        if voce.get("parafrasi"):
+            aggiungi_parafrasi(db, info, esito, voce["parafrasi"])
         esiti.append(esito)
         colonna = f"{len(attese) - len(esito['mancanti'])}/{len(attese)}" if attese else "-"
         mancano = f"   mancano: {', '.join(esito['mancanti'])}" if esito["mancanti"] else ""
@@ -340,7 +347,32 @@ def misura_banco(db, percorso):
     if len(tipi) > 1:
         for tipo in tipi:
             print(riepilogo_banco([e for e in esiti if e["tipo"] == tipo], f"  {tipo}"))
+    con_parafrasi = [e for e in esiti if "stabilita" in e]
+    if con_parafrasi:
+        n = sum(len(e["parafrasi"]) for e in con_parafrasi)
+        media = sum(e["stabilita"] for e in con_parafrasi) / len(con_parafrasi)
+        stesso = sum(e["stesso_seme"] for e in con_parafrasi)
+        print(f"parafrasi: {len(con_parafrasi)} voci, {n} parafrasi · stabilità media {media:.2f} · stesso seme {stesso}/{n}")
     return esiti
+
+
+def aggiungi_parafrasi(db, info, esito, parafrasi):
+    """K3 di doc/kpi-coerenza.md su un esito del banco: le parafrasi passano dallo stesso recall (esito_banco).
+
+    Aggiunge «parafrasi» ([{"domanda", "semi", "portate"}]), «stabilita» (media della somiglianza di Jaccard fra le
+    pagine portate dalla domanda e da ciascuna parafrasi; due insiemi vuoti valgono 1) e «stesso_seme» (parafrasi
+    con gli stessi semi della domanda). Non cambia i numeri del recall."""
+    portate = set(esito["portate"])
+    esito["parafrasi"] = []
+    somiglianze, stesso = [], 0
+    for testo in parafrasi:
+        altra = esito_banco(db, info, testo)
+        esito["parafrasi"].append({"domanda": testo, "semi": altra["semi"], "portate": altra["portate"]})
+        unione = portate | set(altra["portate"])
+        somiglianze.append(len(portate & set(altra["portate"])) / len(unione) if unione else 1.0)
+        stesso += set(altra["semi"]) == set(esito["semi"])
+    esito["stabilita"] = sum(somiglianze) / len(somiglianze)
+    esito["stesso_seme"] = stesso
 
 
 def riepilogo_banco(esiti, etichetta):
@@ -373,8 +405,10 @@ def carica_salvataggio(percorso):
 def confronta_banco(esiti, prima):
     """Per domanda rispetto a un salvataggio di --banco-salva. MIGLIORATA: più pagine attese portate, o a parità meno
     rumore (pagine portate ma non attese). PEGGIORATA: meno pagine attese, o a parità più rumore. Poi il saldo, e se il
-    banco ha più tipi di domanda il saldo di ciascuno (un salvataggio senza «tipo» vale come domande locali)."""
+    banco ha più tipi di domanda il saldo di ciascuno (un salvataggio senza «tipo» vale come domande locali); infine,
+    se il banco ha parafrasi anche nel salvataggio, la stabilità fra parafrasi prima e dopo."""
     vecchie = {v["domanda"]: v for v in prima}
+    vecchie_tutte = dict(vecchie)
     conta = {"MIGLIORATA": 0, "PEGGIORATA": 0, "invariata": 0, "NUOVA": 0, "RIMOSSA": 0}
     tot = {"attese": 0, "rumore": 0, "token": 0}
     per_tipo = {}  # tipo → (migliorate, peggiorate, pagine attese)
@@ -416,6 +450,13 @@ def confronta_banco(esiti, prima):
         for tipo in [t for t in TIPI_DOMANDA if t in per_tipo]:
             m, p, a = per_tipo[tipo]
             print(f"  saldo {tipo}: {m} migliorate · {p} peggiorate · pagine attese {a:+d}")
+    # K3: solo le domande con la stabilità in entrambi (un salvataggio di prima delle parafrasi non ce l'ha)
+    stabili = [(vecchie_tutte[e["domanda"]]["stabilita"], e["stabilita"]) for e in esiti if "stabilita" in e
+               and "stabilita" in vecchie_tutte.get(e["domanda"], {})]
+    if stabili:
+        prima_media = sum(v for v, _ in stabili) / len(stabili)
+        dopo_media = sum(d for _, d in stabili) / len(stabili)
+        print(f"stabilità fra parafrasi: {prima_media:.2f} → {dopo_media:.2f} ({dopo_media - prima_media:+.2f})")
 
 
 def salva_banco(esiti, percorso):

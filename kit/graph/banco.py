@@ -2,7 +2,9 @@
 
 Il banco (.graph/banco.json) è una lista di {"domanda", "attese", "origine", "note", "tipo"}: la domanda, le pagine che
 il recall deve portare, da dove viene (sintesi, hub, isolata, atteso_ko, manuale), perché e, facoltativo, il tipo di
-domanda: «locale» (un'entità, predefinito) o «globale» (un insieme di pagine), che misura.py riepiloga a parte. misura.py lo misura nella
+domanda: «locale» (un'entità, predefinito) o «globale» (un insieme di pagine), che misura.py riepiloga a parte.
+Facoltativo anche «parafrasi»: altre domande con la stessa risposta, scritte anche loro senza le parole dei titoli, per
+la stabilità fra parafrasi (K3 di doc/kpi-coerenza.md). misura.py lo misura nella
 sezione BANCO, che è informativa e non fa uscire con 1. Le domande le scrive chi usa il banco: questo script non ne crea.
   --semi      scrive .graph/banco_semi.json, il materiale da cui scrivere le domande:
               (a) le domande di sintesi.py --tutte con le pagine della risposta: dall'uscita JSON di sintesi.py,
@@ -11,9 +13,11 @@ sezione BANCO, che è informativa e non fa uscire con 1. Le domande le scrive ch
               (c) le pagine isolate nel grafo tipizzato: nessuna relazione tipizzata in entrata né in uscita.
               Per ogni pagina: id, tipo, descrizione, alias, i 10 vicini più collegati e il percorso del file.
   --verifica  controlla banco.json. ERRORE (exit 1): pagina attesa inesistente, domanda doppia, voce malformata,
-              tipo diverso da locale e globale.
-              AVVISO (exit 0): la domanda usa metà delle parole del titolo di una pagina attesa, e il test sarebbe
-              banale. Conta solo il titolo, cioè il nome della pagina, non gli alias; non vale per atteso_ko.
+              tipo diverso da locale e globale, «parafrasi» che non è una lista di domande, parafrasi uguale a una
+              domanda del banco o a un'altra parafrasi.
+              AVVISO (exit 0): la domanda o una parafrasi usa metà delle parole del titolo di una pagina attesa, e
+              il test sarebbe banale. Conta solo il titolo, cioè il nome della pagina, non gli alias; non vale per
+              atteso_ko.
 
 Uso:
   python .graph/banco.py --semi
@@ -150,6 +154,11 @@ def verifica(db, percorso):
         return [("ERRORE", f"{percorso.name}: serve una lista di oggetti")]
     pagine = {id_ for (id_,) in db.execute("SELECT id FROM entities")}
     problemi, viste = [], {}
+    domande = {}  # norm → prima voce con quella domanda, per le parafrasi
+    for i, voce in enumerate(voci, 1):
+        if isinstance(voce, dict) and isinstance(voce.get("domanda"), str) and voce["domanda"].strip():
+            domande.setdefault(norm(voce["domanda"]), i)
+    parafrasi_viste = {}  # norm → voce della prima parafrasi uguale
     for i, voce in enumerate(voci, 1):
         domanda = voce.get("domanda") if isinstance(voce, dict) else None
         if not isinstance(domanda, str) or not domanda.strip():
@@ -179,6 +188,34 @@ def verifica(db, percorso):
         if eco:
             nomi = ", ".join(f"«{p}»" for p in eco)
             problemi.append(("AVVISO", f"{dove}: usa le parole del titolo di {nomi}, il test sarebbe banale"))
+        problemi += verifica_parafrasi(voce, i, dove, attese, pagine, domande, parafrasi_viste)
+    return problemi
+
+
+def verifica_parafrasi(voce, i, dove, attese, pagine, domande, viste):
+    """Problemi del campo facoltativo «parafrasi» di una voce: [(livello, testo)], come verifica.
+
+    ERRORE se non è una lista di domande (testi non vuoti), se una parafrasi è uguale (dopo norm) a una domanda del
+    banco o a un'altra parafrasi. AVVISO se usa le parole del titolo di una pagina attesa, come per la domanda.
+    `viste` raccoglie le parafrasi già controllate (norm → voce) e si aggiorna."""
+    if "parafrasi" not in voce:
+        return []
+    parafrasi = voce["parafrasi"]
+    if not isinstance(parafrasi, list) or not all(isinstance(p, str) and p.strip() for p in parafrasi):
+        return [("ERRORE", f"{dove}: «parafrasi» deve essere una lista di domande")]
+    problemi = []
+    for testo in parafrasi:
+        chiave = norm(testo)
+        if chiave in domande:
+            problemi.append(("ERRORE", f"{dove}: parafrasi uguale alla voce {domande[chiave]} «{testo[:50]}»"))
+        elif chiave in viste:
+            problemi.append(("ERRORE", f"{dove}: parafrasi ripetuta (voce {viste[chiave]}) «{testo[:50]}»"))
+        viste.setdefault(chiave, i)
+        eco = [p for p in attese if p in pagine and voce.get("origine") != "atteso_ko" and eco_del_titolo(testo, p)]
+        if eco:
+            nomi = ", ".join(f"«{p}»" for p in eco)
+            problemi.append(("AVVISO", f"{dove}: la parafrasi «{testo[:50]}» usa le parole del titolo di {nomi},"
+                                       " il test sarebbe banale"))
     return problemi
 
 
