@@ -965,6 +965,7 @@ Uso: python .graph/recall.py "il file delle fatture non arriva, a chi scrivo?" [
 | `categorie_nominate(db, domanda, escludi=())` | [(nome, padre, descrizione)] delle categorie di Wiki reference che la domanda nomina (B3 di doc/16): per nome |
 | `tipi_nominati(db, domanda, escludi=())` | [(nome, padre, descrizione)] dei tipi che la domanda nomina con un loro sinonimo (doc/17, fase 3a): il nome di un |
 | `pagine_di_categoria(db)` | Le pagine del vault che contano per le categorie: né fonti né pagine per entropia (riassumono altre pagine). |
+| `panoramiche_di(db, nome)` | Le panoramiche della categoria (B4 di doc/16): le pagine per entropia con il tag diretto `nome`, per nome. |
 | `pagine_per_categoria(db, nome)` | {pagina: profondità}: 0 per i tag diretti, 1 per le sottocategorie e così via (la minima se più tag). |
 | `pagine_per_tipo(db, nome)` | {pagina: profondità}: 0 per le pagine del tipo, 1 per quelle dei suoi sottotipi e così via. |
 | `scegli_pagine(db, da_scegliere, massimo=None)` | (pagine, omesse): al più `massimo` (MAX_CATEGORIA) pagine fra `da_scegliere` ({pagina: profondità}, di una |
@@ -1096,7 +1097,7 @@ Complementare a domande.py, che elenca le domande aperte da rivolgere all'autore
 sparsa: una pagina di sintesi la raccoglie, e il recall la trova senza percorrere la catena ogni volta.
 Deterministico, nessun LLM: la pagina la scrive la skill di lint, questo script sceglie cosa e verifica.
 
-Quattro famiglie di domande:
+Cinque famiglie di domande:
   memoria   domande reali che il grafo non riconosceva, con le pagine lette per rispondere (memoria.sqlite)
   catena    da un processo o sistema, le relazioni usa/richiede/referente seguite fino a 3 passi,
             se toccano almeno 2 pagine oltre al punto di partenza (Rilascio in produzione → Console di rilascio →
@@ -1104,6 +1105,9 @@ Quattro famiglie di domande:
             senza grafo sbaglia di più
   termine   identificatori citati in 3+ pagine di 3+ aree senza pagina né alias (domande.termini)
   persona   le pagine di cui una persona è `referente`, se sono almeno 2
+  categoria «Che cosa comprende X?» per una categoria di Wiki reference con almeno MIN_ALTRE + 1 pagine (sue e delle
+            sottocategorie, come nel recall), non oltre recall.SOGLIA_CATEGORIA del vault: la panoramica (B4 di
+            doc/16) porta, oltre a `entropia`, il tag della categoria, ed è così che il recall la trova
 
 Una domanda è **coperta** se esiste già una pagina che linka tutte le pagine della risposta (o è una di
 esse e linka le altre); per un termine, se una pagina lo ha come titolo o alias. Scrivere la pagina di
@@ -1115,7 +1119,8 @@ aperte di domande.py, cioè va all'autore.
 
 --verifica controlla le pagine con tag `entropia` già scritte: avviso «Informazioni generate da entropia
 del vault» con la domanda a cui rispondono, `riguarda`, domanda risultata coperta, nessuna fonte che
-non sia già in una delle pagine linkate (un fatto nuovo porterebbe una fonte nuova).
+non sia già in una delle pagine linkate (un fatto nuovo porterebbe una fonte nuova); per una panoramica di categoria,
+il tag della categoria.
 
 Uso:
   python .graph/sintesi.py                     candidate non coperte, in ordine di priorità
@@ -1131,6 +1136,7 @@ Uso:
 | `catene(db)` | — |
 | `termini(db, vault)` | — |
 | `persone(db)` | — |
+| `categorie(db)` | Le panoramiche di categoria (B4 di doc/16): una domanda per categoria con almeno MIN_ALTRE + 1 pagine. |
 | `memoria(qui, esistenti)` | — |
 | `candidate(db, qui, tutte=False)` | — |
 | `verifica(db, qui)` | Problemi delle pagine generate per entropia: [(pagina, problema)]. |

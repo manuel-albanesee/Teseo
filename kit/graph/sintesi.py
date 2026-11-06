@@ -4,7 +4,7 @@ Complementare a domande.py, che elenca le domande aperte da rivolgere all'autore
 sparsa: una pagina di sintesi la raccoglie, e il recall la trova senza percorrere la catena ogni volta.
 Deterministico, nessun LLM: la pagina la scrive la skill di lint, questo script sceglie cosa e verifica.
 
-Quattro famiglie di domande:
+Cinque famiglie di domande:
   memoria   domande reali che il grafo non riconosceva, con le pagine lette per rispondere (memoria.sqlite)
   catena    da un processo o sistema, le relazioni usa/richiede/referente seguite fino a 3 passi,
             se toccano almeno 2 pagine oltre al punto di partenza (Rilascio in produzione → Console di rilascio →
@@ -12,6 +12,9 @@ Quattro famiglie di domande:
             senza grafo sbaglia di più
   termine   identificatori citati in 3+ pagine di 3+ aree senza pagina né alias (domande.termini)
   persona   le pagine di cui una persona è `referente`, se sono almeno 2
+  categoria «Che cosa comprende X?» per una categoria di Wiki reference con almeno MIN_ALTRE + 1 pagine (sue e delle
+            sottocategorie, come nel recall), non oltre recall.SOGLIA_CATEGORIA del vault: la panoramica (B4 di
+            doc/16) porta, oltre a `entropia`, il tag della categoria, ed è così che il recall la trova
 
 Una domanda è **coperta** se esiste già una pagina che linka tutte le pagine della risposta (o è una di
 esse e linka le altre); per un termine, se una pagina lo ha come titolo o alias. Scrivere la pagina di
@@ -23,7 +26,8 @@ aperte di domande.py, cioè va all'autore.
 
 --verifica controlla le pagine con tag `entropia` già scritte: avviso «Informazioni generate da entropia
 del vault» con la domanda a cui rispondono, `riguarda`, domanda risultata coperta, nessuna fonte che
-non sia già in una delle pagine linkate (un fatto nuovo porterebbe una fonte nuova).
+non sia già in una delle pagine linkate (un fatto nuovo porterebbe una fonte nuova); per una panoramica di categoria,
+il tag della categoria.
 
 Uso:
   python .graph/sintesi.py                     candidate non coperte, in ordine di priorità
@@ -43,6 +47,7 @@ from datetime import datetime
 from pathlib import Path
 
 import domande
+import recall
 import semantica
 from build_graph import LINK, bersaglio, leggi, valori
 
@@ -53,7 +58,7 @@ CATENA = ("usa", "richiede", "referente")
 RUOLI_CATENA = ("dipendenza", "responsabile")
 DA_CATENA = {"processo", "sistema"}
 MIN_ALTRE = 2   # pagine della risposta oltre al punto di partenza
-PRIORITA = {"memoria": 0, "catena": 1, "termine": 2, "persona": 3}
+PRIORITA = {"memoria": 0, "catena": 1, "termine": 2, "persona": 3, "categoria": 4}
 AVVISO = "Informazioni generate da entropia del vault"
 RISPONDE = re.compile(r"Risponde a: «(.+?)»")
 
@@ -126,6 +131,28 @@ def persone(db):
                    "percorso": [f"{s} →{rel}→ {persona}" for s, rel in voci]}
 
 
+def categorie(db):
+    """Le panoramiche di categoria (B4 di doc/16): una domanda per categoria con almeno MIN_ALTRE + 1 pagine.
+
+    Le pagine sono quelle di recall.pagine_per_categoria (tag diretti e sottocategorie, né fonti né pagine per
+    entropia), per profondità e poi per nome. Una categoria oltre recall.SOGLIA_CATEGORIA delle pagine del vault non fa
+    da seme nel recall, quindi la sua panoramica non arriverebbe a nessuna domanda: si salta. Senza la tabella
+    `categorie` (generazione precedente) o senza la sezione nessuna domanda."""
+    try:
+        nomi = [nome for (nome,) in db.execute("SELECT nome FROM categorie ORDER BY posizione")]
+    except sqlite3.OperationalError:
+        return
+    totale = max(1, len(recall.pagine_di_categoria(db)))
+    for nome in nomi:
+        sue = recall.pagine_per_categoria(db, nome)
+        if len(sue) < MIN_ALTRE + 1 or len(sue) / totale > recall.SOGLIA_CATEGORIA:
+            continue
+        pagine = sorted(sue, key=lambda p: (sue[p], p))
+        yield {"famiglia": "categoria", "domanda": f"Che cosa comprende {nome}?", "partenza": pagine[0],
+               "pagine": pagine, "categoria": nome,
+               "percorso": [f"{p} → {'categoria' if sue[p] == 0 else 'sottocategoria'} → {nome}" for p in pagine]}
+
+
 def memoria(qui, esistenti):
     path = qui / "memoria.sqlite"
     if not path.exists():
@@ -149,7 +176,7 @@ def candidate(db, qui, tutte=False):
     scartate = {d for (d,) in archivio.execute("SELECT domanda FROM scartate")}
     archivio.close()
     viste, elenco = set(), []
-    for c in [*memoria(qui, esistenti), *catene(db), *termini(db, qui.parent), *persone(db)]:
+    for c in [*memoria(qui, esistenti), *catene(db), *termini(db, qui.parent), *persone(db), *categorie(db)]:
         chiave = (c["famiglia"] == "termine", frozenset(c["pagine"]))
         if c["domanda"] in scartate or chiave in viste:
             continue
@@ -185,6 +212,10 @@ def verifica(db, qui):
             else:
                 mancano = sorted(set(c["pagine"]) - {bersaglio(l) for l in LINK.findall(corpo)} - {nome})
                 problemi.append((nome, f"la domanda risulta ancora scoperta: mancano link a {mancano}"))
+        if m and candidate_.get(m.group(1), {}).get("famiglia") == "categoria":
+            categoria = candidate_[m.group(1)]["categoria"]
+            if categoria not in valori(fm.get("tags")):
+                problemi.append((nome, f"manca il tag «{categoria}»: il recall non la trova dalla categoria"))
         linkate = {bersaglio(l) for l in LINK.findall(corpo)} & set(pagine)
         ammesse = {f for p in linkate for f in valori(pagine[p][0].get("fonti"))}
         nuove = sorted(set(valori(fm.get("fonti"))) - ammesse)

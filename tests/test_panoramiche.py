@@ -107,7 +107,8 @@ class Recall(Base):
         semi, fatti, _ = recall.richiama(db, 'che cosa comprende la fatturazione?')
         self.assertEqual([s[0] for s in semi], ['Panoramica fatture', 'fatturazione'])
         self.assertEqual(len([f for f in fatti if f['tipo'] == 'categoria']), 1)   # il fatto aggregato resta
-        self.assertTrue({'Fatture', 'Fornitori', 'Ordini'} <= {f['t'] for f in fatti if f['s'] == 'Panoramica fatture'})
+        portate = {t for f in fatti if f['s'] == 'Panoramica fatture' for t in f['t']}
+        self.assertTrue({'Fatture', 'Fornitori', 'Ordini'} <= portate)
 
     def test_solo_il_tag_diretto(self):
         db = self.vault(SCHEMA_B4, **{'Panoramica ciclo': panoramica(['entropia', 'ciclo-passivo'], ('Fornitori', 'Ordini'),

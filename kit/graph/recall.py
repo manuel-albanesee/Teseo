@@ -496,6 +496,12 @@ def pagine_di_categoria(db):
             if tipo != "fonte" and TAG_ENTROPIA not in (tags or "").split(", ")]
 
 
+def panoramiche_di(db, nome):
+    """Le panoramiche della categoria (B4 di doc/16): le pagine per entropia con il tag diretto `nome`, per nome."""
+    return sorted(id_ for id_, tags in db.execute("SELECT id, tags FROM entities")
+                  if {TAG_ENTROPIA, nome} <= set((tags or "").split(", ")))
+
+
 def pagine_per_categoria(db, nome):
     """{pagina: profondità}: 0 per i tag diretti, 1 per le sottocategorie e così via (la minima se più tag)."""
     figli = {}
@@ -577,7 +583,8 @@ def richiama(db, domanda, max_tipizzate=MAX_TIPIZZATE, max_menziona=MAX_MENZIONA
     sinonimo (doc/17, fase 3a): per ognuno un seme `(nome, 'categoria[, parte di X]' o 'tipo[, sottotipo di X]',
     descrizione)` e un fatto aggregato con le pagine scelte e le `omesse`. Il nome di una pagina vince su una
     categoria omonima e su un sinonimo uguale: se la domanda nomina la pagina, la categoria non c'è. Categorie e tipi
-    non entrano nel cammino sugli archi (non sono nodi del grafo): i fatti vengono dalle sole pagine."""
+    non entrano nel cammino sugli archi (non sono nodi del grafo): i fatti vengono dalle sole pagine. Le panoramiche di
+    una categoria nominata (pagine per entropia con il suo tag diretto, B4 di doc/16) sono punti di partenza in più."""
     semi, fatti, omessi = richiama_pagine(db, domanda, max_tipizzate, max_menziona, extra)
     pagine = [s[0] for s in semi]
     nomi = [radici(nome) for nome in pagine]
@@ -585,6 +592,10 @@ def richiama(db, domanda, max_tipizzate=MAX_TIPIZZATE, max_menziona=MAX_MENZIONA
     tipi = tipi_nominati(db, domanda, pagine)
     if not categorie and not tipi:
         return semi, fatti, omessi
+    panoramiche = [p for c in categorie for p in panoramiche_di(db, c[0]) if p not in pagine]
+    if panoramiche:  # B4: la panoramica scritta dal lint parte con la sua categoria, come una pagina della memoria
+        semi, fatti, omessi = richiama_pagine(db, domanda, max_tipizzate, max_menziona,
+                                              [*extra, *dict.fromkeys(panoramiche)])
     return (semi + [seme_categoria(c) for c in categorie] + [seme_tipo(t) for t in tipi],
             fatti + [fatto_categoria(db, c) for c in categorie] + [fatto_tipo(db, t) for t in tipi], omessi)
 
